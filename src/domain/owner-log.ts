@@ -28,7 +28,7 @@ const DraftSchema = z.object({
 }).strict();
 
 export function ownerRiskFlags(text: string): string[] {
-  const patterns: RegExp[] = [/피|출혈|bleed/i, /구토|토했|토함|토해|vomit/i, /설사|diarrhea/i, /안\s*먹|밥을\s*안|먹지\s*않|식욕.*(?:없|저하)/i, /절뚝|다리를\s*절|limp/i, /경련|발작|seizure/i, /호흡|숨을?\s*(?:헐떡|못|가쁘)/i, /물었|물려|물린|상처|bite|bitten/i, /갑자기.*(?:공격|물)|갑작스러운\s*공격/i, /통증|깨갱|아파|아프|pain/i, /건강\s*이상/i];
+  const patterns: RegExp[] = [/출혈|코피|혈변|혈뇨|피가\s*(?:나|난|났|묻|보)|피를?\s*(?:흘|토)|피\s*(?:났|남)|bleed/i, /구토|토했|토함|토해|vomit/i, /설사|diarrhea/i, /안\s*먹|밥을\s*안|먹지\s*않|식욕.*(?:없|저하)/i, /절뚝|다리를\s*절|limp/i, /경련|발작|seizure/i, /호흡|숨을?\s*(?:헐떡|못|가쁘)/i, /물었|물려|물린|상처|bite|bitten/i, /갑자기.*(?:공격|물)|갑작스러운\s*공격/i, /통증|깨갱|아파|아프|pain/i, /건강\s*이상/i];
   return ownerSafetyFlags.filter((_, index) => patterns[index].test(text));
 }
 

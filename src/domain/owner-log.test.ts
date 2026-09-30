@@ -1,8 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import { createManualOwnerDraft, validateOwnerDraft } from './owner-log';
+import { createManualOwnerDraft, validateOwnerDraft, ownerRiskFlags } from './owner-log';
 import type { OwnerInput } from './workspace-types';
 export const input: OwnerInput = { text: '초코가 5분 짖었다', pets: [{ id: 'p1', name: '초코', nicknames: [] }], now: '2026-09-30T14:00:00+09:00', timeZone: 'Asia/Seoul', sourceKind: 'nl_log_text' };
 describe('owner draft', () => {
+  it('does not treat fatigue or avoiding a dog as bleeding', () => {
+    expect(ownerRiskFlags('초코가 피곤해서 쉬었어요.')).not.toContain('bleeding');
+    expect(ownerRiskFlags('다른 강아지를 피해 걸었어요.')).not.toContain('bleeding');
+    for (const text of ['발에서 피가 났어요.', '코피가 났어요.', '피를 흘렸어요.', '출혈이 있어요.', '혈변을 봤어요.']) expect(ownerRiskFlags(text)).toContain('bleeding');
+  });
   it('preserves manual source without inventing event facts', () => {
     const draft = createManualOwnerDraft(input);
     expect(draft.events[0]).toMatchObject({ type: 'other', durationMin: null, occurredAt: null, sourceQuote: input.text });
