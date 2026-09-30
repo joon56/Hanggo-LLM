@@ -2,7 +2,7 @@ export type Category = 'owner_report' | 'observation' | 'guidance' | 'task' | 'f
 export type SourceKind = 'trainer_summary_text' | 'trainer_summary_voice';
 export type Metadata = { petName: string; trainerName: string; sessionDate: string };
 export type NoteItem = { id: string; category: Category; text: string; sourceQuote: string; edited: boolean };
-export type NoteMode = 'demo' | 'openai' | 'manual';
+export type NoteMode = 'demo' | 'openai' | 'ollama' | 'manual';
 export type Generation = { requestId: string; model: string; promptVersion: string; latencyMs: number; fallbackUsed: boolean };
 export type Draft = { id: string; sourceKind: SourceKind; sourceText: string; items: NoteItem[]; safetyFlags: string[]; methodReview: boolean; createdAt: string; mode: NoteMode; generation?: Generation };
 export type ApprovedNote = { id: string; metadata: Metadata; draft: Draft; approvedAt: string; mode: NoteMode };
@@ -38,7 +38,7 @@ export function getReviewSignals(draft: Draft): { safetyFlags: string[]; methodR
   };
 }
 
-function sentences(source: string): string[] {
+export function splitNoteSentences(source: string): string[] {
   const result: string[] = [];
   let start = 0;
   for (let index = 0; index < source.length; index++) {
@@ -76,7 +76,7 @@ export function createDraft(text: string, sourceKind: SourceKind): Draft {
   const methodReview = methodPattern.test(text);
   return {
     id: newId(), sourceKind, sourceText: text,
-    items: sentences(text).map(sourceQuote => {
+    items: splitNoteSentences(text).map(sourceQuote => {
       const category = classify(sourceQuote);
       return { id: newId(), category: (safetyFlags.length || methodReview) && category === 'task' ? 'follow_up' : category, text: sourceQuote, sourceQuote, edited: false };
     }),
@@ -98,7 +98,7 @@ export function createManualDraft(text: string, sourceKind: SourceKind): Draft {
 export function validateDraft(draft: Draft): string[] {
   const errors: string[] = [];
   if (!isObject(draft)) return ['초안 형식이 올바르지 않습니다.'];
-  if (!['demo', 'openai', 'manual'].includes(draft.mode) || typeof draft.id !== 'string' || !draft.id.trim() ||
+  if (!['demo', 'openai', 'ollama', 'manual'].includes(draft.mode) || typeof draft.id !== 'string' || !draft.id.trim() ||
     !sourceKinds.includes(draft.sourceKind) || typeof draft.sourceText !== 'string' ||
     !draft.sourceText.trim() || draft.sourceText.length > 8000 ||
     typeof draft.createdAt !== 'string' || !Number.isFinite(Date.parse(draft.createdAt))) {

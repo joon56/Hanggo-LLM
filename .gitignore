@@ -6,6 +6,7 @@ dist/
 *.local
 *.tsbuildinfo
 .tmp/
+.local-ai/
 test-results/
 test-output/
 test-audio/

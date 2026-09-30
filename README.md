@@ -10,6 +10,7 @@
 ![Node.js 24](https://img.shields.io/badge/Node.js-24_LTS-405438?style=flat-square)
 ![React](https://img.shields.io/badge/React-19-405438?style=flat-square)
 ![TypeScript](https://img.shields.io/badge/TypeScript-7-405438?style=flat-square)
+![Local AI](https://img.shields.io/badge/Ollama_%2B_Whisper-Local_AI-405438?style=flat-square)
 ![OpenAI](https://img.shields.io/badge/OpenAI-Text_%2B_Voice-405438?style=flat-square)
 
 [공개 체험판](https://joon56.github.io/Hanggo-LLM/) · [빠른 시작](#빠른-시작) · [테스트 가이드](docs/testing/manual-testing.md) · [배포 안내](docs/testing/deployment.md)
@@ -20,7 +21,7 @@
 
 ## 상담 이후의 기록을 돕습니다
 
-훈련사의 상담 후 요약을 음성 또는 텍스트로 받아 원문 근거가 있는 일지로 정리합니다. OpenAI 받아쓰기와 일지 추출을 분리하며, 훈련사가 검토·승인한 기록만 이 브라우저에 저장합니다.
+훈련사의 상담 후 요약을 음성 또는 텍스트로 받아 원문 근거가 있는 일지로 정리합니다. 로컬 Ollama·Whisper 또는 OpenAI를 선택할 수 있고, 받아쓰기와 일지 추출을 분리하며, 훈련사가 검토·승인한 기록만 이 브라우저에 저장합니다.
 
 **A·B-1·B-2·C를 하나의 기록 공간에서 테스트할 수 있습니다.** 현재 저장은 개인 브라우저 기준입니다. Firebase·Android 원본 앱, 사용자별 권한·공유 저장소, 보호자 자동 전송, 상담 전체 녹취는 별도 연결이 필요합니다.
 
@@ -49,9 +50,31 @@
 
 **[공개 체험판 열기 →](https://joon56.github.io/Hanggo-LLM/)**
 
-설치 없이 텍스트 정리·녹음과 재생·원문 검토·승인·저장·JSON 내보내기를 체험합니다. GitHub Pages 체험판에는 AI 생성과 받아쓰기가 없습니다. 실제 AI를 사용하려면 아래 Node/Docker 서버를 배포합니다.
+설치 없이 텍스트 정리·녹음과 재생·원문 검토·승인·저장·JSON 내보내기를 체험합니다. GitHub Pages 체험판에는 AI 생성과 받아쓰기가 없습니다. 실제 AI는 아래 로컬 실행으로 사용하거나 별도 서버를 구성합니다. GitHub에 모델을 올리는 것만으로 AI 서버가 실행되지는 않습니다.
 
 ## 빠른 시작
+
+### API 결제 없이 로컬 AI 사용 (Windows)
+
+Ollama **0.34.4 이상**, Node.js 24, FFmpeg/ffprobe가 필요합니다. 권장 시작 환경은 RTX 4060 8GB·RAM 32GB입니다. 최초 모델 다운로드에 시간이 걸립니다.
+
+```powershell
+npm.cmd ci
+powershell -ExecutionPolicy Bypass -File scripts/setup-local.ps1
+npm.cmd run dev:local
+```
+
+접속: **http://127.0.0.1:5173/**. 텍스트는 `qwen3.5:9b`, 음성은 Whisper medium Q5_0을 이 PC에서 실행합니다. 외부 API 키와 크레딧이 필요하지 않으며 클라우드로 자동 전환하지 않습니다. 승인한 기록은 이 브라우저에 저장합니다.
+
+```powershell
+npm.cmd run local:check
+npm.cmd run llm:eval:local
+```
+
+[로컬 설치·모델 비교·음성 테스트 가이드](docs/testing/local-ai.md) · [음성 실행기 설치](docs/testing/local-speech.md) · [로컬 검증 결과](docs/llm/local-verification.md)
+
+### OpenAI 연결로 실행
+
 
 Node.js **24 LTS**, npm, **FFmpeg(ffmpeg와 ffprobe)**가 필요합니다. Windows에서는 설치한 FFmpeg의 bin 폴더를 PATH에 추가합니다. ffprobe는 서버에서 실제 음성 길이를 검사합니다.
 
@@ -62,6 +85,7 @@ powershell -ExecutionPolicy Bypass -File .\scripts\setup.ps1
 생성된 `.env`를 편집합니다. 설치 스크립트는 기존 `.env`를 덮어쓰지 않습니다.
 
 ```dotenv
+AI_PROVIDER=openai
 OPENAI_API_KEY=발급받은_API_키
 AI_ENABLED=true
 FEATURE_OWNER_LOG_ENABLED=true
@@ -80,7 +104,7 @@ npm.cmd run dev
 ## 사용 흐름
 
 1. 가상의 반려동물·훈련사 이름과 상담 날짜를 입력합니다.
-2. AI 사용 시 외부 음성·텍스트 처리 안내를 읽고 동의합니다.
+2. AI 사용 시 선택한 공급사의 음성·텍스트 처리 안내를 읽고 동의합니다.
 3. 텍스트는 직접 입력하거나 예시를 불러온 뒤 일지를 생성합니다.
 4. 음성은 **3~60초 녹음 → 다시 듣기 → 받아쓰기 → 원문 수정·확인 → 일지 생성** 순서입니다.
 5. 원문 근거·분류·숫자를 확인합니다. 직접 수정한 항목은 표시되며 위험 신호가 있으면 과제 승인을 제한합니다.
@@ -103,7 +127,7 @@ npm.cmd run llm:eval
 npm.cmd run llm:eval:workspace
 ```
 
-`llm:eval` 기본 실행은 **자료 형식 검증만** 합니다. 실제 API 호출은 실행 중인 서버에 아래 명령으로 요청하며 비용이 발생합니다.
+`llm:eval` 기본 실행은 **자료 형식 검증만** 합니다. 실제 API 호출은 실행 중인 서버에 아래 명령으로 요청합니다. OpenAI 연결은 비용이 발생하고, Ollama 연결은 로컬에서 처리합니다.
 
 ```powershell
 npm.cmd run llm:eval -- --live --case N01
@@ -117,7 +141,7 @@ npm.cmd run llm:eval -- --live --case N01 --audio-dir test-audio
 
 전체 검증: `npm.cmd run verify` 또는 `scripts/verify.ps1`. Playwright는 설치된 Chrome, 가상 오디오와 모의 API를 사용합니다. 실제 키·비용 없이 화면을 확인하며 실제 STT·LLM 품질을 입증하지는 않습니다.
 
-A·B-1·C 실제 평가도 제공합니다. 서버 실행 없이 `.env`를 읽어 서비스 로직과 OpenAI를 직접 호출합니다. `--live`에만 비용이 발생합니다.
+A·B-1·C 실제 평가도 제공합니다. 서버 실행 없이 `.env`를 읽어 서비스 로직과 설정한 AI 공급사를 직접 호출합니다. OpenAI의 `--live` 실행에 비용이 발생합니다.
 
 ```powershell
 npm.cmd run llm:eval:workspace -- --feature owner --case bark-delivery --live
@@ -130,12 +154,12 @@ npm.cmd run llm:eval:workspace -- --feature owner --case bark-delivery --live --
 
 ## 처리와 저장
 
-- 기본 모델: 텍스트 `gpt-4.1-mini`, 음성 `gpt-4o-mini-transcribe`. 환경변수로 변경 가능합니다. 텍스트 모델은 Responses API, Structured Outputs, temperature를 지원해야 합니다. 모델 변경 후 실제 평가를 다시 수행하세요.
+- 로컬 기본 모델: 텍스트 `qwen3.5:9b`, 음성 Whisper medium Q5_0. OpenAI 기본 모델: `gpt-4.1-mini`, `gpt-4o-mini-transcribe`. 환경변수로 변경 가능합니다. OpenAI 텍스트 모델은 Responses API, Structured Outputs, temperature를 지원해야 합니다. 모델 변경 후 실제 평가를 다시 수행하세요.
 - AI는 원문의 정확한 구절을 추출·분류합니다. 새로운 사실·조언·레슨을 만들지 않습니다. 인용·분류·숫자·안전 신호를 서버와 승인 단계에서 검사합니다.
 - 형식·근거 검증 실패는 한 번 재생성합니다. 계속 실패하거나 공급사 요청이 실패하면 원문 기반 수동 검토 초안을 제공합니다.
 - 전화번호·이메일·일부 주소 패턴은 텍스트 전송 전 마스킹합니다. 모든 개인정보를 탐지하지는 못합니다. **음성은 원본이 STT 공급사로 전송됩니다.**
-- 서버는 음성을 디스크에 저장하지 않습니다. 브라우저 녹음은 교체·삭제·새 기록·승인·페이지 종료 시 해제됩니다. 공급사의 처리·보존 정책은 별도입니다.
-- Responses에는 `store:false`를 사용합니다. 공급사의 모든 보존을 없애는 설정은 아닙니다. [OpenAI 데이터 처리 안내](https://developers.openai.com/api/docs/guides/your-data)를 확인하세요.
+- 로컬 받아쓰기는 임시 WAV·텍스트 파일을 만든 뒤 요청 종료·취소 시 삭제합니다. OpenAI 모드는 서버 메모리에서 전송합니다. 브라우저 녹음은 교체·삭제·새 기록·승인·페이지 종료 시 해제됩니다.
+- OpenAI Responses에는 `store:false`를 사용합니다. 공급사의 모든 보존을 없애는 설정은 아닙니다. [OpenAI 데이터 처리 안내](https://developers.openai.com/api/docs/guides/your-data)를 확인하세요. 로컬 모드는 이 API를 호출하지 않습니다.
 - 승인 기록은 `localStorage`의 `hanggo:approved-notes`에 최대 50개 보관합니다. 기존 데모 기록도 읽습니다. 서버 동기화·암호화·자동 백업은 없습니다. 도메인·포트가 바뀌면 별도 저장소입니다.
 - 보호자 일상 기록 최대 100건, 보호소 승인 프로필 최대 50건도 별도 로컬 저장소에 보관합니다. 브리핑·레슨 연결 결과는 JSON으로 내보낼 수 있습니다.
 - 로그인은 API 접근을 제한합니다. 브라우저 자료 자체를 암호화하거나 같은 기기의 사용자를 격리하지 않습니다. 개인 브라우저를 사용하고 JSON으로 백업하세요. JSON은 내보내기 전용입니다.
@@ -164,7 +188,7 @@ npm.cmd start
 
 화면과 API를 같은 서버에서 제공합니다. 로컬 빌드 확인: **http://127.0.0.1:3001/**. 공개 배포에는 HTTPS 역방향 프록시와 운영자 비밀번호가 필요합니다. [Node와 Docker 배포 절차](docs/testing/deployment.md)를 참고하세요.
 
-기본 제한: 일일 요청 200건, 분당 30건, 동시 2건. 단일 프로세스 메모리 기준이며 재시작 시 초기화됩니다. 공급사 프로젝트의 사용 한도도 설정하세요. 다중 사용자 인증·공유 저장·분산 요청 제한은 별도 확장 범위입니다.
+기본 제한: 일일 요청 200건, 분당 30건, 동시 로컬 1건·OpenAI 2건. 단일 프로세스 메모리 기준이며 재시작 시 초기화됩니다. OpenAI 사용 시 공급사 프로젝트의 사용 한도도 설정하세요. 다중 사용자 인증·공유 저장·분산 요청 제한은 별도 확장 범위입니다.
 
 ## 주요 파일
 
@@ -172,6 +196,7 @@ npm.cmd start
 |---|---|
 | `server/app.ts` | 인증·출처·입력·요청 제한과 HTTP 라우트 |
 | `server/audio.ts` | 실제 음성 길이 검사 |
+| `server/ollama.ts`, `server/local-speech.ts` | 로컬 텍스트 추출·음성 받아쓰기 |
 | `server/openai.ts` | OpenAI 받아쓰기와 구조화 추출 |
 | `server/service.ts` | 마스킹·근거 검증·재생성·수동 대체 |
 | `src/domain/notes.ts` | 초안·안전·승인 규칙 |
@@ -185,7 +210,7 @@ npm.cmd start
 | `server/shelter-service.ts` | 관찰 추출·주의사항 보존·프로필 생성 |
 | `server/lessons.ts` | 실제 레슨 카탈로그 로딩·검증 |
 
-개발가이드와 과거 작업 기록은 그대로 보존합니다. 현재 확인 결과와 미검증 항목은 [검증 보고서](docs/llm/openai-verification.md)에 정리합니다.
+개발가이드와 과거 작업 기록은 그대로 보존합니다. 확인 결과와 미검증 항목은 [로컬 AI 검증](docs/llm/local-verification.md), [기존 OpenAI 통합 검증](docs/llm/openai-verification.md)에 정리합니다.
 
 ---
 

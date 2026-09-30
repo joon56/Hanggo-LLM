@@ -2,7 +2,7 @@ import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import App from './App';
 import { approveDraft, createDraft } from './domain/notes';
-import { saveNote } from './domain/storage';
+import { listNotes, saveNote } from './domain/storage';
 
 const mocks = vi.hoisted(() => ({
   getSession: vi.fn(), login: vi.fn(), logout: vi.fn(), generateNote: vi.fn(), transcribe: vi.fn(), verifyAudibleAudio: vi.fn(),
@@ -13,6 +13,7 @@ vi.mock('./hooks/useRecorder', () => ({ useRecorder: () => mocks.recorder }));
 
 const demoSession = { authenticated: true, requirePassword: false, aiEnabled: false, configured: false, textModel: '', sttModel: '' };
 const aiSession = { ...demoSession, aiEnabled: true, configured: true, textModel: 'text-test', sttModel: 'stt-test' };
+const localSession = { ...aiSession, provider: 'ollama' as const, textModel: 'qwen3.5:4b', sttModel: 'whisper-large-v3', sttReady: true };
 afterEach(() => vi.unstubAllEnvs());
 beforeEach(() => {
   localStorage.clear(); vi.clearAllMocks(); mocks.getSession.mockResolvedValue(demoSession); mocks.verifyAudibleAudio.mockResolvedValue(undefined);
@@ -90,6 +91,46 @@ it('asks for consent before text reaches AI and renders model metadata', async (
   fireEvent.click(screen.getByRole('button', { name: '일지 초안 만들기' }));
   await waitFor(() => expect(screen.getByText('AI 초안')).toBeInTheDocument());
   expect(screen.getByText(/req-1/)).toBeInTheDocument();
+});
+
+it('labels local AI separately from the rules demo and keeps model provenance after saving', async () => {
+  mocks.getSession.mockResolvedValue(localSession);
+  const draft = { ...createDraft('보호자는 짖는다고 말했습니다.', 'trainer_summary_text'), mode: 'ollama', generation: { requestId: 'local-1', model: 'qwen3.5:4b', promptVersion: 'v1', latencyMs: 43, fallbackUsed: false } };
+  mocks.generateNote.mockResolvedValue({ draft, fallbackUsed: false, requestId: 'local-1', latencyMs: 43, model: 'qwen3.5:4b', warnings: [] });
+  render(<App />); await example();
+  expect(screen.getByText('로컬 AI 연결됨')).toBeInTheDocument();
+  expect(screen.getByRole('checkbox', { name: /이 PC의 로컬 AI 서버/ })).toBeInTheDocument();
+  expect(screen.queryByRole('checkbox', { name: /외부 AI/ })).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole('checkbox', { name: /이 PC의 로컬 AI 서버/ }));
+  fireEvent.click(screen.getByRole('button', { name: '일지 초안 만들기' }));
+  await waitFor(() => expect(screen.getByText('로컬 AI 초안')).toBeInTheDocument());
+  expect(screen.getByText(/qwen3.5:4b.*local-1/)).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('checkbox', { name: /원문과 일지를 확인/ }));
+  fireEvent.click(screen.getByRole('button', { name: '승인하고 저장' }));
+  expect(screen.getByText(/승인된 로컬 AI 기록/)).toBeInTheDocument();
+  expect(listNotes()[0]).toMatchObject({ mode: 'ollama', draft: { mode: 'ollama', generation: { model: 'qwen3.5:4b', requestId: 'local-1' } } });
+});
+
+it('keeps local text AI available when local speech is unavailable', async () => {
+  mocks.getSession.mockResolvedValue({ ...localSession, sttReady: false, statusMessage: 'Whisper 실행 파일을 찾을 수 없습니다.' });
+  Object.assign(mocks.recorder, { status: 'ready', audioUrl: 'blob:demo', audioBlob: new Blob(['audio'], { type: 'audio/webm' }), duration: 5 });
+  render(<App />); await example();
+  expect(screen.getByText('Whisper 실행 파일을 찾을 수 없습니다.')).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: '음성으로 남기기' }));
+  expect(screen.getByRole('button', { name: '음성 받아쓰기' })).toBeDisabled();
+  fireEvent.click(screen.getByRole('checkbox', { name: /이 PC의 로컬 AI 서버/ }));
+  expect(screen.getByRole('button', { name: '일지 초안 만들기' })).toBeEnabled();
+  expect(mocks.transcribe).not.toHaveBeenCalled();
+});
+
+it('refreshes an unavailable local AI session from the connection panel', async () => {
+  mocks.getSession.mockResolvedValueOnce({ ...localSession, configured: false, statusMessage: 'Ollama 실행 후 다시 연결해 주세요.' })
+    .mockResolvedValueOnce(localSession);
+  render(<App />); await ready();
+  expect(screen.getByText('Ollama 실행 후 다시 연결해 주세요.')).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: '다시 연결' }));
+  await waitFor(() => expect(mocks.getSession).toHaveBeenCalledTimes(2));
+  await screen.findByText('로컬 AI 연결됨');
 });
 
 it('ignores pending AI answer after source edit', async () => {

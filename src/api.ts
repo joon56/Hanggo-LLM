@@ -6,6 +6,9 @@ export type Session = {
   requirePassword: boolean;
   aiEnabled: boolean;
   configured: boolean;
+  provider?: 'openai' | 'ollama';
+  sttReady?: boolean;
+  statusMessage?: string;
   textModel: string;
   sttModel: string;
 };

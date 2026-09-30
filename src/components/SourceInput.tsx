@@ -5,6 +5,8 @@ import { useRecorder } from '../hooks/useRecorder';
 
 type Props = {
   aiReady: boolean;
+  localAI?: boolean;
+  sttReady?: boolean;
   petName: string;
   text: string;
   onText: (text: string, voice: boolean) => void;
@@ -13,7 +15,7 @@ type Props = {
   textAreaRef?: RefObject<HTMLTextAreaElement | null>;
 };
 
-export default function SourceInput({ aiReady, petName, text, onText, onConsentChange, onReadyChange, textAreaRef }: Props) {
+export default function SourceInput({ aiReady, localAI = false, sttReady = true, petName, text, onText, onConsentChange, onReadyChange, textAreaRef }: Props) {
   const recorder = useRecorder();
   const [mode, setMode] = useState<'text' | 'voice'>('text');
   const [consent, setConsent] = useState(false);
@@ -46,7 +48,7 @@ export default function SourceInput({ aiReady, petName, text, onText, onConsentC
     cancel(); recorder.reset();
   };
   const runTranscribe = async () => {
-    if (!recorder.audioBlob || !aiReady || !consent) { setError('AI 연결과 정보 전송 동의를 확인해 주세요.'); return; }
+    if (!recorder.audioBlob || !aiReady || !sttReady || !consent) { setError('AI 연결과 정보 전송 동의를 확인해 주세요.'); return; }
     cancel();
     const current = version.current;
     const controller = new AbortController(); abort.current = controller;
@@ -67,13 +69,14 @@ export default function SourceInput({ aiReady, petName, text, onText, onConsentC
       <p>3~60초 녹음 후 재생해 확인하세요.</p>
       {recorder.status === 'recording' ? <button type="button" className="button secondary" onClick={recorder.stop}>녹음 중지 ({recorder.duration}초)</button> : <button type="button" className="button secondary" onClick={begin} disabled={recorder.status === 'requesting'}>{recorder.status === 'requesting' ? '마이크 요청 중' : '새로 녹음'}</button>}
       {(recorder.status === 'requesting' || recorder.status === 'recording' || pending) && <button type="button" className="button secondary" onClick={() => { cancel(); recorder.reset(); }}>취소</button>}
-      {recorder.audioUrl && <><audio controls src={recorder.audioUrl} aria-label="녹음 재생" /><button type="button" className="button secondary" onClick={runTranscribe} disabled={pending || !aiReady || !consent}>{pending ? '받아쓰기 중' : '받아쓰기'}</button><button type="button" className="button secondary" onClick={deleteRecording}>녹음 삭제</button></>}
+      {recorder.audioUrl && <><audio controls src={recorder.audioUrl} aria-label="녹음 재생" /><button type="button" className="button secondary" onClick={runTranscribe} disabled={pending || !aiReady || !sttReady || !consent}>{pending ? '받아쓰기 중' : '받아쓰기'}</button><button type="button" className="button secondary" onClick={deleteRecording}>녹음 삭제</button></>}
       {!aiReady && <p>음성 받아쓰기는 AI 연결이 필요합니다. 텍스트로 직접 입력할 수 있습니다.</p>}
+      {aiReady && !sttReady && <p>음성 받아쓰기를 사용할 수 없습니다. 텍스트로 직접 입력할 수 있습니다.</p>}
       {recorder.error && <p role="alert">{recorder.error}</p>}
     </div>}
     <label className="ws-label">원문 또는 받아쓰기 <textarea ref={textAreaRef} value={text} rows={6} maxLength={8000} onChange={event => { cancel(); onText(event.target.value, reviewNeeded); setConfirmed(false); }} placeholder="관찰한 내용을 적어 주세요." /></label>
     {reviewNeeded && <label className="ws-check"><input type="checkbox" checked={confirmed} onChange={event => setConfirmed(event.target.checked)} />받아쓰기를 듣고 원문을 확인했습니다.</label>}
-    {aiReady && <label className="ws-check"><input type="checkbox" checked={consent} onChange={event => changeConsent(event.target.checked)} />입력한 내용과 음성을 AI 처리 서버로 보내는 데 동의합니다.</label>}
+    {aiReady && <label className="ws-check"><input type="checkbox" checked={consent} onChange={event => changeConsent(event.target.checked)} />{localAI ? '입력한 내용과 음성을 이 PC의 로컬 AI 서버에서 처리하는 데 동의합니다.' : '입력한 내용과 음성을 AI 처리 서버로 보내는 데 동의합니다.'}</label>}
     {error && <p role="alert" className="ws-error">{error}</p>}
   </div>;
 }

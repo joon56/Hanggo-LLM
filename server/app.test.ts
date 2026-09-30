@@ -11,6 +11,19 @@ const make = (extra = {}) => {
   const transcribe = vi.fn(async () => '오늘 앉아를 관찰했습니다.');
   return { app: createApp(config, { generate, transcribe }), generate, transcribe };
 };
+it('allows local text generation without any external API key', async () => {
+  const { app, generate } = make({ AI_PROVIDER: 'ollama', OPENAI_API_KEY: '' });
+  const session = await request(app).get('/api/session').expect(200);
+  expect(session.body).toMatchObject({ provider: 'ollama', configured: true });
+  await request(app).post('/api/notes').set('Origin', origin).send({ text: '관찰했습니다.', sourceKind: 'trainer_summary_text', consent: true }).expect(200);
+  expect(generate).toHaveBeenCalledOnce();
+});
+it('reports actual local readiness instead of treating configuration as connectivity', async () => {
+  const config = readConfig({ AI_PROVIDER: 'ollama', AI_ENABLED: 'true' });
+  const app = createApp(config, { generate: async () => ({}), transcribe: async () => '', status: async () => ({ configured: false, sttReady: false, statusMessage: 'Ollama를 실행해 주세요.' }) });
+  const session = await request(app).get('/api/session').expect(200);
+  expect(session.body).toMatchObject({ configured: false, sttReady: false, statusMessage: 'Ollama를 실행해 주세요.' });
+});
 it('requires explicit consent and valid bounded source before contacting OpenAI', async () => {
   const { app, generate } = make();
   await request(app).post('/api/notes').set('Origin', origin).send({ text: '관찰했습니다.', sourceKind: 'trainer_summary_text' }).expect(400);

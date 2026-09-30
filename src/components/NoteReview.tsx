@@ -37,7 +37,7 @@ export default function NoteReview(props: Props) {
       <div className="empty-categories">{Object.values(categoryLabels).map((label, index) => <div key={label}><span>0{index + 1}</span>{label}</div>)}</div>
       <small>입력 문장을 초안으로 정리합니다.<br />원문과 결과를 직접 확인해 주세요.</small>
     </div> : <>
-      <div className="review-intro"><FileTextIcon size={17} /><span>훈련사의 사후 요약 · {draft.items.length}개 항목</span><span className="demo-word">{draft.mode === 'openai' ? 'AI 초안' : draft.mode === 'manual' ? '수동 검토 필요' : '규칙 기반 데모'}</span></div>
+      <div className="review-intro"><FileTextIcon size={17} /><span>훈련사의 사후 요약 · {draft.items.length}개 항목</span><span className="demo-word">{draft.mode === 'ollama' ? '로컬 AI 초안' : draft.mode === 'openai' ? 'AI 초안' : draft.mode === 'manual' ? '수동 검토 필요' : '규칙 기반 데모'}</span></div>
       {draft.generation && <p className="generation-meta">{draft.generation.model} · {draft.generation.latencyMs}ms · 요청 {draft.generation.requestId}{draft.generation.fallbackUsed ? ' · 대체 초안' : ''}</p>}
       {hasRisk && <div className="warning-box" role="status">
         <ShieldWarningIcon size={23} weight="bold" />
@@ -67,7 +67,7 @@ export default function NoteReview(props: Props) {
       </div>
       {errors.length > 0 && <div className="validation-errors" role="alert"><strong>저장 전에 확인해 주세요.</strong><ul>{[...new Set(errors)].map(error => <li key={error}>{error}</li>)}</ul></div>}
       <footer className="approval-area">
-        {saved ? <><div className="approved-stamp"><CheckCircleIcon size={22} weight="fill" /><div><strong>{saved.metadata.trainerName} 훈련사 승인</strong><small>{new Date(saved.approvedAt).toLocaleString('ko-KR')}</small></div></div><button className="button secondary full" onClick={onExport}><DownloadSimpleIcon size={18} />JSON 다운로드</button><p>승인된 {saved.mode === 'openai' ? 'AI' : saved.mode === 'manual' ? '수동 검토' : '데모'} 기록입니다. 보호자에게 전송되지 않았습니다.</p></> : <>
+        {saved ? <><div className="approved-stamp"><CheckCircleIcon size={22} weight="fill" /><div><strong>{saved.metadata.trainerName} 훈련사 승인</strong><small>{new Date(saved.approvedAt).toLocaleString('ko-KR')}</small></div></div><button className="button secondary full" onClick={onExport}><DownloadSimpleIcon size={18} />JSON 다운로드</button><p>승인된 {saved.mode === 'ollama' ? '로컬 AI' : saved.mode === 'openai' ? 'AI' : saved.mode === 'manual' ? '수동 검토' : '데모'} 기록입니다. 보호자에게 전송되지 않았습니다.</p></> : <>
           <label className="review-checkbox"><input type="checkbox" checked={reviewed} onChange={event => onReview(event.target.checked)} /><span>원문과 일지를 확인했으며, 이 브라우저에 저장합니다.</span></label>
           <button className="button primary full" onClick={onApprove} disabled={!reviewed || !canApprove || errors.length > 0}><CheckCircleIcon size={20} />승인하고 저장</button>
           <p>반려동물·훈련사 정보를 입력해야 저장할 수 있습니다.<br />승인한 기록은 이 브라우저에 저장되며 직접 삭제할 수 있습니다.</p>

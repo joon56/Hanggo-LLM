@@ -17,28 +17,28 @@ for (let i = 0; i < args.length; i++) {
 }
 if (args.includes('--help')) {
   console.info('npm run llm:eval [-- --live] [--case N01] [--audio-dir test-audio] [--base-url http://127.0.0.1:3001]');
-  console.info('기본: 30개 테스트 자료 검증만 수행. --live: 외부 AI 호출·비용 발생. 음성 파일 N01.wav/webm/mp4/mp3와 같은 이름을 사용하세요.');
+  console.info('기본: 30개 테스트 자료 검증만 수행. --live: 설정한 AI 호출(OpenAI는 비용 발생, Ollama는 로컬 처리). 음성 파일 N01.wav/webm/mp4/mp3와 같은 이름을 사용하세요.');
   process.exit(0);
 }
 const fixtures = z.array(Fixture).parse(JSON.parse(await readFile(new URL('../fixtures/session-notes.json', import.meta.url), 'utf8')));
 if (fixtures.length !== 30 || new Set(fixtures.map(item => item.id)).size !== 30) throw new Error('서로 다른 30개 테스트 사례가 필요합니다.');
 const cases = value('--case') ? fixtures.filter(item => item.id === value('--case')) : fixtures;
 if (!cases.length) throw new Error('해당 테스트 사례가 없습니다.');
-if (!live) { console.info(`자료 검증 완료: ${fixtures.length}개 사례. 실제 OpenAI 호출·품질 검증은 실행하지 않았습니다.`); process.exit(0); }
+if (!live) { console.info(`자료 검증 완료: ${fixtures.length}개 사례. 실제 AI 호출·품질 검증은 실행하지 않았습니다.`); process.exit(0); }
 const base = value('--base-url') || 'http://127.0.0.1:3001';
 const baseUrl = new URL(base);
 if (baseUrl.protocol !== 'https:' && !(baseUrl.protocol === 'http:' && ['localhost', '127.0.0.1'].includes(baseUrl.hostname))) throw new Error('원격 테스트는 HTTPS 주소를 사용하세요.');
 const origin = process.env.PUBLIC_ORIGIN || 'http://127.0.0.1:5173';
 let cookie = '';
 async function call(endpoint: string, init: RequestInit = {}) {
-  const response = await fetch(new URL(endpoint, baseUrl), { ...init, redirect: 'error', signal: AbortSignal.timeout(90_000),
+  const response = await fetch(new URL(endpoint, baseUrl), { ...init, redirect: 'error', signal: AbortSignal.timeout(600_000),
     headers: { Origin: origin, ...(cookie ? { Cookie: cookie } : {}), ...init.headers } });
   const body = await response.json();
   if (!response.ok) throw new Error(body.error || `HTTP ${response.status}`);
   return { body, response };
 }
 const { body: session } = await call('/api/session');
-if (!session.aiEnabled || !session.configured) throw new Error('서버 .env에 키와 AI_ENABLED=true를 설정하고 서버를 다시 시작하세요.');
+if (!session.aiEnabled || !session.configured) throw new Error('서버의 AI 공급사 설정과 AI_ENABLED=true를 확인하고 서버를 다시 시작하세요.');
 if (session.requirePassword) {
   if (!process.env.APP_ACCESS_PASSWORD) throw new Error('평가 환경에 APP_ACCESS_PASSWORD가 필요합니다.');
   const login = await call('/api/session', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ password: process.env.APP_ACCESS_PASSWORD }) });

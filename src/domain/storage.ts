@@ -12,7 +12,7 @@ function getStorage(storage?: Storage): Storage {
 function validNote(value: unknown): value is ApprovedNote {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) return false;
   const note = value as ApprovedNote;
-  if (!['demo', 'openai', 'manual'].includes(note.mode) || !note.draft || note.mode !== note.draft.mode || typeof note.id !== 'string' || !note.id.trim() ||
+  if (!['demo', 'openai', 'ollama', 'manual'].includes(note.mode) || !note.draft || note.mode !== note.draft.mode || typeof note.id !== 'string' || !note.id.trim() ||
     typeof note.approvedAt !== 'string' || !Number.isFinite(Date.parse(note.approvedAt))) return false;
   try { approveDraft(note.draft, note.metadata, true); return true; }
   catch { return false; }

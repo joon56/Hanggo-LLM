@@ -20,8 +20,8 @@ export function maskPii(text: string): string {
     .replace(/(?:[가-힣]+(?:특별시|광역시|도|시)\s+)?[가-힣]+(?:시|군|구)\s+[가-힣0-9]+(?:로|길|동)\s*\d+(?:[-\s]\d+)?(?:\s*\d+동\s*\d+호)?/g, match => '*'.repeat(match.length));
 }
 
-type Options = { model: string; extract: (text: string, repair: string, signal?: AbortSignal) => Promise<unknown> };
-export function createNoteService({ model, extract }: Options) {
+type Options = { model: string; mode?: 'openai' | 'ollama'; extract: (text: string, repair: string, signal?: AbortSignal) => Promise<unknown> };
+export function createNoteService({ model, mode = 'openai', extract }: Options) {
   return {
     async generate(text: string, sourceKind: SourceKind, signal?: AbortSignal) {
       signal?.throwIfAborted();
@@ -62,7 +62,7 @@ export function createNoteService({ model, extract }: Options) {
             text: quote, sourceQuote: quote, edited: false };
         });
         if (items.some(item => item === null)) { repair = '존재하지 않거나 중복된 인용이 있습니다. 입력의 정확한 부분 문자열만 한 번씩 인용하세요.'; continue; }
-        const candidate: Draft = { ...base, mode: 'openai', items: items.filter(item => item !== null), safetyFlags: [...flags], methodReview };
+        const candidate: Draft = { ...base, mode, items: items.filter(item => item !== null), safetyFlags: [...flags], methodReview };
         const errors = validateDraft(candidate);
         if (errors.length) { repair = [...new Set(errors)].join(' '); continue; }
         draft = candidate;

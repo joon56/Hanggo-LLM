@@ -1,7 +1,7 @@
 import { readFile, mkdir, writeFile, readdir } from 'node:fs/promises';
 import path from 'node:path';
 import { readConfig } from '../server/config.ts';
-import { createOpenAIServices } from '../server/openai.ts';
+import { createAIServices } from '../server/providers.ts';
 import { OwnerInputSchema } from '../server/owner-service.ts';
 import { BriefInputSchema } from '../server/brief-service.ts';
 import { ShelterInputSchema } from '../server/shelter-service.ts';
@@ -20,7 +20,7 @@ for (let i = 0; i < args.length; i++) {
 }
 if (args.includes('--help')) {
   console.info('npm run llm:eval:workspace -- [--feature owner|brief|shelter|all] [--case ID] [--live] [--audio-dir PATH]');
-  console.info('기본: 입력 자료와 수동 계산 검증. --live: .env 키로 OpenAI 직접 호출·비용 발생. --audio-dir는 owner의 ID.wav/webm/mp4/mp3를 받아쓴 후 테스트합니다.');
+  console.info('기본: 입력 자료와 수동 계산 검증. --live: 선택한 공급사 직접 호출. OpenAI는 비용 발생, Ollama는 로컬 처리. --audio-dir는 owner의 ID.wav/webm/mp4/mp3를 받아쓴 후 테스트합니다.');
   process.exit(0);
 }
 const feature = options.get('--feature') || 'all';
@@ -28,8 +28,8 @@ if (!['owner', 'brief', 'shelter', 'all'].includes(feature)) throw new Error('�
 const audioDir = options.get('--audio-dir');
 if (audioDir && (!live || feature !== 'owner')) throw new Error('음성 테스트는 --feature owner --live가 필요합니다.');
 const config = readConfig();
-if (live && (!config.apiKey || !config.aiEnabled)) throw new Error('.env에 OPENAI_API_KEY와 AI_ENABLED=true를 설정하세요.');
-const services = live ? createOpenAIServices(config) : null;
+if (live && (!config.aiEnabled || (config.provider === 'openai' && !config.apiKey))) throw new Error('.env에 AI_ENABLED=true와 선택한 AI 공급사를 설정하세요.');
+const services = live ? createAIServices(config) : null;
 const files = audioDir ? await readdir(audioDir) : [];
 const reports: Record<string, unknown>[] = [];
 const specs = [
@@ -95,6 +95,6 @@ if (live) {
   const file = `test-output/workspace-${new Date().toISOString().replace(/[:.]/g, '-')}.json`;
   await writeFile(file, JSON.stringify({ live, audio: !!audioDir, reports }, null, 2));
   console.info(`상세 결과: ${file}. 원문 누락·의미·실제 사용성은 직접 검토하세요.`);
-} else console.info('OpenAI 호출은 실행하지 않았습니다. owner는 입력 스키마, brief/shelter는 수동 계산도 검증했습니다.');
+} else console.info('AI 모델 호출은 실행하지 않았습니다. owner는 입력 스키마, brief/shelter는 수동 계산도 검증했습니다.');
 console.info(`통과 ${reports.filter(r => r.passed).length}/${reports.length}`);
 if (reports.some(r => !r.passed)) process.exitCode = 1;

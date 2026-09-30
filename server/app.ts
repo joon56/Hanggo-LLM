@@ -21,6 +21,7 @@ import type { ShelterDraft } from '../src/domain/workspace-types.ts';
 import { validateDraft, type Draft } from '../src/domain/notes.ts';
 
 type Services = {
+  status?: () => Promise<{ configured: boolean; sttReady: boolean; statusMessage: string }>;
   generateOwner?: (input: OwnerInput, signal?: AbortSignal) => Promise<unknown>;
   generateBrief?: (input: BriefInput, signal?: AbortSignal) => Promise<unknown>;
   generateShelter?: (input: ShelterInput, signal?: AbortSignal) => Promise<unknown>;
@@ -61,11 +62,11 @@ export function createApp(config: Config, services: Services) {
   app.use('/api', express.json({ limit: '2mb' }));
   app.get('/api/health', (_req, res) => res.json({ ok: true }));
   const sessionInfo = (req: Request) => ({ authenticated: authenticated(req), requirePassword: !!config.password,
-    aiEnabled: config.aiEnabled, configured: !!config.apiKey, textModel: config.textModel, sttModel: config.sttModel, features: config.features });
-  app.get('/api/session', (req, res) => res.json(sessionInfo(req)));
+    aiEnabled: config.aiEnabled, provider: config.provider, configured: config.provider === 'ollama' || !!config.apiKey, textModel: config.textModel, sttModel: config.sttModel, features: config.features });
+  app.get('/api/session', async (req, res) => res.json({ ...sessionInfo(req), ...(config.aiEnabled && authenticated(req) && services.status ? await services.status() : {}) }));
   const loginLimit = rateLimit({ windowMs: 60_000, limit: 10, keyGenerator: () => 'login', standardHeaders: 'draft-8', legacyHeaders: false,
     message: { error: '잠시 후 다시 로그인해 주세요.', code: 'RATE_LIMIT' } });
-  app.post('/api/session', loginLimit, (req, res) => {
+  app.post('/api/session', loginLimit, async (req, res) => {
     const supplied = typeof req.body?.password === 'string' && req.body.password.length <= 256 ? req.body.password : '';
     const hash = (value: string) => createHash('sha256').update(value).digest();
     if (config.password && !timingSafeEqual(hash(supplied), hash(config.password))) {
@@ -75,7 +76,7 @@ export function createApp(config: Config, services: Services) {
     if (sessions.size >= 100) sessions.delete(sessions.keys().next().value!);
     const value = randomBytes(32).toString('hex');
     sessions.set(value, Date.now() + cookieOptions.maxAge);
-    res.cookie(cookieName, value, cookieOptions).json({ ...sessionInfo(req), authenticated: true });
+    res.cookie(cookieName, value, cookieOptions).json({ ...sessionInfo(req), authenticated: true, ...(config.aiEnabled && services.status ? await services.status() : {}) });
   });
   app.delete('/api/session', (req, res) => { sessions.delete(token(req)); res.clearCookie(cookieName, cookieOptions).json(sessionInfo(req)); });
   app.use('/api', (req, res, next) => {
@@ -103,10 +104,10 @@ export function createApp(config: Config, services: Services) {
     next();
   });
   app.use(['/api/notes', '/api/transcribe', ...Object.keys(featureRoutes)], aiLimit, (_req, res, next) => {
-    if (!config.aiEnabled || !config.apiKey) { res.status(503).json({ error: '서버에서 AI 기능과 API 키를 설정해 주세요. 로컬 규칙 모드는 계속 사용할 수 있습니다.', code: 'AI_DISABLED', requestId: res.locals.requestId }); return; }
+    if (!config.aiEnabled || (config.provider === 'openai' && !config.apiKey)) { res.status(503).json({ error: '서버에서 AI 기능과 공급사 설정을 확인해 주세요. 로컬 규칙 모드는 계속 사용할 수 있습니다.', code: 'AI_DISABLED', requestId: res.locals.requestId }); return; }
     const today = new Date().toISOString().slice(0, 10);
     if (today !== day) { day = today; calls = 0; }
-    if (calls >= config.dailyLimit || active >= 2) { res.status(429).json({ error: 'AI 사용 한도에 도달했습니다. 잠시 후 또는 다음 날 다시 시도해 주세요.', code: 'AI_LIMIT', requestId: res.locals.requestId }); return; }
+    if (calls >= config.dailyLimit || active >= (config.provider === 'ollama' ? 1 : 2)) { res.status(429).json({ error: 'AI 사용 한도에 도달했습니다. 잠시 후 또는 다음 날 다시 시도해 주세요.', code: 'AI_LIMIT', requestId: res.locals.requestId }); return; }
     calls++; active++;
     let released = false;
     const release = () => { if (!released) { released = true; active--; } };
@@ -120,13 +121,13 @@ export function createApp(config: Config, services: Services) {
   };
   app.post('/api/notes', async (req, res) => {
     const input = NoteInput.safeParse(req.body);
-    if (!input.success) { res.status(400).json({ error: '원문은 1~8,000자이며 외부 AI 처리 동의가 필요합니다.', code: 'INPUT', requestId: res.locals.requestId }); return; }
+    if (!input.success) { res.status(400).json({ error: '원문은 1~8,000자이며 AI 처리 동의가 필요합니다.', code: 'INPUT', requestId: res.locals.requestId }); return; }
     res.json(await services.generate(input.data.text, input.data.sourceKind, withSignal(res)));
   });
   function featureRoute<T>(route: string, schema: z.ZodType<T>, generate: ((input: T, signal?: AbortSignal) => Promise<unknown>) | undefined) {
     app.post(route, async (req, res) => {
       const parsed = z.object({ input: schema, consent: z.literal(true) }).strict().safeParse(req.body);
-      if (!parsed.success) { res.status(400).json({ error: '입력 내용과 외부 AI 처리 동의를 확인해 주세요.', code: 'INPUT', requestId: res.locals.requestId }); return; }
+      if (!parsed.success) { res.status(400).json({ error: '입력 내용과 AI 처리 동의를 확인해 주세요.', code: 'INPUT', requestId: res.locals.requestId }); return; }
       if (!generate) { res.status(503).json({ error: '기능을 준비 중입니다.', code: 'FEATURE_DISABLED', requestId: res.locals.requestId }); return; }
       res.json(await generate(parsed.data.input, withSignal(res)));
     });

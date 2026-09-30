@@ -5,6 +5,10 @@
   "type": "module",
   "scripts": {
     "dev": "node scripts/dev.mjs",
+    "dev:local": "node --env-file-if-exists=.env scripts/dev.mjs --local",
+    "local:configure": "node scripts/configure-local.mjs",
+    "local:check": "node --env-file-if-exists=.env scripts/check-local.ts",
+    "llm:eval:local": "node --env-file-if-exists=.env scripts/eval-local.ts",
     "dev:client": "vite --host 127.0.0.1",
     "start": "node --env-file-if-exists=.env server/index.ts",
     "typecheck": "tsc --noEmit && tsc -p tsconfig.server.json",

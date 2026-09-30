@@ -60,7 +60,7 @@ export function createManualShelterDraft(input: ShelterInput): ShelterDraft {
 export function validateShelterDraft(draft: ShelterDraft): string[] {
   const errors: string[] = [];
   try {
-    if (!draft || !ShelterInputSchema.safeParse({ animal: draft.animal, memos: draft.memos }).success || typeof draft.id !== 'string' || !draft.id.trim() || !['manual', 'openai', 'demo'].includes(draft.mode)) return ['프로필 기본 정보가 올바르지 않습니다.'];
+    if (!draft || !ShelterInputSchema.safeParse({ animal: draft.animal, memos: draft.memos }).success || typeof draft.id !== 'string' || !draft.id.trim() || !['manual', 'openai', 'ollama', 'demo'].includes(draft.mode)) return ['프로필 기본 정보가 올바르지 않습니다.'];
     if (!Array.isArray(draft.observations) || !draft.observations.length || draft.observations.length > 1000 || !safetyFlagsSchema.safeParse(draft.safetyFlags).success) return ['관찰 또는 안전 정보가 올바르지 않습니다.'];
     const ids = new Set<string>();
     for (const o of draft.observations) {

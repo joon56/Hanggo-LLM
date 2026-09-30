@@ -7,14 +7,14 @@ import SourceInput from './SourceInput';
 import IssueReport from './IssueReport';
 import { downloadJson, message } from './workspace-utils';
 
-type Props = { aiReady: boolean };
+type Props = { aiReady: boolean; localAI?: boolean; sttReady?: boolean };
 const eventLabels: Record<EventType, string> = { bark: '짖음', feeding: '식사', walk: '산책', excretion: '배변', rest: '휴식', activity: '활동', training: '훈련', other_behavior: '기타 행동', health_observation: '건강 관찰', other: '기타' };
 const triggerLabels: Record<EventTrigger, string> = { doorbell: '초인종', delivery: '배달', visitor: '방문자', stranger: '낯선 사람', other_dog: '다른 개', other_animal: '다른 동물', noise: '소음', left_alone: '혼자 남음', owner_return: '보호자 귀가', food: '음식', unknown: '모름', other: '기타' };
 const outcomeLabels: Record<EventOutcome, string> = { stopped: '멈춤', reduced: '줄어듦', continued: '지속', escalated: '심해짐', unknown: '모름' };
 const flagLabels: Record<string, string> = { bleeding: '출혈', vomiting: '구토', diarrhea: '설사', not_eating: '식욕 저하', limping: '절뚝거림', seizure: '발작', breathing: '호흡 이상', bite_injury: '물림·상처', sudden_aggression: '갑작스러운 공격성', pain_sign: '통증 신호', other_health: '건강 이상' };
 const localTime = (iso: string | null) => iso && !Number.isNaN(Date.parse(iso)) ? new Date(iso).toLocaleString('sv-SE').slice(0, 16).replace(' ', 'T') : '';
 
-export default function OwnerWorkspace({ aiReady }: Props) {
+export default function OwnerWorkspace({ aiReady, localAI = false, sttReady = true }: Props) {
   const [pets, setPets] = useState<Pet[]>(() => { try { return listPets(); } catch { return []; } });
   const [history, setHistory] = useState<SavedOwnerLog[]>(() => { try { return listOwnerLogs(); } catch { return []; } });
   const [petName, setPetName] = useState('');
@@ -105,14 +105,14 @@ export default function OwnerWorkspace({ aiReady }: Props) {
       <div className="ws-box"><h3>반려동물 등록</h3><div className="ws-row"><label className="ws-label">이름<input value={petName} onChange={event => setPetName(event.target.value)} maxLength={40} /></label><label className="ws-label">별명 · 쉼표로 구분<input value={nicknames} onChange={event => setNicknames(event.target.value)} maxLength={120} /></label><button className="button secondary" onClick={registerPet}>등록</button></div>
         <div className="ws-chips">{pets.map(pet => <span key={pet.id}>{pet.name}{pet.nicknames.length ? ` · ${pet.nicknames.join(', ')}` : ''}</span>)}{!pets.length && <span>등록된 반려동물 없음</span>}</div></div>
       <div className="ws-box"><h3>오늘의 관찰</h3>
-        <SourceInput key={sourceKey} aiReady={aiReady} petName={pets.map(pet => pet.name).join(', ')} text={sourceText} textAreaRef={sourceRef} onText={(text, voice) => { invalidate(); setSourceText(text); setSourceKind(voice || sourceKind === 'nl_log_voice' ? 'nl_log_voice' : 'nl_log_text'); }} onConsentChange={value => { setConsent(value); if (!value) cancel(); }} onReadyChange={setSourceReady} />
+        <SourceInput key={sourceKey} aiReady={aiReady} localAI={localAI} sttReady={sttReady} petName={pets.map(pet => pet.name).join(', ')} text={sourceText} textAreaRef={sourceRef} onText={(text, voice) => { invalidate(); setSourceText(text); setSourceKind(voice || sourceKind === 'nl_log_voice' ? 'nl_log_voice' : 'nl_log_text'); }} onConsentChange={value => { setConsent(value); if (!value) cancel(); }} onReadyChange={setSourceReady} />
         {quote && <p className="ws-quote">원문 근거: “{quote}”</p>}
         <button className="button primary full" onClick={generate} disabled={pending || !sourceText.trim() || !sourceReady || !pets.length}>{pending ? '초안 만드는 중' : aiReady ? 'AI 사건 초안 만들기' : '수동 검토 초안 만들기'}</button>{pending && <button className="button secondary full" onClick={cancel}>생성 취소</button>}</div>
       {notice && <p role="status" className="ws-notice">{notice}</p>}{error && <p role="alert" className="ws-error">{error}</p>}{(draft || error) && <IssueReport feature="owner" input={{ sourceText, sourceKind, pets }} output={draft} requestId={draft?.generation?.requestId} error={error} />}
     </section>
     <section className="review-panel ws-panel"><div className="panel-heading"><div><span className="eyebrow">REVIEW / SAVE</span><h2>사건 확인</h2></div><span className="status-tag">{saved ? '저장됨' : draft ? `${draft.events.length}건` : '대기 중'}</span></div>
       {!draft && <p className="ws-empty">관찰을 입력하면 여기에서 사건별 반려동물·시각·내용을 확인할 수 있습니다.</p>}
-      {draft && <><p className="ws-muted">{draft.mode === 'openai' ? 'AI 초안' : '수동 검토 초안'} · 원문 근거를 열어 사실을 확인하세요.</p>{draft.clarification && <p className="ws-alert">확인 필요: {draft.clarification}</p>}{draft.safetyFlags.length > 0 && <p className="ws-alert">안전 확인: {draft.safetyFlags.map(flag => flagLabels[flag] ?? flag).join(', ')}</p>}
+      {draft && <><p className="ws-muted">{draft.mode === 'ollama' ? '로컬 AI 초안' : draft.mode === 'openai' ? 'AI 초안' : '수동 검토 초안'} · 원문 근거를 열어 사실을 확인하세요.</p>{draft.clarification && <p className="ws-alert">확인 필요: {draft.clarification}</p>}{draft.safetyFlags.length > 0 && <p className="ws-alert">안전 확인: {draft.safetyFlags.map(flag => flagLabels[flag] ?? flag).join(', ')}</p>}
         {draft.events.map((event, index) => <article className="ws-item" key={event.id}><div className="ws-item-head"><strong>사건 {index + 1}</strong><button className="ws-link" onClick={() => showQuote(event.sourceQuote)}>원문 근거</button></div>
           <div className="ws-grid"><label className="ws-label">유형<select disabled={!!saved} value={event.type} onChange={e => updateEvent(event.id, { type: e.target.value as EventType })}>{Object.entries(eventLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
             <label className="ws-label">반려동물<select disabled={!!saved} value={event.petId ?? ''} onChange={e => updateEvent(event.id, { petId: e.target.value || null })}><option value="">확인 필요</option>{pets.map(pet => <option key={pet.id} value={pet.id}>{pet.name}</option>)}</select></label>

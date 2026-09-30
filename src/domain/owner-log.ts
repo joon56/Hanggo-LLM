@@ -23,7 +23,7 @@ const DraftSchema = z.object({
   id: z.string().min(1), sourceText: z.string().min(1).max(8000), sourceKind: OwnerInputSchema.shape.sourceKind,
   pets: OwnerInputSchema.shape.pets, now: OwnerInputSchema.shape.now, timeZone: OwnerInputSchema.shape.timeZone,
   events: z.array(OwnerEventFields.extend({ id: z.string().min(1), occurredAt: z.iso.datetime({ offset: true }).nullable(), edited: z.boolean() })).min(1).max(100),
-  safetyFlags: z.array(z.enum(ownerSafetyFlags)).max(30), clarification: z.string().max(1000).nullable(), mode: z.enum(['demo', 'manual', 'openai']),
+  safetyFlags: z.array(z.enum(ownerSafetyFlags)).max(30), clarification: z.string().max(1000).nullable(), mode: z.enum(['demo', 'manual', 'openai', 'ollama']),
   generation: z.object({ requestId: z.string(), model: z.string(), promptVersion: z.string(), latencyMs: z.number().min(0), fallbackUsed: z.boolean() }).strict().optional(),
 }).strict();
 
