@@ -44,9 +44,14 @@ export async function validateAudioDuration(buffer: Buffer, executable: string, 
   try { parsed = JSON.parse(output); } catch { throw new AudioValidationError(); }
   if (!Array.isArray(parsed.streams) || parsed.streams.length !== 1 || !Array.isArray(parsed.packets) || !parsed.packets.length) throw new AudioValidationError();
   let first = Infinity; let last = -Infinity; let total = 0;
-  for (const packet of parsed.packets) {
+  for (const [index, packet] of parsed.packets.entries()) {
     const start = Number(packet.pts_time ?? packet.dts_time);
-    const duration = Number(packet.duration_time);
+    const next = parsed.packets[index + 1];
+    // Older FFmpeg versions omit the first AAC packet duration in fragmented MP4.
+    // The next timestamp supplies that interval; an unknown final interval is rejected.
+    const duration = packet.duration_time === undefined
+      ? Number(next?.pts_time ?? next?.dts_time) - start
+      : Number(packet.duration_time);
     if (!Number.isFinite(start) || !Number.isFinite(duration) || duration <= 0) throw new AudioValidationError();
     first = Math.min(first, start); last = Math.max(last, start + duration); total += duration;
   }

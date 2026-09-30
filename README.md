@@ -41,7 +41,8 @@
 
 화면은 가상 상담 자료를 사용한 데모입니다. 실제 OpenAI 호출에는 서버의 API 키가 필요합니다.
 
-**[공개 체험판 열기 →](https://joon56.github.io/Hanggo-LLM/)**  
+**[공개 체험판 열기 →](https://joon56.github.io/Hanggo-LLM/)**
+
 설치 없이 텍스트 정리·녹음과 재생·원문 검토·승인·저장·JSON 내보내기를 체험합니다. GitHub Pages 체험판에는 AI 생성과 받아쓰기가 없습니다. 실제 AI를 사용하려면 아래 Node/Docker 서버를 배포합니다.
 
 ## 빠른 시작

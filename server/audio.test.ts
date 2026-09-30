@@ -19,8 +19,14 @@ it.each(['webm', 'mp4', 'mp3'])('measures pipe-only %s recordings, including Web
   expect(duration).toBeLessThan(4.5);
 });
 
-it('rejects long WebM based on its packets instead of client metadata', async () => {
-  await expect(validateAudioDuration(await recording('webm', 61), 'ffprobe')).rejects.toThrow();
+it.each(['webm', 'mp4'])('rejects long %s based on its packets instead of client metadata', async format => {
+  await expect(validateAudioDuration(await recording(format, 61), 'ffprobe')).rejects.toThrow();
+});
+
+it('accepts a full sixty-second MP4 including encoder padding', async () => {
+  const duration = await validateAudioDuration(await recording('mp4', 60), 'ffprobe');
+  expect(duration).toBeGreaterThanOrEqual(60);
+  expect(duration).toBeLessThanOrEqual(60.5);
 });
 
 it('does not write probe errors or media data to logs', async () => {
