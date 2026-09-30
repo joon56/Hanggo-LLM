@@ -73,7 +73,7 @@ test('보호자 음성 받아쓰기 확인 전 사건 생성 차단', async ({ p
   await page.getByLabel('이름', { exact: true }).fill('초코');
   await page.getByRole('button', { name: '등록', exact: true }).click();
   await page.getByRole('button', { name: '음성', exact: true }).click();
-  await page.getByRole('checkbox', { name: /음성을 AI 처리/ }).check();
+  await page.getByRole('checkbox', { name: /이 PC의 로컬 AI 서버/ }).check();
   await page.getByRole('button', { name: '새로 녹음' }).click();
   await expect(page.getByRole('button', { name: '녹음 중지 (3초)' })).toBeVisible({ timeout: 10000 });
   await page.getByRole('button', { name: /녹음 중지/ }).click();

@@ -8,7 +8,7 @@ it('accepts only exact evidence and attaches real generation provenance', async 
   const extract = vi.fn().mockResolvedValue(result);
   const response = await createNoteService({ extract, model: 'test' }).generate(source, 'trainer_summary_text');
   expect(response.draft.items[0].text).toBe(source);
-  expect(response.draft.mode).toBe('openai');
+  expect(response.draft.mode).toBe('ollama');
   expect(response.fallbackUsed).toBe(false);
   expect(response.draft.generation?.requestId).toBe(response.requestId);
 });

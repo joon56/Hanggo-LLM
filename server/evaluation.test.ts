@@ -8,7 +8,7 @@ it('does not count a fallback as a successful live AI evaluation', () => {
   expect(evaluateDraft(draft, expected, true)).toContain('AI 생성 실패 또는 수동 대체');
 });
 it('detects missed risk flags and category expectations', () => {
-  const draft = createDraft('관찰했습니다.', 'trainer_summary_text'); draft.mode = 'openai';
+  const draft = createDraft('관찰했습니다.', 'trainer_summary_text'); draft.mode = 'ollama';
   const failures = evaluateDraft(draft, { ...expected, safetyFlags: ['통증'], categories: ['task'] }, false);
   expect(failures.join(' ')).toContain('통증');
   expect(failures.join(' ')).toContain('task');

@@ -6,25 +6,25 @@ import { readConfig } from './config.ts';
 
 const origin = 'http://127.0.0.1:5173';
 const make = (extra = {}) => {
-  const config = readConfig({ AI_ENABLED: 'true', OPENAI_API_KEY: 'test-key', ...extra });
+  const config = readConfig({ AI_ENABLED: 'true', ...extra });
   const generate = vi.fn(async () => ({ draft: {}, fallbackUsed: false }));
   const transcribe = vi.fn(async () => '오늘 앉아를 관찰했습니다.');
-  return { app: createApp(config, { generate, transcribe }), generate, transcribe };
+  return { app: createApp(config, { generate, transcribe, status: async () => ({ configured: true, sttReady: true, statusMessage: 'Ready' }) }), generate, transcribe };
 };
 it('allows local text generation without any external API key', async () => {
-  const { app, generate } = make({ AI_PROVIDER: 'ollama', OPENAI_API_KEY: '' });
+  const { app, generate } = make();
   const session = await request(app).get('/api/session').expect(200);
   expect(session.body).toMatchObject({ provider: 'ollama', configured: true });
   await request(app).post('/api/notes').set('Origin', origin).send({ text: '관찰했습니다.', sourceKind: 'trainer_summary_text', consent: true }).expect(200);
   expect(generate).toHaveBeenCalledOnce();
 });
 it('reports actual local readiness instead of treating configuration as connectivity', async () => {
-  const config = readConfig({ AI_PROVIDER: 'ollama', AI_ENABLED: 'true' });
+  const config = readConfig({ AI_ENABLED: 'true' });
   const app = createApp(config, { generate: async () => ({}), transcribe: async () => '', status: async () => ({ configured: false, sttReady: false, statusMessage: 'Ollama를 실행해 주세요.' }) });
   const session = await request(app).get('/api/session').expect(200);
   expect(session.body).toMatchObject({ configured: false, sttReady: false, statusMessage: 'Ollama를 실행해 주세요.' });
 });
-it('requires explicit consent and valid bounded source before contacting OpenAI', async () => {
+it('requires explicit consent and valid bounded source before contacting the local model', async () => {
   const { app, generate } = make();
   await request(app).post('/api/notes').set('Origin', origin).send({ text: '관찰했습니다.', sourceKind: 'trainer_summary_text' }).expect(400);
   await request(app).post('/api/notes').set('Origin', origin).send({ text: '가'.repeat(8001), sourceKind: 'trainer_summary_text', consent: true }).expect(400);
@@ -35,10 +35,10 @@ it('rejects cross-origin and missing-origin browser mutations', async () => {
   await request(app).post('/api/notes').set('Origin', 'https://evil.example').send({}).expect(403);
   await request(app).post('/api/session').send({}).expect(403);
 });
-it('keeps keys out of status and rejects disabled AI', async () => {
+it('does not report credentials and rejects disabled AI', async () => {
   const { app } = make({ AI_ENABLED: 'false' });
   const status = await request(app).get('/api/session').expect(200);
-  expect(JSON.stringify(status.body)).not.toContain('test-key');
+  expect(status.body).not.toHaveProperty('apiKey');
   expect(status.body.aiEnabled).toBe(false);
   await request(app).post('/api/notes').set('Origin', origin).send({ text: '관찰', sourceKind: 'trainer_summary_text', consent: true }).expect(503);
 });
@@ -85,7 +85,7 @@ it.each([3, 60, 60.5])('accepts the %s second boundary including bounded encoder
 });
 
 it('accepts a real four-second WAV and wipes its buffer after transcription', async () => {
-  const config = readConfig({ AI_ENABLED: 'true', OPENAI_API_KEY: 'test-key' });
+  const config = readConfig({ AI_ENABLED: 'true', });
   let uploaded: Buffer | undefined;
   const transcribe = vi.fn(async (buffer: Buffer) => { uploaded = buffer; return '관찰했습니다.'; });
   const app = createApp(config, { generate: async () => ({}), transcribe });
@@ -136,7 +136,7 @@ it('defaults new features off and guards their routes before generation', async 
 });
 
 it('requires consent and valid feature input, and shares the global AI quota', async () => {
-  const config = readConfig({ AI_ENABLED: 'true', OPENAI_API_KEY: 'test', FEATURE_OWNER_LOG_ENABLED: 'true', FEATURE_BRIEF_ENABLED: 'true', FEATURE_SHELTER_ENABLED: 'true', AI_DAILY_LIMIT: '5' });
+  const config = readConfig({ AI_ENABLED: 'true', FEATURE_OWNER_LOG_ENABLED: 'true', FEATURE_BRIEF_ENABLED: 'true', FEATURE_SHELTER_ENABLED: 'true', AI_DAILY_LIMIT: '5' });
   const generateOwner = vi.fn(async (_input: unknown) => ({ draft: {}, fallbackUsed: false }));
   const app = createApp(config, { generate: async () => ({}), transcribe: async () => '', generateOwner });
   const input = { text: '초코가 짖었어요.', pets: [{ id: 'choco', name: '초코', nicknames: [] }], now: '2026-09-30T10:00:00+09:00', timeZone: 'Asia/Seoul', sourceKind: 'nl_log_text' };

@@ -20,7 +20,7 @@ for (let i = 0; i < args.length; i++) {
 }
 if (args.includes('--help')) {
   console.info('npm run llm:eval:workspace -- [--feature owner|brief|shelter|all] [--case ID] [--live] [--audio-dir PATH]');
-  console.info('기본: 입력 자료와 수동 계산 검증. --live: 선택한 공급사 직접 호출. OpenAI는 비용 발생, Ollama는 로컬 처리. --audio-dir는 owner의 ID.wav/webm/mp4/mp3를 받아쓴 후 테스트합니다.');
+  console.info('기본: 입력 자료와 수동 계산 검증. --live: 로컬 Ollama·Whisper 직접 호출. --audio-dir는 owner의 ID.wav/webm/mp4/mp3를 받아쓴 후 테스트합니다.');
   process.exit(0);
 }
 const feature = options.get('--feature') || 'all';
@@ -28,7 +28,7 @@ if (!['owner', 'brief', 'shelter', 'all'].includes(feature)) throw new Error('�
 const audioDir = options.get('--audio-dir');
 if (audioDir && (!live || feature !== 'owner')) throw new Error('음성 테스트는 --feature owner --live가 필요합니다.');
 const config = readConfig();
-if (live && (!config.aiEnabled || (config.provider === 'openai' && !config.apiKey))) throw new Error('.env에 AI_ENABLED=true와 선택한 AI 공급사를 설정하세요.');
+if (live && !config.aiEnabled) throw new Error('.env에 AI_ENABLED=true를 설정하고 로컬 모델을 준비하세요.');
 const services = live ? createAIServices(config) : null;
 const files = audioDir ? await readdir(audioDir) : [];
 const reports: Record<string, unknown>[] = [];

@@ -8,6 +8,7 @@
     "dev:local": "node --env-file-if-exists=.env scripts/dev.mjs --local",
     "local:configure": "node scripts/configure-local.mjs",
     "local:check": "node --env-file-if-exists=.env scripts/check-local.ts",
+    "beta:check": "node --env-file-if-exists=.env scripts/beta-check.ts",
     "llm:eval:local": "node --env-file-if-exists=.env scripts/eval-local.ts",
     "dev:client": "vite --host 127.0.0.1",
     "start": "node --env-file-if-exists=.env server/index.ts",
@@ -21,14 +22,15 @@
     "llm:eval:workspace": "node --env-file-if-exists=.env scripts/eval-workspace.ts",
     "verify": "npm run test && npm run build && npm run test:e2e && npm run llm:eval && npm run llm:eval:workspace"
   },
-  "engines": { "node": ">=24.0.0 <25" },
+  "engines": {
+    "node": ">=24.0.0 <25"
+  },
   "dependencies": {
     "@phosphor-icons/react": "^2.1.10",
     "express": "^5.2.1",
     "express-rate-limit": "^8.7.0",
     "helmet": "^8.3.0",
     "multer": "^2.4.0",
-    "openai": "^7.25.0",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
     "zod": "^4.6.5"

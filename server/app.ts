@@ -62,7 +62,7 @@ export function createApp(config: Config, services: Services) {
   app.use('/api', express.json({ limit: '2mb' }));
   app.get('/api/health', (_req, res) => res.json({ ok: true }));
   const sessionInfo = (req: Request) => ({ authenticated: authenticated(req), requirePassword: !!config.password,
-    aiEnabled: config.aiEnabled, provider: config.provider, configured: config.provider === 'ollama' || !!config.apiKey, textModel: config.textModel, sttModel: config.sttModel, features: config.features });
+    aiEnabled: config.aiEnabled, provider: config.provider, configured: false, textModel: config.textModel, sttModel: config.sttModel, features: config.features });
   app.get('/api/session', async (req, res) => res.json({ ...sessionInfo(req), ...(config.aiEnabled && authenticated(req) && services.status ? await services.status() : {}) }));
   const loginLimit = rateLimit({ windowMs: 60_000, limit: 10, keyGenerator: () => 'login', standardHeaders: 'draft-8', legacyHeaders: false,
     message: { error: '잠시 후 다시 로그인해 주세요.', code: 'RATE_LIMIT' } });
@@ -104,10 +104,10 @@ export function createApp(config: Config, services: Services) {
     next();
   });
   app.use(['/api/notes', '/api/transcribe', ...Object.keys(featureRoutes)], aiLimit, (_req, res, next) => {
-    if (!config.aiEnabled || (config.provider === 'openai' && !config.apiKey)) { res.status(503).json({ error: '서버에서 AI 기능과 공급사 설정을 확인해 주세요. 로컬 규칙 모드는 계속 사용할 수 있습니다.', code: 'AI_DISABLED', requestId: res.locals.requestId }); return; }
+    if (!config.aiEnabled) { res.status(503).json({ error: '서버에서 로컬 AI 기능을 활성화해 주세요. 규칙 모드는 계속 사용할 수 있습니다.', code: 'AI_DISABLED', requestId: res.locals.requestId }); return; }
     const today = new Date().toISOString().slice(0, 10);
     if (today !== day) { day = today; calls = 0; }
-    if (calls >= config.dailyLimit || active >= (config.provider === 'ollama' ? 1 : 2)) { res.status(429).json({ error: 'AI 사용 한도에 도달했습니다. 잠시 후 또는 다음 날 다시 시도해 주세요.', code: 'AI_LIMIT', requestId: res.locals.requestId }); return; }
+    if (calls >= config.dailyLimit || active >= 1) { res.status(429).json({ error: 'AI 사용 한도에 도달했습니다. 잠시 후 또는 다음 날 다시 시도해 주세요.', code: 'AI_LIMIT', requestId: res.locals.requestId }); return; }
     calls++; active++;
     let released = false;
     const release = () => { if (!released) { released = true; active--; } };

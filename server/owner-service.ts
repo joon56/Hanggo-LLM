@@ -20,7 +20,7 @@ export function resolveOwnerTime(hint: string | null, input: OwnerInput): string
   return iso.success && Date.parse(hint) <= Date.parse(input.now) ? new Date(hint).toISOString() : null;
 }
 
-type Options = { model: string; mode?: 'openai' | 'ollama'; extract: (maskedInput: OwnerInput, repair: string, signal?: AbortSignal) => Promise<unknown> };
+type Options = { model: string; extract: (maskedInput: OwnerInput, repair: string, signal?: AbortSignal) => Promise<unknown> };
 function groundedEvent(event: z.infer<typeof OwnerEventFields>): boolean {
   const quote = event.sourceQuote;
   // An absent, planned or uncertain behavior cannot contribute an event count.
@@ -45,7 +45,7 @@ function groundedEvent(event: z.infer<typeof OwnerEventFields>): boolean {
   if (event.details.excretionKinds.includes('poop') && !/대변|응가|똥|poop/i.test(quote)) return false;
   return true;
 }
-export function createOwnerService({ model, mode = 'openai', extract }: Options) {
+export function createOwnerService({ model, extract }: Options) {
   return { async generate(input: OwnerInput, signal?: AbortSignal): Promise<ServiceResult<OwnerDraft>> {
     OwnerInputSchema.parse(input); signal?.throwIfAborted();
     const started = Date.now(), requestId = randomUUID(), base = createManualOwnerDraft(input);
@@ -91,7 +91,7 @@ export function createOwnerService({ model, mode = 'openai', extract }: Options)
       });
       const seen = new Set<string>();
       for (const event of events) { const key = `${event.petId}:${event.type}:${event.sourceQuote}`; if (seen.has(key)) invalid = true; seen.add(key); }
-      const candidate: OwnerDraft = { ...base, events, safetyFlags: [...flags], mode, clarification: events.some(event => !event.petId) ? '어느 반려동물의 기록인가요? 사건별로 선택하세요.' : events.some(event => event.type === 'other') ? '반려동물의 사건인지 확인하고 종류를 직접 선택하세요.' : null };
+      const candidate: OwnerDraft = { ...base, events, safetyFlags: [...flags], mode: 'ollama', clarification: events.some(event => !event.petId) ? '어느 반려동물의 기록인가요? 사건별로 선택하세요.' : events.some(event => event.type === 'other') ? '반려동물의 사건인지 확인하고 종류를 직접 선택하세요.' : null };
       // Unresolved pets are a valid review result, but never a valid saved record.
       const validationCopy = { ...candidate, events: events.map(event => ({ ...event, petId: event.petId ?? input.pets[0].id })) };
       if (invalid || validateOwnerDraft(validationCopy).length) { repair = '원문 인용, 반려동물 ID, 숫자와 각 필드의 근거를 확인하세요. 모르면 null로 남기세요.'; continue; }

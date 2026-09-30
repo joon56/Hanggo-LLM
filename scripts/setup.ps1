@@ -9,6 +9,4 @@ if ($LASTEXITCODE -ne 0) { throw 'ffprobe를 실행할 수 없습니다.' }
 npm.cmd ci --cache .tmp/npm-cache --no-audit --no-fund
 if ($LASTEXITCODE -ne 0) { throw '패키지 설치 실패' }
 if (-not (Test-Path -LiteralPath '.env')) { Copy-Item -LiteralPath '.env.example' -Destination '.env' }
-Write-Host '.env에 OPENAI_API_KEY를 넣고 AI_ENABLED=true로 설정하세요. 키를 채팅에 붙이지 마세요.'
-Write-Host '전체 기능: FEATURE_OWNER_LOG_ENABLED, FEATURE_BRIEF_ENABLED, FEATURE_SHELTER_ENABLED를 true로 설정하세요.'
-Write-Host '실행: npm.cmd run dev'
+& (Join-Path $PSScriptRoot 'setup-local.ps1')

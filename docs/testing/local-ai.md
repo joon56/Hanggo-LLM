@@ -1,6 +1,6 @@
 # 행고 로컬 AI 실행·테스트
 
-외부 API 결제 없이 이 PC에서 실행합니다. 인터넷은 최초 모델·실행 파일 다운로드에 필요합니다. 설치 후 텍스트와 음성을 처리할 때 외부 AI로 전송하지 않습니다. 전기·장비 비용은 별도입니다.
+이 PC에서 Ollama와 Whisper로 실행합니다. 인터넷은 최초 모델·실행 파일 다운로드에 필요합니다. 설치 후 텍스트와 음성은 로컬 서버에서 처리합니다.
 
 ## 모델 선택
 
@@ -16,11 +16,10 @@
 Node.js 24, Ollama 0.34.4 이상, FFmpeg/ffprobe가 필요합니다. 이전 Ollama에서는 긴 입력 누락 방지 옵션을 보장할 수 없어 연결을 제한합니다. PowerShell에서 프로젝트 폴더를 열고 실행합니다.
 
 ```powershell
-npm.cmd ci
-powershell -ExecutionPolicy Bypass -File scripts/setup-local.ps1
+powershell -ExecutionPolicy Bypass -File scripts/setup.ps1
 ```
 
-텍스트 모델과 음성 실행기를 프로젝트/로컬 모델 저장소에 내려받습니다. 모델 파일은 Git에 올리지 않습니다. 기존 모델은 삭제하지 않습니다. `.env`의 기존 키는 출력하거나 지우지 않고, 로컬 공급사를 선택합니다. 다운로드 중 끊기면 같은 명령으로 다시 시도하세요.
+`setup.ps1`은 npm 설치와 `setup-local.ps1` 호출을 진행합니다. 텍스트 모델과 음성 실행기를 로컬 모델 저장소에 내려받습니다. 모델 파일은 Git에 올리지 않습니다. 기존 모델은 삭제하지 않습니다. 다운로드 중 끊기면 같은 명령으로 다시 시도하세요.
 
 이미 설치한 PC:
 
@@ -30,13 +29,15 @@ npm.cmd run local:check
 npm.cmd run dev:local
 ```
 
-브라우저에서 **http://127.0.0.1:5173/** 접속. `dev:local`은 Ollama 공급사를 강제해 유료 API로 전환되지 않습니다. 서버는 이 PC의 루프백에만 열립니다. GitHub Pages 주소는 로컬 AI를 자동 사용하지 않습니다.
+브라우저에서 **http://127.0.0.1:5173/** 접속. `dev:local`은 이 PC의 루프백에 화면과 API를 엽니다. GitHub Pages 주소는 로컬 AI를 자동 사용하지 않습니다. 기존 브라우저 저장 기록은 같은 프로필·주소에서 계속 읽을 수 있습니다.
 
 ## 설정
 
 ```dotenv
-AI_PROVIDER=ollama
 AI_ENABLED=true
+FEATURE_OWNER_LOG_ENABLED=true
+FEATURE_BRIEF_ENABLED=true
+FEATURE_SHELTER_ENABLED=true
 OLLAMA_MODEL=qwen3.5:9b
 OLLAMA_BASE_URL=http://127.0.0.1:11434
 OLLAMA_CONTEXT_SIZE=8192
@@ -47,6 +48,8 @@ LOCAL_STT_TIMEOUT_MS=180000
 ```
 
 `.env` 변경 후 앱 서버를 다시 시작하세요. 문맥을 늘리면 GPU 메모리 사용량도 늘어납니다. 모델 실행 실패·시간 초과·원문 검증 실패 시 기존 원문과 수동 검토 화면을 보존합니다. 자동으로 외부 API를 호출하지 않습니다.
+
+회의 직전에는 `npm.cmd run beta:check`로 Ollama·Whisper·FFmpeg와 앱 API·화면 프록시 및 네 기능 활성화를 확인합니다. `npm.cmd run beta:check -- --warmup`은 가상 상담 한 건으로 로컬 모델을 준비합니다. 브라우저 기록은 저장하지 않지만 일일 요청 한도에서 1회를 사용합니다. 실제 마이크 권한과 받아쓰기 결과는 브라우저에서 별도로 확인합니다.
 
 ## 자동 평가
 
@@ -74,7 +77,7 @@ npm.cmd run llm:eval:workspace -- --live --feature owner --case bark-delivery
 npm.cmd run llm:eval -- --live --case N06 --audio-dir test-audio
 ```
 
-상담일지·음성 명령은 실행 중인 앱 서버가 필요합니다. `llm:eval:workspace`는 `.env`의 공급사를 직접 사용합니다. 음성은 3~60초, 10MB 이하의 WAV/WebM/MP4/MP3 파일을 사용합니다. `--live`의 공급사가 OpenAI라면 API 요금이 발생합니다. 로컬 비교 명령 `llm:eval:local`은 항상 Ollama만 사용합니다.
+상담일지·음성 명령은 실행 중인 앱 서버가 필요합니다. `llm:eval:workspace`의 `--live`도 로컬 모델을 사용합니다. 음성은 3~60초, 10MB 이하의 WAV/WebM/MP4/MP3 파일을 사용합니다. `llm:eval:local`은 Ollama 모델별 비교에 사용합니다.
 
 ## 직접 테스트 순서
 

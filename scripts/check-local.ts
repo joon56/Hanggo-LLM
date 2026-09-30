@@ -2,7 +2,7 @@ import { spawnSync } from 'node:child_process';
 import { readConfig } from '../server/config.ts';
 import { getLocalStatus } from '../server/local-status.ts';
 
-const config = readConfig({ ...process.env, AI_PROVIDER: 'ollama' });
+const config = readConfig();
 const status = await getLocalStatus(config);
 console.info(`텍스트 모델: ${config.textModel}\n${status.statusMessage}`);
 console.info(`음성 모델 파일: ${status.sttReady ? '준비됨' : '설치 필요'}`);

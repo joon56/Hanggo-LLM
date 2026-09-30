@@ -32,12 +32,6 @@ services:
         value: "false"
       - key: FEATURE_SHELTER_ENABLED
         value: "false"
-      - key: OPENAI_TEXT_MODEL
-        value: gpt-4.1-mini
-      - key: OPENAI_STT_MODEL
-        value: gpt-4o-mini-transcribe
-      - key: OPENAI_TIMEOUT_MS
-        value: "15000"
       - key: AI_DAILY_LIMIT
         value: "200"
       # All current rate limits are global; forwarded client IPs are unnecessary.

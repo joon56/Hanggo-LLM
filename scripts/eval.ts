@@ -17,7 +17,7 @@ for (let i = 0; i < args.length; i++) {
 }
 if (args.includes('--help')) {
   console.info('npm run llm:eval [-- --live] [--case N01] [--audio-dir test-audio] [--base-url http://127.0.0.1:3001]');
-  console.info('기본: 30개 테스트 자료 검증만 수행. --live: 설정한 AI 호출(OpenAI는 비용 발생, Ollama는 로컬 처리). 음성 파일 N01.wav/webm/mp4/mp3와 같은 이름을 사용하세요.');
+  console.info('기본: 30개 테스트 자료 검증만 수행. --live: 로컬 Ollama·Whisper 호출. 음성 파일 N01.wav/webm/mp4/mp3와 같은 이름을 사용하세요.');
   process.exit(0);
 }
 const fixtures = z.array(Fixture).parse(JSON.parse(await readFile(new URL('../fixtures/session-notes.json', import.meta.url), 'utf8')));
@@ -37,13 +37,14 @@ async function call(endpoint: string, init: RequestInit = {}) {
   if (!response.ok) throw new Error(body.error || `HTTP ${response.status}`);
   return { body, response };
 }
-const { body: session } = await call('/api/session');
-if (!session.aiEnabled || !session.configured) throw new Error('서버의 AI 공급사 설정과 AI_ENABLED=true를 확인하고 서버를 다시 시작하세요.');
+let { body: session } = await call('/api/session');
 if (session.requirePassword) {
   if (!process.env.APP_ACCESS_PASSWORD) throw new Error('평가 환경에 APP_ACCESS_PASSWORD가 필요합니다.');
   const login = await call('/api/session', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ password: process.env.APP_ACCESS_PASSWORD }) });
   cookie = login.response.headers.getSetCookie().map(item => item.split(';')[0]).join('; ');
+  session = login.body;
 }
+if (!session.aiEnabled || !session.configured) throw new Error('로컬 모델과 AI_ENABLED=true를 확인하고 서버를 다시 시작하세요.');
 const audioDir = value('--audio-dir');
 const audioFiles = audioDir ? await readdir(audioDir) : [];
 const reports: Record<string, unknown>[] = [];

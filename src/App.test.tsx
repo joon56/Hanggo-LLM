@@ -82,14 +82,14 @@ it('shows connection error before explicit local demo in development', async () 
 
 it('asks for consent before text reaches AI and renders model metadata', async () => {
   mocks.getSession.mockResolvedValue(aiSession);
-  const draft = { ...createDraft('보호자는 짖는다고 말했습니다.', 'trainer_summary_text'), mode: 'openai', generation: { requestId: 'req-1', model: 'text-test', promptVersion: 'v1', latencyMs: 43, fallbackUsed: false } };
+  const draft = { ...createDraft('보호자는 짖는다고 말했습니다.', 'trainer_summary_text'), mode: 'ollama', generation: { requestId: 'req-1', model: 'text-test', promptVersion: 'v1', latencyMs: 43, fallbackUsed: false } };
   mocks.generateNote.mockResolvedValue({ draft, fallbackUsed: false, requestId: 'req-1', latencyMs: 43, model: 'text-test', warnings: [] });
   render(<App />); await example();
   expect(screen.getByRole('button', { name: '일지 초안 만들기' })).toBeDisabled();
   expect(mocks.generateNote).not.toHaveBeenCalled();
-  fireEvent.click(screen.getByRole('checkbox', { name: /외부 AI/ }));
+  fireEvent.click(screen.getByRole('checkbox', { name: /이 PC의 로컬 AI 서버/ }));
   fireEvent.click(screen.getByRole('button', { name: '일지 초안 만들기' }));
-  await waitFor(() => expect(screen.getByText('AI 초안')).toBeInTheDocument());
+  await waitFor(() => expect(screen.getByText('로컬 AI 초안')).toBeInTheDocument());
   expect(screen.getByText(/req-1/)).toBeInTheDocument();
 });
 
@@ -137,7 +137,7 @@ it('ignores pending AI answer after source edit', async () => {
   mocks.getSession.mockResolvedValue(aiSession);
   const pending = deferred<unknown>(); mocks.generateNote.mockReturnValue(pending.promise);
   render(<App />); await example();
-  fireEvent.click(screen.getByRole('checkbox', { name: /외부 AI/ }));
+  fireEvent.click(screen.getByRole('checkbox', { name: /이 PC의 로컬 AI 서버/ }));
   fireEvent.click(screen.getByRole('button', { name: '일지 초안 만들기' }));
   fireEvent.change(screen.getByLabelText('상담 요약 원문'), { target: { value: '수정된 원문입니다.' } });
   pending.resolve({ draft: createDraft('이전 원문입니다.', 'trainer_summary_text'), fallbackUsed: false, requestId: 'old', latencyMs: 1, model: 'test', warnings: [] });
@@ -152,7 +152,7 @@ it('invalidates old draft immediately when replacing it with an AI request', asy
   fireEvent.click(screen.getByRole('button', { name: '일지 초안 만들기' }));
   expect(screen.getByRole('button', { name: '승인하고 저장' })).toBeInTheDocument();
   fireEvent.click(screen.getByRole('button', { name: 'AI 사용' }));
-  fireEvent.click(screen.getByRole('checkbox', { name: /외부 AI/ }));
+  fireEvent.click(screen.getByRole('checkbox', { name: /이 PC의 로컬 AI 서버/ }));
   fireEvent.click(screen.getByRole('button', { name: '일지 초안 만들기' }));
   expect(screen.queryByRole('button', { name: '승인하고 저장' })).not.toBeInTheDocument();
 });
@@ -160,7 +160,7 @@ it('invalidates old draft immediately when replacing it with an AI request', asy
 it('preserves source and makes all items follow-up after AI failure', async () => {
   mocks.getSession.mockResolvedValue(aiSession); mocks.generateNote.mockRejectedValue(new Error('provider unavailable'));
   render(<App />); await example();
-  fireEvent.click(screen.getByRole('checkbox', { name: /외부 AI/ }));
+  fireEvent.click(screen.getByRole('checkbox', { name: /이 PC의 로컬 AI 서버/ }));
   fireEvent.click(screen.getByRole('button', { name: '일지 초안 만들기' }));
   await waitFor(() => expect(screen.getByText('수동 검토 필요')).toBeInTheDocument());
   expect((screen.getByLabelText('상담 요약 원문') as HTMLTextAreaElement).value).toContain('보호자는 초코가');
@@ -188,7 +188,7 @@ it('keeps source and recording after transcription error', async () => {
   mocks.transcribe.mockRejectedValue(new Error('STT unavailable'));
   render(<App />); await ready();
   fireEvent.change(screen.getByLabelText('상담 요약 원문'), { target: { value: '기존 원문' } });
-  fireEvent.click(screen.getByRole('checkbox', { name: /외부 AI/ }));
+  fireEvent.click(screen.getByRole('checkbox', { name: /이 PC의 로컬 AI 서버/ }));
   fireEvent.click(screen.getByRole('button', { name: '음성 받아쓰기' }));
   await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('STT unavailable'));
   expect(screen.getByLabelText('상담 요약 원문')).toHaveValue('기존 원문');
@@ -200,7 +200,7 @@ it('requires fresh transcript confirmation after edits', async () => {
   Object.assign(mocks.recorder, { status: 'ready', audioUrl: 'blob:demo', audioBlob: new Blob(['audio'], { type: 'audio/webm' }), duration: 5 });
   mocks.transcribe.mockResolvedValue({ text: '초코가 앉았습니다.', requestId: 'stt-1', latencyMs: 10, model: 'stt-test' });
   render(<App />); await ready();
-  fireEvent.click(screen.getByRole('checkbox', { name: /외부 AI/ }));
+  fireEvent.click(screen.getByRole('checkbox', { name: /이 PC의 로컬 AI 서버/ }));
   fireEvent.click(screen.getByRole('button', { name: '음성 받아쓰기' }));
   await screen.findByRole('checkbox', { name: /받아쓰기 내용을/ });
   expect(screen.getByRole('button', { name: '일지 초안 만들기' })).toBeDisabled();
@@ -215,7 +215,7 @@ it('ignores stale transcription after source edit and preserves the edit', async
   Object.assign(mocks.recorder, { status: 'ready', audioUrl: 'blob:demo', audioBlob: new Blob(['audio'], { type: 'audio/webm' }), duration: 5 });
   const pending = deferred<unknown>(); mocks.transcribe.mockReturnValue(pending.promise);
   render(<App />); await ready();
-  fireEvent.click(screen.getByRole('checkbox', { name: /외부 AI/ }));
+  fireEvent.click(screen.getByRole('checkbox', { name: /이 PC의 로컬 AI 서버/ }));
   fireEvent.click(screen.getByRole('button', { name: '음성 받아쓰기' }));
   fireEvent.change(screen.getByLabelText('상담 요약 원문'), { target: { value: '훈련사가 수정한 원문' } });
   pending.resolve({ text: '이전 받아쓰기', requestId: 'old', latencyMs: 1, model: 'test' });
@@ -228,10 +228,10 @@ it('does not upload audio when consent is revoked during audio inspection', asyn
   Object.assign(mocks.recorder, { status: 'ready', audioUrl: 'blob:demo', audioBlob: new Blob(['audio'], { type: 'audio/webm' }), duration: 5 });
   const inspection = deferred<void>(); mocks.verifyAudibleAudio.mockReturnValue(inspection.promise);
   render(<App />); await ready();
-  fireEvent.click(screen.getByRole('checkbox', { name: /외부 AI/ }));
+  fireEvent.click(screen.getByRole('checkbox', { name: /이 PC의 로컬 AI 서버/ }));
   fireEvent.click(screen.getByRole('button', { name: '음성 받아쓰기' }));
   await waitFor(() => expect(mocks.verifyAudibleAudio).toHaveBeenCalled());
-  fireEvent.click(screen.getByRole('checkbox', { name: /외부 AI/ }));
+  fireEvent.click(screen.getByRole('checkbox', { name: /이 PC의 로컬 AI 서버/ }));
   await act(async () => inspection.resolve());
   await waitFor(() => expect(screen.getByRole('button', { name: '음성 받아쓰기' })).toBeDisabled());
   expect(mocks.transcribe).not.toHaveBeenCalled();
@@ -241,9 +241,9 @@ it('keeps transcript provenance when a new recording starts', async () => {
   mocks.getSession.mockResolvedValue(aiSession);
   Object.assign(mocks.recorder, { status: 'ready', audioUrl: 'blob:demo', audioBlob: new Blob(['audio'], { type: 'audio/webm' }), duration: 5 });
   mocks.transcribe.mockResolvedValue({ text: '초코가 앉았습니다.', requestId: 'stt-1', latencyMs: 10, model: 'stt-test' });
-  mocks.generateNote.mockResolvedValue({ draft: { ...createDraft('초코가 앉았습니다.', 'trainer_summary_voice'), mode: 'openai' }, fallbackUsed: false, requestId: 'n-1', latencyMs: 10, model: 'text-test', warnings: [] });
+  mocks.generateNote.mockResolvedValue({ draft: { ...createDraft('초코가 앉았습니다.', 'trainer_summary_voice'), mode: 'ollama' }, fallbackUsed: false, requestId: 'n-1', latencyMs: 10, model: 'text-test', warnings: [] });
   render(<App />); await ready();
-  fireEvent.click(screen.getByRole('checkbox', { name: /외부 AI/ }));
+  fireEvent.click(screen.getByRole('checkbox', { name: /이 PC의 로컬 AI 서버/ }));
   fireEvent.click(screen.getByRole('button', { name: '음성 받아쓰기' }));
   await screen.findByRole('checkbox', { name: /받아쓰기 내용을/ });
   fireEvent.click(screen.getByRole('checkbox', { name: /받아쓰기 내용을/ }));

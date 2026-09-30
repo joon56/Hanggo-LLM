@@ -36,13 +36,13 @@ test('opening a saved record clears prior AI consent before another request', as
   await user.type(screen.getByRole('textbox', { name: '이름' }), '초코');
   await user.click(screen.getByRole('button', { name: '등록' }));
   await user.type(screen.getByRole('textbox', { name: '원문 또는 받아쓰기' }), '초코가 산책했어요.');
-  await user.click(screen.getByRole('checkbox', { name: /AI 처리 서버/ }));
+  await user.click(screen.getByRole('checkbox', { name: /이 PC의 로컬 AI 서버/ }));
   await user.click(screen.getByRole('button', { name: 'AI 사건 초안 만들기' }));
   await screen.findByRole('button', { name: '검토 후 저장' });
   await user.click(screen.getByRole('checkbox', { name: /원문과 사건 내용을 확인했습니다/ }));
   await user.click(screen.getByRole('button', { name: '검토 후 저장' }));
   await user.click(screen.getByRole('button', { name: '열기' }));
-  expect(screen.getByRole('checkbox', { name: /AI 처리 서버/ })).not.toBeChecked();
+  expect(screen.getByRole('checkbox', { name: /이 PC의 로컬 AI 서버/ })).not.toBeChecked();
   await user.click(screen.getByRole('button', { name: 'AI 사건 초안 만들기' }));
   expect(generateOwnerLog).toHaveBeenCalledTimes(1);
   expect(screen.getByRole('alert')).toHaveTextContent('AI 처리 동의가 필요합니다.');
@@ -57,7 +57,7 @@ test('editing reopened voice transcript retains voice source provenance', async 
   render(<OwnerWorkspace aiReady />);
   await user.click(screen.getByRole('button', { name: '열기' }));
   await user.type(screen.getByRole('textbox', { name: '원문 또는 받아쓰기' }), ' 천천히 걸었어요.');
-  await user.click(screen.getByRole('checkbox', { name: /AI 처리 서버/ }));
+  await user.click(screen.getByRole('checkbox', { name: /이 PC의 로컬 AI 서버/ }));
   await user.click(screen.getByRole('button', { name: 'AI 사건 초안 만들기' }));
   expect(generateOwnerLog).toHaveBeenCalledWith(expect.objectContaining({ sourceKind: 'nl_log_voice' }), expect.any(AbortSignal));
 });

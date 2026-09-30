@@ -10,7 +10,7 @@ function stubLocalFetch(handler: typeof fetch) {
     ? Promise.resolve(new Response(JSON.stringify({ details: { format: 'gguf' }, capabilities: ['completion'] })))
     : handler(input, init));
 }
-const config = () => readConfig({ AI_PROVIDER: 'ollama', AI_ENABLED: 'true' });
+const config = () => readConfig({ AI_ENABLED: 'true' });
 const extraction = { items: [{ category: 'observation', sourceQuote: '앉아를 관찰했습니다.' }], safetyFlags: [], methodReview: false };
 function response(raw: unknown = extraction, extra = {}) {
   return new Response(JSON.stringify({ done: true, done_reason: 'stop', message: { role: 'assistant', content: JSON.stringify(raw) }, ...extra }));
@@ -69,7 +69,7 @@ it('does not start a request after cancellation', async () => {
 });
 it('times out stalled local requests and returns the source for review', async () => {
   stubLocalFetch( vi.fn((_url, init) => new Promise<Response>((_resolve, reject) => init.signal.addEventListener('abort', () => reject(init.signal.reason), { once: true }))));
-  const result = await createOllamaServices(readConfig({ AI_PROVIDER: 'ollama', OLLAMA_TIMEOUT_MS: '20' })).generate('관찰했습니다.', 'trainer_summary_text');
+  const result = await createOllamaServices(readConfig({ OLLAMA_TIMEOUT_MS: '20' })).generate('관찰했습니다.', 'trainer_summary_text');
   expect(result.fallbackUsed).toBe(true); expect(result.draft.sourceText).toBe('관찰했습니다.');
 });
 it('runs all workspace extractors through the same local adapter', async () => {

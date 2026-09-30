@@ -2,6 +2,7 @@ export type Category = 'owner_report' | 'observation' | 'guidance' | 'task' | 'f
 export type SourceKind = 'trainer_summary_text' | 'trainer_summary_voice';
 export type Metadata = { petName: string; trainerName: string; sessionDate: string };
 export type NoteItem = { id: string; category: Category; text: string; sourceQuote: string; edited: boolean };
+// 'openai' is read-only provenance for records saved before local-only operation.
 export type NoteMode = 'demo' | 'openai' | 'ollama' | 'manual';
 export type Generation = { requestId: string; model: string; promptVersion: string; latencyMs: number; fallbackUsed: boolean };
 export type Draft = { id: string; sourceKind: SourceKind; sourceText: string; items: NoteItem[]; safetyFlags: string[]; methodReview: boolean; createdAt: string; mode: NoteMode; generation?: Generation };

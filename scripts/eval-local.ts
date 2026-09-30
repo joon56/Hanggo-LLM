@@ -15,7 +15,7 @@ for (let i = 0; i < args.length; i++) {
   else if (args[i] === '--help') { console.info('npm run llm:eval:local -- [--model qwen3.5:9b] [--all]\n기본 16개 사례 / --all 82개. 실제 로컬 모델 호출, 외부 API 사용 없음.'); process.exit(0); }
   else throw new Error(`지원하지 않는 인자: ${args[i]}`);
 }
-const config = readConfig({ ...process.env, AI_PROVIDER: 'ollama', ...(model ? { OLLAMA_MODEL: model } : {}) });
+const config = readConfig({ ...process.env, ...(model ? { OLLAMA_MODEL: model } : {}) });
 const services = createOllamaServices(config);
 // Pick a fixed, visible subset; never choose cases based on a model's outputs.
 const smokeCases: Record<string, string[]> = {

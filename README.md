@@ -9,212 +9,88 @@
 [![CI](https://github.com/joon56/Hanggo-LLM/actions/workflows/ci.yml/badge.svg)](https://github.com/joon56/Hanggo-LLM/actions/workflows/ci.yml)
 ![Node.js 24](https://img.shields.io/badge/Node.js-24_LTS-405438?style=flat-square)
 ![React](https://img.shields.io/badge/React-19-405438?style=flat-square)
-![TypeScript](https://img.shields.io/badge/TypeScript-7-405438?style=flat-square)
 ![Local AI](https://img.shields.io/badge/Ollama_%2B_Whisper-Local_AI-405438?style=flat-square)
-![OpenAI](https://img.shields.io/badge/OpenAI-Text_%2B_Voice-405438?style=flat-square)
 
-[공개 체험판](https://joon56.github.io/Hanggo-LLM/) · [빠른 시작](#빠른-시작) · [테스트 가이드](docs/testing/manual-testing.md) · [배포 안내](docs/testing/deployment.md)
+[공개 체험판](https://joon56.github.io/Hanggo-LLM/) · [빠른 시작](#빠른-시작) · [15분 시연 대본](docs/testing/beta-test-script.md) · [테스트 가이드](docs/testing/manual-testing.md)
 
 </div>
 
 ![행고 상담노트 데스크톱 화면](docs/assets/desktop.png)
 
-## 상담 이후의 기록을 돕습니다
+## 무엇을 할 수 있나요?
 
-훈련사의 상담 후 요약을 음성 또는 텍스트로 받아 원문 근거가 있는 일지로 정리합니다. 로컬 Ollama·Whisper 또는 OpenAI를 선택할 수 있고, 받아쓰기와 일지 추출을 분리하며, 훈련사가 검토·승인한 기록만 이 브라우저에 저장합니다.
+행고는 이 PC에서 Ollama `qwen3.5:9b`로 기록 초안을 만들고 Whisper medium으로 한국어 음성을 받아씁니다. 초안은 원문 근거와 함께 사람이 검토합니다. 승인한 기록은 접속한 브라우저의 `localStorage`에 저장합니다.
 
-**A·B-1·B-2·C를 하나의 기록 공간에서 테스트할 수 있습니다.** 현재 저장은 개인 브라우저 기준입니다. Firebase·Android 원본 앱, 사용자별 권한·공유 저장소, 보호자 자동 전송, 상담 전체 녹취는 별도 연결이 필요합니다.
-
-| 기능 | 동작 |
+| 기능 | 흐름 |
 |---|---|
-| 음성 입력 | 3~60초 녹음, 다시 듣기, 받아쓰기, 원문 확인 |
-| 텍스트 입력 | 최대 8,000자 요약에서 근거 구절 추출 |
-| 다섯 가지 분류 | 보호자 보고 · 훈련사 관찰 · 안내 · 합의한 과제 · 추가 확인 |
-| 검토와 승인 | 항목별 원문 확인, 직접 수정, 위험 신호 확인 |
-| 기록 보관 | 승인 후 브라우저 저장, 재열람, JSON 내보내기, 삭제 |
-| A · 보호자 일상 기록 | 반려동물·별명 등록, 음성/텍스트를 사건별로 추출, 시각·유형·원문 검토 후 저장 |
-| B-1 · 상담 전 브리핑 | 최근 14일/직전 14일 사실표, 근거 링크, 기록 부족 표시, 이전 상담 과제 |
-| B-2 · 상담일지 | 음성 요약→받아쓰기 확인→일지 승인, 실제 카탈로그의 조건에 맞는 레슨 연결 |
-| C · 보호소 프로필 | 날짜·작성자 역할이 있는 메모→사회성·좋아하는 것·주의사항·입양 소개, 담당자 승인 |
+| 상담일지 | 3~60초 음성 또는 8,000자 이하 텍스트 → 원문·분류·숫자 확인 → 승인·저장 |
+| 보호자 일상 기록 | 반려동물 등록 → 음성 또는 텍스트 → 사건별 반려동물·시각·근거 확인 → 저장 |
+| 상담 전 브리핑 | 같은 브라우저에 저장된 보호자 기록 → 최근 14일 사실표·근거·자료 부족 표시 |
+| 보호소 프로필 | 날짜·작성자 역할이 있는 관찰 메모 → 긍정·주의 관찰 확인 → 담당자 확정 |
 
-레슨은 실제 카탈로그 파일을 연결해야 표시됩니다. 데이터가 없으면 추천하지 않습니다. 브리핑 수치는 코드로 계산하며 AI가 선택한 근거 ID를 검증합니다. 기록이 부족하면 변화 판단을 생략합니다.
+실제 레슨 카탈로그가 연결된 경우에만 레슨 후보가 표시됩니다. 빈 카탈로그에서 추천을 만들어 내지 않습니다. 브리핑도 기록이 부족하면 변화 판단을 생략합니다. 사용자별 계정·권한, 공유 저장소, 보호자 자동 전송, 상담 전체 녹취는 제공하지 않습니다.
 
 <details>
 <summary><strong>모바일 검토 화면 보기</strong></summary>
 <br>
 <img src="docs/assets/mobile.png" alt="모바일에서 원문과 안전 신호를 검토하는 화면" width="360">
-
 </details>
-
-화면은 가상 상담 자료를 사용한 데모입니다. 실제 OpenAI 호출에는 서버의 API 키가 필요합니다.
 
 **[공개 체험판 열기 →](https://joon56.github.io/Hanggo-LLM/)**
 
-설치 없이 텍스트 정리·녹음과 재생·원문 검토·승인·저장·JSON 내보내기를 체험합니다. GitHub Pages 체험판에는 AI 생성과 받아쓰기가 없습니다. 실제 AI는 아래 로컬 실행으로 사용하거나 별도 서버를 구성합니다. GitHub에 모델을 올리는 것만으로 AI 서버가 실행되지는 않습니다.
+GitHub Pages는 정적 체험판입니다. 텍스트 정리·녹음 재생·검토·브라우저 저장을 체험할 수 있지만 AI 생성과 받아쓰기는 없습니다. 회의에서 실제 AI를 시연할 때는 아래 **로컬 주소**를 사용하세요.
 
 ## 빠른 시작
 
-### API 결제 없이 로컬 AI 사용 (Windows)
-
-Ollama **0.34.4 이상**, Node.js 24, FFmpeg/ffprobe가 필요합니다. 권장 시작 환경은 RTX 4060 8GB·RAM 32GB입니다. 최초 모델 다운로드에 시간이 걸립니다.
+Windows에서 Node.js 24, Ollama 0.34.4 이상, FFmpeg와 ffprobe가 필요합니다. 첫 설치에는 인터넷 다운로드와 디스크 여유가 필요합니다. 권장 확인 환경은 RTX 4060 8GB와 RAM 32GB입니다.
 
 ```powershell
-npm.cmd ci
-powershell -ExecutionPolicy Bypass -File scripts/setup-local.ps1
+powershell -ExecutionPolicy Bypass -File scripts/setup.ps1
+npm.cmd run local:check
 npm.cmd run dev:local
 ```
 
-접속: **http://127.0.0.1:5173/**. 텍스트는 `qwen3.5:9b`, 음성은 Whisper medium Q5_0을 이 PC에서 실행합니다. 외부 API 키와 크레딧이 필요하지 않으며 클라우드로 자동 전환하지 않습니다. 승인한 기록은 이 브라우저에 저장합니다.
+`setup.ps1`은 npm 설치와 로컬 모델 설치를 진행합니다. 이미 설치했다면 `npm.cmd run local:configure`와 `npm.cmd run local:check`로 설정을 확인할 수 있습니다. `dev:local`은 화면 `http://127.0.0.1:5173/`와 API `127.0.0.1:3001`을 이 PC에 엽니다. 종료는 Ctrl+C입니다. 브라우저 저장 기록을 다시 찾으려면 같은 브라우저 프로필과 같은 `127.0.0.1` 주소를 사용하세요.
+
+회의 전 상태 점검:
 
 ```powershell
-npm.cmd run local:check
+npm.cmd run beta:check
+npm.cmd run beta:check -- --warmup
+```
+
+첫 명령은 준비 상태만 확인합니다. `--warmup`은 가상 상담 문장으로 로컬 HTTP 요청 1회를 보내 모델을 준비시키며 일일 요청 한도 1회를 사용합니다. 브라우저 기록은 저장하지 않습니다. [로컬 설치·설정](docs/testing/local-ai.md) · [음성 실행기](docs/testing/local-speech.md) · [15분 시연](docs/testing/beta-test-script.md)
+
+## 사용 흐름과 확인
+
+1. 가상 반려동물·훈련사 이름을 사용합니다. 회의 화면 공유에 입력 내용이 보일 수 있습니다.
+2. 텍스트를 입력하거나 3~60초 녹음하고 재생합니다. 음성은 받아쓰기 뒤 이름·숫자·행동을 직접 확인합니다.
+3. 화면의 로컬 AI 처리 확인란을 선택하고 초안을 만듭니다.
+4. 원문 근거와 분류를 확인합니다. 승인·검토 확인란을 선택한 뒤 브라우저에 저장합니다.
+5. 새로고침 뒤 저장 목록에서 다시 열고 JSON으로 내보낼 수 있습니다. 삭제는 확인 후 진행합니다.
+
+AI 요청 실패·검증 실패 때 원문을 유지하고 수동 검토 초안을 표시할 수 있습니다. 이 경우 AI 성공으로 기록하지 않습니다. 개인정보 패턴 일부는 텍스트 요청 전에 가리지만 모든 항목을 찾지는 못합니다. 음성은 받아쓰기 요청 때 이 PC의 로컬 서버에서 처리됩니다. 서버는 요청용 임시 파일을 처리 후 삭제합니다. 브라우저 저장 자료는 자동 백업·기기 간 동기화되지 않으며 JSON은 내보내기만 지원합니다.
+
+## 검증
+
+```powershell
+npm.cmd run verify
 npm.cmd run llm:eval:local
-```
-
-[로컬 설치·모델 비교·음성 테스트 가이드](docs/testing/local-ai.md) · [음성 실행기 설치](docs/testing/local-speech.md) · [로컬 검증 결과](docs/llm/local-verification.md)
-
-### OpenAI 연결로 실행
-
-
-Node.js **24 LTS**, npm, **FFmpeg(ffmpeg와 ffprobe)**가 필요합니다. Windows에서는 설치한 FFmpeg의 bin 폴더를 PATH에 추가합니다. ffprobe는 서버에서 실제 음성 길이를 검사합니다.
-
-```powershell
-powershell -ExecutionPolicy Bypass -File .\scripts\setup.ps1
-```
-
-생성된 `.env`를 편집합니다. 설치 스크립트는 기존 `.env`를 덮어쓰지 않습니다.
-
-```dotenv
-AI_PROVIDER=openai
-OPENAI_API_KEY=발급받은_API_키
-AI_ENABLED=true
-FEATURE_OWNER_LOG_ENABLED=true
-FEATURE_BRIEF_ENABLED=true
-FEATURE_SHELTER_ENABLED=true
-```
-
-키는 로컬 `.env` 또는 서버 비밀값 저장소에만 넣으세요. `VITE_` 접두사나 프론트엔드 코드에 넣지 않습니다. AI 기본값은 꺼짐이며 키가 없어도 로컬 규칙 분류를 사용할 수 있습니다.
-
-```powershell
-npm.cmd run dev
-```
-
-접속: **http://127.0.0.1:5173/**. 한 명령으로 API 서버(3001)와 화면(5173)을 실행합니다. 종료는 Ctrl+C. `scripts/start.ps1`도 제공합니다.
-
-## 사용 흐름
-
-1. 가상의 반려동물·훈련사 이름과 상담 날짜를 입력합니다.
-2. AI 사용 시 선택한 공급사의 음성·텍스트 처리 안내를 읽고 동의합니다.
-3. 텍스트는 직접 입력하거나 예시를 불러온 뒤 일지를 생성합니다.
-4. 음성은 **3~60초 녹음 → 다시 듣기 → 받아쓰기 → 원문 수정·확인 → 일지 생성** 순서입니다.
-5. 원문 근거·분류·숫자를 확인합니다. 직접 수정한 항목은 표시되며 위험 신호가 있으면 과제 승인을 제한합니다.
-6. 검토 체크 후 승인합니다. 새로고침 후 재열람, JSON 다운로드, 삭제까지 확인합니다.
-
-실패 시 원문을 보존하고 수동 검토로 이어집니다. 수동 대체는 AI 성공으로 표시하지 않습니다. 처리 중 입력 변경·새 기록·취소 시 오래된 응답은 적용하지 않습니다.
-
-- [직접 테스트 절차와 예문 30개](docs/testing/manual-testing.md)
-- [결과 기록 CSV](docs/testing/results-template.csv)
-- 원본 테스트 자료: `fixtures/session-notes.json`
-- [A·B-1·B-2·C 테스트 흐름과 설정](docs/testing/workspace-testing.md)
-
-## 자동 검증과 실제 평가
-
-```powershell
-npm.cmd test
-npm.cmd run build
-npm.cmd run test:e2e
-npm.cmd run llm:eval
-npm.cmd run llm:eval:workspace
-```
-
-`llm:eval` 기본 실행은 **자료 형식 검증만** 합니다. 실제 API 호출은 실행 중인 서버에 아래 명령으로 요청합니다. OpenAI 연결은 비용이 발생하고, Ollama 연결은 로컬에서 처리합니다.
-
-```powershell
+npm.cmd run llm:eval:local -- --all
 npm.cmd run llm:eval -- --live --case N01
-npm.cmd run llm:eval -- --live
-npm.cmd run llm:eval -- --live --case N01 --audio-dir test-audio
-```
-
-음성 파일은 `test-audio/N01.wav`처럼 사례 ID와 같은 이름으로 준비합니다. WebM, MP4, WAV, MP3 지원. 전체 음성 평가에는 N01~N30 파일이 각각 하나 필요합니다. 서버가 실제 길이를 검사하며 인코더 패딩 때문에 최대 60.5초까지 허용합니다. 받아쓰기 핵심어 검사는 보조 지표이므로 표기 차이·의미 누락은 직접 확인하세요.
-
-평가 결과는 `test-output/` JSON에 저장됩니다. 원문·받아쓰기·초안이 포함되므로 가상 자료를 사용하고 보관을 관리하세요. 실패 시 종료 코드 1. 비밀번호가 설정된 서버는 `.env`의 `APP_ACCESS_PASSWORD`로 로그인합니다. 원격 평가에는 `--base-url https://도메인`과 해당 서버의 `PUBLIC_ORIGIN`을 사용합니다.
-
-전체 검증: `npm.cmd run verify` 또는 `scripts/verify.ps1`. Playwright는 설치된 Chrome, 가상 오디오와 모의 API를 사용합니다. 실제 키·비용 없이 화면을 확인하며 실제 STT·LLM 품질을 입증하지는 않습니다.
-
-A·B-1·C 실제 평가도 제공합니다. 서버 실행 없이 `.env`를 읽어 서비스 로직과 설정한 AI 공급사를 직접 호출합니다. OpenAI의 `--live` 실행에 비용이 발생합니다.
-
-```powershell
 npm.cmd run llm:eval:workspace -- --feature owner --case bark-delivery --live
-npm.cmd run llm:eval:workspace -- --feature brief --live
-npm.cmd run llm:eval:workspace -- --feature shelter --live
-npm.cmd run llm:eval:workspace -- --feature owner --case bark-delivery --live --audio-dir test-audio
 ```
 
-보호자 음성 파일 예: `test-audio/bark-delivery.wav`. 기본 실행은 52개 자료의 스키마와 수동 계산을 검사합니다. 실제 모델 품질 검증과 구분됩니다.
+`verify`는 단위·빌드·모의 브라우저 테스트와 자료 형식 평가를 실행합니다. `llm:eval:local`과 `--live`는 로컬 모델 평가입니다. 전체 평가는 오래 걸릴 수 있습니다. 음성 평가는 `--audio-dir test-audio`와 사례 ID에 맞는 WAV/WebM/MP4/MP3 파일이 필요합니다. 결과 JSON에는 가상 원문을 사용하세요.
 
-## 처리와 저장
+이번 로컬 전환에서는 단위 테스트 259개, 모의 브라우저 테스트 10개, 빌드·타입 검사와 82개 테스트 자료 검사가 통과했습니다. 이전 실모델 측정에서 `qwen3.5:9b` 전체 사례는 74/82개 자동 조건을 통과했습니다. 같은 16개 사례 비교에서는 이전 모델 6/16개, 현재 모델 15/16개였습니다. 실모델 수치는 당시 환경의 측정값이며 모든 입력에 대한 품질 보장은 아닙니다. [이번 베타 검증 기록](docs/llm/beta-verification.md) · [이전 로컬 모델 검증](docs/llm/local-verification.md) · [과거 외부 AI 실험](docs/llm/openai-verification.md)
 
-- 로컬 기본 모델: 텍스트 `qwen3.5:9b`, 음성 Whisper medium Q5_0. OpenAI 기본 모델: `gpt-4.1-mini`, `gpt-4o-mini-transcribe`. 환경변수로 변경 가능합니다. OpenAI 텍스트 모델은 Responses API, Structured Outputs, temperature를 지원해야 합니다. 모델 변경 후 실제 평가를 다시 수행하세요.
-- AI는 원문의 정확한 구절을 추출·분류합니다. 새로운 사실·조언·레슨을 만들지 않습니다. 인용·분류·숫자·안전 신호를 서버와 승인 단계에서 검사합니다.
-- 형식·근거 검증 실패는 한 번 재생성합니다. 계속 실패하거나 공급사 요청이 실패하면 원문 기반 수동 검토 초안을 제공합니다.
-- 전화번호·이메일·일부 주소 패턴은 텍스트 전송 전 마스킹합니다. 모든 개인정보를 탐지하지는 못합니다. **음성은 원본이 STT 공급사로 전송됩니다.**
-- 로컬 받아쓰기는 임시 WAV·텍스트 파일을 만든 뒤 요청 종료·취소 시 삭제합니다. OpenAI 모드는 서버 메모리에서 전송합니다. 브라우저 녹음은 교체·삭제·새 기록·승인·페이지 종료 시 해제됩니다.
-- OpenAI Responses에는 `store:false`를 사용합니다. 공급사의 모든 보존을 없애는 설정은 아닙니다. [OpenAI 데이터 처리 안내](https://developers.openai.com/api/docs/guides/your-data)를 확인하세요. 로컬 모드는 이 API를 호출하지 않습니다.
-- 승인 기록은 `localStorage`의 `hanggo:approved-notes`에 최대 50개 보관합니다. 기존 데모 기록도 읽습니다. 서버 동기화·암호화·자동 백업은 없습니다. 도메인·포트가 바뀌면 별도 저장소입니다.
-- 보호자 일상 기록 최대 100건, 보호소 승인 프로필 최대 50건도 별도 로컬 저장소에 보관합니다. 브리핑·레슨 연결 결과는 JSON으로 내보낼 수 있습니다.
-- 로그인은 API 접근을 제한합니다. 브라우저 자료 자체를 암호화하거나 같은 기기의 사용자를 격리하지 않습니다. 개인 브라우저를 사용하고 JSON으로 백업하세요. JSON은 내보내기 전용입니다.
-- 로그에는 요청 ID·모델·처리 시간·수동 대체 여부만 남깁니다. 원문·음성·키를 기록하지 않습니다.
+## 실행 범위
 
-## 배포
+로컬 실행은 Ollama와 Whisper만 사용합니다. 설정에는 `AI_ENABLED`, 기능별 `FEATURE_*_ENABLED`, `OLLAMA_*`, `WHISPER_*`가 있습니다. 기본 텍스트 모델은 `qwen3.5:9b`, 음성 모델은 Whisper medium Q5_0입니다. 모델을 바꾸면 실제 평가를 다시 수행하세요. `LESSON_CATALOG_PATH`가 비어 있으면 레슨 후보가 없습니다.
 
-[![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/joon56/Hanggo-LLM)
-
-`render.yaml`로 **화면 + Node API + FFmpeg**를 함께 배포합니다. 버튼은 배포 생성 화면으로 이동하며, 이미 운영 중인 서비스 주소가 아닙니다. 저장소 업로드 후 Render 계정을 연결해야 합니다.
-
-- 기본 구성: Singapore, Free 인스턴스, HTTPS, 자동 생성 접근 비밀번호, AI 꺼짐.
-- 배포 후 Render의 Environment에 `OPENAI_API_KEY`를 추가하고 `AI_ENABLED=true`로 바꿉니다.
-- 새 기능은 각각 `FEATURE_OWNER_LOG_ENABLED`, `FEATURE_BRIEF_ENABLED`, `FEATURE_SHELTER_ENABLED`를 `true`로 설정합니다. 세 기능 모두 기본값은 꺼짐입니다.
-- 발급된 HTTPS 주소와 접근 비밀번호를 테스트할 사람에게 전달합니다. 기록은 각 브라우저에 따로 저장됩니다.
-- 무료 인스턴스는 유휴 시 중지되므로 첫 접속이 늦을 수 있습니다. 상시 운영에는 유료 인스턴스를 검토하세요. [Render 무료 인스턴스 안내](https://render.com/docs/free)
-
-자세한 설정·검증은 [Render 배포 절차](docs/testing/deployment.md#render로-공개-배포)를 참고하세요.
-
-### 로컬에서 배포 빌드 확인
-
-```powershell
-npm.cmd run build
-npm.cmd start
-```
-
-화면과 API를 같은 서버에서 제공합니다. 로컬 빌드 확인: **http://127.0.0.1:3001/**. 공개 배포에는 HTTPS 역방향 프록시와 운영자 비밀번호가 필요합니다. [Node와 Docker 배포 절차](docs/testing/deployment.md)를 참고하세요.
-
-기본 제한: 일일 요청 200건, 분당 30건, 동시 로컬 1건·OpenAI 2건. 단일 프로세스 메모리 기준이며 재시작 시 초기화됩니다. OpenAI 사용 시 공급사 프로젝트의 사용 한도도 설정하세요. 다중 사용자 인증·공유 저장·분산 요청 제한은 별도 확장 범위입니다.
-
-## 주요 파일
-
-| 경로 | 역할 |
-|---|---|
-| `server/app.ts` | 인증·출처·입력·요청 제한과 HTTP 라우트 |
-| `server/audio.ts` | 실제 음성 길이 검사 |
-| `server/ollama.ts`, `server/local-speech.ts` | 로컬 텍스트 추출·음성 받아쓰기 |
-| `server/openai.ts` | OpenAI 받아쓰기와 구조화 추출 |
-| `server/service.ts` | 마스킹·근거 검증·재생성·수동 대체 |
-| `src/domain/notes.ts` | 초안·안전·승인 규칙 |
-| `src/domain/storage.ts` | 승인 기록 저장·호환성 |
-| `src/api.ts` | 브라우저 API 호출과 무음 검사 |
-| `src/App.tsx` | 입력·검토·승인·비동기 상태 |
-| `scripts/eval.ts` | 실제 API 텍스트·음성 평가 |
-| `scripts/eval-workspace.ts` | A·B-1·C 자료·실모델·보호자 음성 평가 |
-| `server/owner-service.ts` | 보호자 사건 추출·원문·숫자·안전 검증 |
-| `server/brief-service.ts` | 코드 사실표와 AI 근거 ID 선택 |
-| `server/shelter-service.ts` | 관찰 추출·주의사항 보존·프로필 생성 |
-| `server/lessons.ts` | 실제 레슨 카탈로그 로딩·검증 |
-
-개발가이드와 과거 작업 기록은 그대로 보존합니다. 확인 결과와 미검증 항목은 [로컬 AI 검증](docs/llm/local-verification.md), [기존 OpenAI 통합 검증](docs/llm/openai-verification.md)에 정리합니다.
+공개 GitHub Pages는 AI 없는 정적 체험판으로 유지됩니다. 로컬 빌드 확인은 `npm.cmd run build` 뒤 `npm.cmd start`로 할 수 있습니다. 외부 호스팅은 현재 로컬 Ollama·Whisper 실행 경로가 아니므로 회의 AI 시연에 사용하지 않습니다. [실행·배포 범위](docs/testing/deployment.md) · [기능별 테스트](docs/testing/workspace-testing.md)
 
 ---
 
-<div align="center">
-<strong>말하고, 확인하고, 기록으로 남기세요.</strong><br>
-행고 · 우리아이 행동고민
-</div>
+<div align="center"><strong>말하고, 확인하고, 기록으로 남기세요.</strong><br>행고 · 우리아이 행동고민</div>

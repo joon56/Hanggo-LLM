@@ -1,5 +1,7 @@
 # OpenAI 기록 공간 구현 검증
 
+> 과거 구현 기록입니다. 현재 실행 경로는 Ollama·Whisper 전용이며 OpenAI SDK와 키 설정은 제거했습니다. 현재 결과는 [로컬 검증](local-verification.md), 실행·시연은 [베타 테스트 대본](../testing/beta-test-script.md)을 참고하세요.
+
 검증일: 2026-09-30. 환경: Windows, Node.js 24.16.0, npm 11.13.0, 설치된 Chrome 및 FFmpeg.
 
 ## A·B-1·B-2·C 확장 검증

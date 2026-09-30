@@ -7,13 +7,13 @@ import type { BriefDraft, BriefInput, Pet, SavedOwnerLog } from '../domain/works
 import { downloadJson, message } from './workspace-utils';
 import IssueReport from './IssueReport';
 
-type Props = { aiReady: boolean; localAI?: boolean };
+type Props = { aiReady: boolean };
 function latestTrainerNote(name: string) {
   try { return listNotes().filter(note => note.metadata.petName.trim() === name.trim()).sort((a, b) => b.metadata.sessionDate.localeCompare(a.metadata.sessionDate))[0]; }
   catch { return undefined; }
 }
 
-export default function BriefWorkspace({ aiReady, localAI = false }: Props) {
+export default function BriefWorkspace({ aiReady }: Props) {
   const [pets, setPets] = useState<Pet[]>([]);
   const [records, setRecords] = useState<SavedOwnerLog[]>([]);
   const [petId, setPetId] = useState('');
@@ -53,12 +53,12 @@ export default function BriefWorkspace({ aiReady, localAI = false }: Props) {
     <p className="ws-muted">이 브라우저에 저장된 보호자 기록을 바탕으로 최근 14일을 정리합니다. 계정 권한 분리 기능은 아직 없습니다.</p>
     <label className="ws-label">반려동물<select value={petId} onChange={e => { cancel(); setPetId(e.target.value); setDraft(null); setRefId(''); setError(''); }}><option value="">선택하세요</option>{pets.map(pet => <option key={pet.id} value={pet.id}>{pet.name}</option>)}</select></label>
     {selected && <div className="ws-box"><h3>사용 자료</h3><p>저장된 보호자 기록 {records.filter(record => record.draft.events.some(e => e.petId === petId)).length}건</p><p>직전 상담: {note ? `${note.metadata.sessionDate} · ${note.metadata.trainerName}` : '저장된 기록 없음'}</p></div>}
-    {aiReady && <label className="ws-check"><input type="checkbox" checked={consent} onChange={e => { setConsent(e.target.checked); if (!e.target.checked) cancel(); }} />{localAI ? '선택한 기록을 이 PC의 로컬 AI 서버에서 처리하는 데 동의합니다.' : '선택한 기록을 AI 처리 서버로 보내는 데 동의합니다.'}</label>}
+    {aiReady && <label className="ws-check"><input type="checkbox" checked={consent} onChange={e => { setConsent(e.target.checked); if (!e.target.checked) cancel(); }} />선택한 기록을 이 PC의 로컬 AI 서버에서 처리하는 데 동의합니다.</label>}
     <button className="button primary full" onClick={generate} disabled={!selected || pending}>{pending ? '브리핑 만드는 중' : aiReady ? 'AI 브리핑 만들기' : '기록으로 브리핑 만들기'}</button>{pending && <button className="button secondary full" onClick={cancel}>생성 취소</button>}
     {notice && <p role="status" className="ws-notice">{notice}</p>}{error && <p role="alert" className="ws-error">{error}</p>}{(draft || error) && <IssueReport feature="brief" input={input} output={draft} requestId={draft?.generation?.requestId} error={error} />}
     {current && <div className="ws-box"><h3>자료 범위</h3><p>{current.period.from} ~ {current.period.to} · 기록된 날 {current.period.daysWithRecords}일</p>{current.dataGaps.map((gap, index) => <p className="ws-muted" key={index}>{gap}</p>)}</div>}
     </section>
-    <section className="review-panel ws-panel"><div className="panel-heading"><div><span className="eyebrow">FACTS / SOURCES</span><h2>사실과 근거</h2></div><span className="status-tag">{current?.mode === 'ollama' ? '로컬 AI 초안' : current?.mode === 'openai' ? 'AI 초안' : '코드 집계'}</span></div>
+    <section className="review-panel ws-panel"><div className="panel-heading"><div><span className="eyebrow">FACTS / SOURCES</span><h2>사실과 근거</h2></div><span className="status-tag">{current?.mode === 'ollama' ? '로컬 AI 초안' : current?.mode === 'openai' ? '이전 AI 초안' : '코드 집계'}</span></div>
       {!current && <p className="ws-empty">반려동물을 선택하면 저장된 사건의 사실표가 나타납니다.</p>}
       {current && <><div className="ws-facts"><table><thead><tr><th>항목</th><th>최근</th><th>직전</th><th>근거</th></tr></thead><tbody>{current.facts.map(fact => <tr key={fact.id}><th>{fact.label}</th><td>{String(fact.value)}{fact.unit}</td><td>{fact.previousValue === null ? '자료 없음' : `${fact.previousValue}${fact.unit}`}</td><td>{renderRefs(fact.refs)}</td></tr>)}</tbody></table></div>
       {refId && <div className="ws-evidence" role="status"><strong>선택한 근거</strong>{fact ? <><p>{fact.label}: {String(fact.value)}{fact.unit}</p>{fact.refs.map(id => { const sourceEvent = records.flatMap(record => record.draft.events).find(item => item.id === id); const sourceNote = note?.draft.items.find(item => item.id === id); return <p key={id}>{sourceEvent?.sourceQuote ?? sourceNote?.text ?? '원문을 찾을 수 없습니다.'}</p>; })}</> : <p>{event ? event.sourceQuote : noteItem ? `${note?.metadata.sessionDate} · ${noteItem.text}` : '원문을 찾을 수 없습니다.'}</p>}</div>}

@@ -1,8 +1,6 @@
 import path from 'node:path';
 
 export function readConfig(env: NodeJS.ProcessEnv = process.env) {
-  const provider = env.AI_PROVIDER || 'openai';
-  if (provider !== 'openai' && provider !== 'ollama') throw new Error('AI_PROVIDER must be openai or ollama.');
   const ollamaUrl = new URL(env.OLLAMA_BASE_URL || 'http://127.0.0.1:11434');
   if (ollamaUrl.protocol !== 'http:' || !['127.0.0.1', '[::1]'].includes(ollamaUrl.hostname) || ollamaUrl.username || ollamaUrl.password || ollamaUrl.pathname !== '/' || ollamaUrl.search || ollamaUrl.hash)
     throw new Error('OLLAMA_BASE_URL must be a loopback HTTP origin (127.0.0.1 or [::1]).');
@@ -23,19 +21,19 @@ export function readConfig(env: NodeJS.ProcessEnv = process.env) {
     return n;
   };
   const ollamaTimeoutMs = number('OLLAMA_TIMEOUT_MS', 120000, 600000);
-  return { production, host, password, publicOrigin, provider,
+  return { production, host, password, publicOrigin, provider: 'ollama' as const,
     ollamaBaseUrl: ollamaUrl.origin, ollamaContextSize: number('OLLAMA_CONTEXT_SIZE', 8192, 32768),
     whisperExecutable: env.WHISPER_EXECUTABLE || '.local-ai/whisper/whisper-cli.exe',
     whisperModelPath: env.WHISPER_MODEL_PATH || '.local-ai/models/ggml-medium-q5_0.bin',
     ffmpegPath: env.FFMPEG_PATH || 'ffmpeg', sttTimeoutMs: number('LOCAL_STT_TIMEOUT_MS', 180000, 600000),
     port: number('PORT', 3001, 65535),
-    aiEnabled: env.AI_ENABLED === 'true', apiKey: env.OPENAI_API_KEY || '',
+    aiEnabled: env.AI_ENABLED === 'true',
     features: { ownerLog: env.FEATURE_OWNER_LOG_ENABLED === 'true', brief: env.FEATURE_BRIEF_ENABLED === 'true', shelter: env.FEATURE_SHELTER_ENABLED === 'true' },
-    textModel: provider === 'ollama' ? env.OLLAMA_MODEL || 'qwen3.5:9b' : env.OPENAI_TEXT_MODEL || 'gpt-4.1-mini',
-    sttModel: provider === 'ollama' ? `${path.basename(env.WHISPER_MODEL_PATH || 'ggml-medium-q5_0.bin')} (CPU)` : env.OPENAI_STT_MODEL || 'gpt-4o-mini-transcribe',
+    textModel: env.OLLAMA_MODEL || 'qwen3.5:9b',
+    sttModel: `${path.basename(env.WHISPER_MODEL_PATH || 'ggml-medium-q5_0.bin')} (CPU)`,
     ffprobePath: env.FFPROBE_PATH || 'ffprobe',
     lessonCatalogPath: env.LESSON_CATALOG_PATH || '',
-    timeoutMs: provider === 'ollama' ? ollamaTimeoutMs : number('OPENAI_TIMEOUT_MS', 15000, 60000), dailyLimit: number('AI_DAILY_LIMIT', 200, 10000),
+    timeoutMs: ollamaTimeoutMs, dailyLimit: number('AI_DAILY_LIMIT', 200, 10000),
     trustProxy: env.TRUST_PROXY === '1' ? 1 : false as false | number,
   };
 }

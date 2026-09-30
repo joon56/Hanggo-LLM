@@ -14,9 +14,9 @@ test('revoking consent during audio inspection prevents transcription request', 
   render(<SourceInput aiReady petName="초코" text="기존 원문" onText={onText} />);
   const user = userEvent.setup();
   await user.click(screen.getByRole('button', { name: '음성' }));
-  await user.click(screen.getByRole('checkbox', { name: /AI 처리 서버/ }));
+  await user.click(screen.getByRole('checkbox', { name: /이 PC의 로컬 AI 서버/ }));
   await user.click(screen.getByRole('button', { name: '받아쓰기' }));
-  await user.click(screen.getByRole('checkbox', { name: /AI 처리 서버/ }));
+  await user.click(screen.getByRole('checkbox', { name: /이 PC의 로컬 AI 서버/ }));
   finishInspection();
   await Promise.resolve();
   expect(transcribe).not.toHaveBeenCalled();

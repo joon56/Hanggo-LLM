@@ -109,7 +109,7 @@ test('AI 초안 성공과 실패를 구분한다', async ({ page }) => {
     if (fail) return route.fulfill({ status: 502, json: { error: 'AI unavailable', code: 'PROVIDER_ERROR', requestId: 'err-1' } });
     const text: string = request.text;
     return route.fulfill({ json: { draft: {
-      id: 'draft-1', sourceKind: request.sourceKind, sourceText: text, createdAt: new Date().toISOString(), mode: 'openai',
+      id: 'draft-1', sourceKind: request.sourceKind, sourceText: text, createdAt: new Date().toISOString(), mode: 'ollama',
       safetyFlags: [], methodReview: false, generation: { requestId: 'req-1', model: 'test-model', promptVersion: 'v1', latencyMs: 25, fallbackUsed: false },
       items: [{ id: 'item-1', category: 'owner_report', text: text.split('\n')[0], sourceQuote: text.split('\n')[0], edited: false }],
     }, fallbackUsed: false, requestId: 'req-1', latencyMs: 25, model: 'test-model', warnings: [] } });
@@ -117,13 +117,13 @@ test('AI 초안 성공과 실패를 구분한다', async ({ page }) => {
   await page.goto('/');
   await page.getByRole('button', { name: '예시 불러오기' }).click();
   await expect(page.getByRole('button', { name: '일지 초안 만들기' })).toBeDisabled();
-  await page.getByRole('checkbox', { name: /외부 AI/ }).check();
+  await page.getByRole('checkbox', { name: /이 PC의 로컬 AI 서버/ }).check();
   await page.getByRole('button', { name: '일지 초안 만들기' }).click();
-  await expect(page.getByText('AI 초안', { exact: true })).toBeVisible();
+  await expect(page.getByText('로컬 AI 초안', { exact: true })).toBeVisible();
   await page.getByRole('button', { name: '새 상담 기록' }).click();
   fail = true;
   await page.getByRole('button', { name: '예시 불러오기' }).click();
-  await page.getByRole('checkbox', { name: /외부 AI/ }).check();
+  await page.getByRole('checkbox', { name: /이 PC의 로컬 AI 서버/ }).check();
   await page.getByRole('button', { name: '일지 초안 만들기' }).click();
   await expect(page.getByText('수동 검토 필요')).toBeVisible();
   await expect(page.getByLabel('상담 요약 원문')).toContainText('보호자는 초코가');
@@ -136,7 +136,7 @@ test('음성 받아쓰기를 확인한 뒤에만 AI 초안을 요청한다', asy
     AudioContext.prototype.decodeAudioData = async () => ({ numberOfChannels: 1, sampleRate: 10, getChannelData: () => new Float32Array(40).fill(0.2) }) as AudioBuffer;
   });
   await page.goto('/');
-  await page.getByRole('checkbox', { name: /외부 AI/ }).check();
+  await page.getByRole('checkbox', { name: /이 PC의 로컬 AI 서버/ }).check();
   await page.getByRole('button', { name: '녹음 시작' }).click();
   await expect(page.locator('.record-timer')).toContainText('00:03', { timeout: 10_000 });
   await page.getByRole('button', { name: '녹음 정지' }).click();

@@ -8,7 +8,7 @@ const appUrl = 'http://127.0.0.1:5173/';
 
 function launch(args) {
   return spawn(process.execPath, args, { stdio: 'inherit', windowsHide: true,
-    env: process.argv.includes('--local') ? { ...process.env, AI_PROVIDER: 'ollama', AI_ENABLED: 'true' } : process.env });
+    env: process.argv.includes('--local') ? { ...process.env, AI_ENABLED: 'true' } : process.env });
 }
 
 async function available() {
