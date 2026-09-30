@@ -13,7 +13,7 @@
 | 항목 | 결과 |
 |---|---|
 | `npm.cmd run verify` | 종료 코드 0 |
-| Vitest | 11개 파일, 73개 테스트 통과 |
+| Vitest | 11개 파일, 77개 테스트 통과 |
 | TypeScript | 화면·서버 검사 통과 |
 | Vite production build | 통과 |
 | Playwright | Chrome 6개 테스트 통과, 정상 종료 |
@@ -22,6 +22,10 @@
 | Node 정적 화면·API | 임시 3019 포트에서 `/`, `/api/health`, `/api/session` HTTP 200 확인, CSP 존재 |
 | `npm.cmd audit --omit=dev --audit-level=high` | 보고된 취약점 0건 |
 | 독립 코드 검토 | 발견된 중요 문제 수정 후 재검토에서 추가 중요 문제 없음 |
+| Linux GitHub Actions | 전체 검증 통과 ([실행 결과](https://github.com/joon56/Hanggo-LLM/actions/runs/36670543457)) |
+| Docker 이미지 | GitHub Linux에서 빌드·시작·HTTP 상태 검사·ffprobe·인증 설정 검사 통과 |
+| 공개 체험판 빌드 | 별도 빌드에서 승인·새로고침·재열람·모바일 레이아웃 확인, API 호출·브라우저 오류 0건 |
+| 공개 HTTPS 접속 | [GitHub Pages](https://joon56.github.io/Hanggo-LLM/) HTTP 200, 실제 Chrome에서 예시 입력→승인→저장→새로고침→재열람 통과. 모바일 넘침·API 호출·브라우저 오류 0건 |
 
 Playwright는 가상 오디오와 모의 API를 사용한다. 실제 OpenAI SDK를 통한 요청 형식·응답 처리도 모의 HTTP 응답으로 검증했다. 공급사에 실제 음성이나 텍스트를 전송하지 않았다.
 
@@ -37,6 +41,9 @@ Playwright는 가상 오디오와 모의 API를 사용한다. 실제 OpenAI SDK�
 - 오디오 분석 중 동의를 철회해도 업로드가 진행되던 문제.
 - Windows에서 Playwright 서버 종료가 지연되던 문제. 직접 생성한 Node 자식 프로세스를 종료하도록 변경했다.
 - 테스트 산출 HTML이 Vite 화면 새로고침을 유발하던 문제. 임시 산출물을 감시 대상에서 제외했다.
+- Linux FFmpeg의 fragmented MP4 첫 패킷에 길이가 없을 때 정상 녹음이 거절되던 문제. 다음 패킷 시각으로 누락된 구간을 측정한다. 60초 MP4 허용·61초 거부를 검증했다.
+- Docker 검사에서 서버가 시작되기 전에 연결해 실패하던 문제. 상태 응답이 준비될 때까지 제한된 재시도를 수행한다.
+- GitHub Pages용 명시적 공개 체험판을 추가했다. 이 빌드에서는 API 호출을 하지 않으며, 일반 production 빌드는 서버 연결이 끊기면 계속 잠긴다.
 
 마지막 전체 검증은 단독 실행했다. 앞선 병렬 Playwright 검증에서 동일 산출물 경로 충돌로 발생한 ENOENT는 마지막 실행에서 재현되지 않았다.
 
@@ -44,8 +51,7 @@ Playwright는 가상 오디오와 모의 API를 사용한다. 실제 OpenAI SDK�
 
 - **실제 OpenAI 호출:** `OPENAI_API_KEY`와 `.env`가 없어 실행하지 않았다. 모델 접근 권한, 실제 응답 품질·속도·비용은 키 설정 후 `npm.cmd run llm:eval -- --live`로 확인해야 한다.
 - **실제 마이크·사용성:** 사람이 직접 조용한 환경·소음·빠른 말투·실기기에서 테스트해야 한다. 자동 검증은 임상적 안전성이나 오류 부재를 보장하지 않는다.
-- **Docker 이미지 실행:** Docker CLI는 있지만 Docker 엔진이 실행되지 않아 빌드·컨테이너 실행을 검증하지 못했다.
-- **공개 HTTPS 배포:** 배포 주소·호스팅·인증서가 지정되지 않아 실제 게시하지 않았다. Node 정적 화면 제공과 설정·인증 동작을 로컬에서 확인했다.
+- **전체 AI 서버 공개 운영:** Render 설정을 추가했으나 호스팅 계정·OpenAI 키 연결이 필요하다. GitHub Pages 공개 체험판에는 서버와 실제 AI·받아쓰기가 없다.
 
 ## 운영 경계
 
