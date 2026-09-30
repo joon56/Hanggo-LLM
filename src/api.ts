@@ -1,6 +1,7 @@
 import type { Draft, SourceKind } from './domain/notes';
 
 export type Session = {
+  features?: import('./domain/workspace-types').FeatureFlags;
   authenticated: boolean;
   requirePassword: boolean;
   aiEnabled: boolean;
@@ -21,7 +22,7 @@ async function readResponse<T>(response: Response): Promise<T> {
   return body as T;
 }
 
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
+export async function request<T>(path: string, init?: RequestInit): Promise<T> {
   try {
     return await readResponse<T>(await fetch(path, { credentials: 'same-origin', ...init }));
   } catch (error) {

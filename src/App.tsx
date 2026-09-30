@@ -8,6 +8,13 @@ import NoteReview from './components/NoteReview';
 import ConnectionPanel from './components/ConnectionPanel';
 import { generateNote, getSession, login, logout, transcribe, verifyAudibleAudio } from './api';
 import type { Session } from './api';
+import OwnerWorkspace from './components/OwnerWorkspace';
+import BriefWorkspace from './components/BriefWorkspace';
+import ShelterWorkspace from './components/ShelterWorkspace';
+import LessonMatches from './components/LessonMatches';
+import IssueReport from './components/IssueReport';
+import './workspace.css';
+import './navigation.css';
 
 const example = '보호자는 초코가 현관 소리에 짖는다고 말했습니다.\n오늘 훈련 중 초코가 앉아 신호에 반응하는 모습을 관찰했습니다.\n신호를 짧고 일정하게 말하도록 안내했습니다.\n이번 주 과제는 상담에서 연습한 앉아를 같은 조건에서 반복하기로 했습니다.\n다음 상담에서 현관 소리에 반응한 상황을 확인하기로 했습니다.';
 
@@ -22,10 +29,11 @@ function initialHistory() {
 
 export default function App() {
   const publicDemo = import.meta.env.VITE_PUBLIC_DEMO === 'true';
+  const [workspace, setWorkspace] = useState<'notes' | 'ownerLog' | 'brief' | 'shelter'>('notes');
   const [history, setHistory] = useState<ApprovedNote[]>([]);
   const [error, setError] = useState('');
   const [session, setSession] = useState<Session | null>(publicDemo ? {
-    authenticated: true, requirePassword: false, aiEnabled: false, configured: false, textModel: '', sttModel: '',
+    authenticated: true, requirePassword: false, aiEnabled: false, configured: false, textModel: '', sttModel: '', features: { ownerLog: true, brief: true, shelter: true },
   } : null);
   const [sessionError, setSessionError] = useState('');
   const [sessionLoading, setSessionLoading] = useState(!publicDemo);
@@ -219,6 +227,14 @@ export default function App() {
     setNotice(''); await recorder.start();
   };
   const changeInputMode = (mode: 'text' | 'voice') => { setInputMode(mode); if (mode === 'text') { cancelPending(); recorder.reset(); } };
+  const workspaceLabels = { notes: '상담일지', ownerLog: '보호자 일상 기록', brief: '상담 전 브리핑', shelter: '보호소 프로필' };
+  const changeWorkspace = (next: typeof workspace) => {
+    if (next === workspace) return;
+    if (recording || recorder.audioBlob) {
+      if (!window.confirm('다른 기능으로 이동하면 현재 녹음이 삭제됩니다. 이동할까요?')) return;
+    }
+    cancelPending(); recorder.reset(); setWorkspace(next);
+  };
 
   const connection = publicDemo
     ? <section className="connection-panel" aria-label="공개 체험판"><strong>공개 체험판 · AI 연결 없음</strong><span>텍스트 정리·녹음 재생·검토·저장을 체험하세요. AI 생성·받아쓰기는 제공하지 않습니다. 가상 자료를 사용하세요.</span></section>
@@ -229,7 +245,8 @@ export default function App() {
     <aside className="sidebar" aria-label="상담 기록 탐색">
       <a className="brand" href="#main"><span className="brand-symbol"><PawPrintIcon weight="fill" size={25} /></span><span>행고<span className="brand-dot">.</span></span></a>
       <div className="workspace-label">TRAINER WORKSPACE</div>
-      <div className="active-nav"><NotebookIcon size={21} weight="duotone" /><span>상담노트</span><span className="nav-number">01</span></div>
+      <nav className="workspace-nav" aria-label="기능 선택">{(Object.keys(workspaceLabels) as (keyof typeof workspaceLabels)[]).filter(key => key === 'notes' || publicDemo || localDemo || session?.features?.[key]).map(key => <button key={key} className={workspace === key ? 'active-nav' : 'workspace-nav-button'} aria-current={workspace === key ? 'page' : undefined} onClick={() => changeWorkspace(key)}><NotebookIcon size={20} /><span>{workspaceLabels[key]}</span></button>)}</nav>
+      {workspace === 'notes' && <>
       <button className="new-note button secondary" onClick={newNote}><PlusIcon size={17} />새 상담 기록</button>
       <div className="history-heading"><span>저장한 기록</span><span>{history.length}</span></div>
       <nav className="history-list" aria-label="저장한 기록">
@@ -240,13 +257,18 @@ export default function App() {
           {deletePending === note.id && <div className="delete-confirm"><span>이 기록을 삭제할까요?</span><button onClick={() => removeSaved(note.id)}>삭제</button><button onClick={() => setDeletePending(null)}>취소</button></div>}
         </div>)}
       </nav>
+      </>}
       <div className="sidebar-bottom"><div className="local-status"><span />승인한 기록은 이 브라우저에 보관</div><p>상담의 기록이<br />다음 훈련의 시작이 되도록.</p><span className="sidebar-version">HANGGO / 0.2</span></div>
     </aside>
 
     <div className="workspace">
-      <header className="topbar"><div className="breadcrumbs">훈련사 공간<span>/</span><strong>상담노트</strong></div><div className="topbar-actions"><span className="demo-badge">{aiReady ? 'AI' : 'DEMO'}</span><button className="help-button" onClick={() => setShowHelp(value => !value)} aria-expanded={showHelp}><InfoIcon size={18} />사용 안내</button></div></header>
+      <header className="topbar"><div className="breadcrumbs">행고 기록 공간<span>/</span><strong>{workspaceLabels[workspace]}</strong></div><div className="topbar-actions"><span className="demo-badge">{aiReady ? 'AI' : 'DEMO'}</span>{workspace === 'notes' && <button className="help-button" onClick={() => setShowHelp(value => !value)} aria-expanded={showHelp}><InfoIcon size={18} />사용 안내</button>}</div></header>
       <main id="main">
         {connection}
+        {workspace === 'ownerLog' && <OwnerWorkspace aiReady={aiReady} />}
+        {workspace === 'brief' && <BriefWorkspace aiReady={aiReady} />}
+        {workspace === 'shelter' && <ShelterWorkspace aiReady={aiReady} serverAvailable={!publicDemo && !localDemo} />}
+        {workspace === 'notes' && <>
         <section className="page-intro"><div><span className="eyebrow">AFTER THE SESSION</span><h1>대화의 끝에서,<br className="mobile-break" /> 기록의 시작.</h1><p>짧게 남긴 상담 요약을, 다음 훈련으로 이어지는 일지로.</p></div><div className="intro-caption"><BookOpenTextIcon size={27} weight="light" /><span>말하고, 확인하고,<br /><strong>기록으로 남기세요.</strong></span></div></section>
         <div className="flow-strip" aria-label="진행 단계"><span className={!draft ? 'current' : 'complete'}><i>{draft ? <CheckIcon size={13} /> : '1'}</i>요약 남기기</span><ArrowRightIcon /><span className={draft && !saved ? 'current' : saved ? 'complete' : ''}><i>{saved ? <CheckIcon size={13} /> : '2'}</i>원문과 초안 확인</span><ArrowRightIcon /><span className={saved ? 'current' : ''}><i>3</i>승인하고 보관</span><span className="flow-note">{aiReady ? 'AI 초안 · 훈련사 최종 검토' : '로컬 규칙 분류'}</span></div>
         {showHelp && <section className="help-panel"><button className="icon-button help-close" aria-label="사용 안내 닫기" onClick={() => setShowHelp(false)}><XIcon /></button><h2>상담 기록 흐름</h2><p>텍스트를 입력하거나 3~60초 녹음 후 받아쓰기를 확인하세요. 외부 AI 처리는 동의한 뒤 실행됩니다. 원문 근거와 초안을 검토하고 승인하면 이 브라우저에 저장됩니다.</p><p>녹음은 새 기록을 열거나 페이지를 닫으면 사라집니다. 승인한 기록은 목록에서 삭제할 수 있습니다. 안전 표시는 전문가 검토를 대신하지 않습니다.</p></section>}
@@ -279,6 +301,9 @@ export default function App() {
           </section>
           <NoteReview draft={draft} saved={saved} reviewed={reviewed} canApprove={!pending && !recording && !!metadata.petName.trim() && !!metadata.trainerName.trim() && !!metadata.sessionDate} onReview={setReviewed} onChange={updateItem} onRemove={removeItem} onSource={showSource} onApprove={approve} onExport={exportNote} />
         </div>
+        {(draft || error) && <IssueReport feature="session-notes" input={{ sourceText, sourceKind }} output={draft} requestId={draft?.generation?.requestId} error={error} />}
+        {saved && <LessonMatches key={saved.id} note={saved} available={!publicDemo && !localDemo} />}
+        </>}
         <footer className="page-footer"><span>행고 · 우리아이 행동고민</span><span>관찰을 기록하고, 다음 만남으로 연결합니다.</span></footer>
       </main>
     </div>

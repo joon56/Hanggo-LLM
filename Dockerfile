@@ -16,7 +16,7 @@ COPY package.json package-lock.json ./
 RUN npm ci --omit=dev --no-audit --no-fund && npm cache clean --force
 COPY --from=build /app/dist ./dist
 COPY server ./server
-COPY src/domain/notes.ts ./src/domain/notes.ts
+COPY src/domain ./src/domain
 USER node
 EXPOSE 3001
 CMD ["node", "server/index.ts"]

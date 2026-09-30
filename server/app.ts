@@ -10,17 +10,30 @@ import { z } from 'zod';
 import type { Config } from './config.ts';
 import type { SourceKind } from '../src/domain/notes.ts';
 import { AudioValidationError, validateAudioDuration } from './audio.ts';
+import { OwnerInputSchema } from './owner-service.ts';
+import { BriefInputSchema } from './brief-service.ts';
+import { ShelterInputSchema } from './shelter-service.ts';
+import type { OwnerInput, BriefInput, ShelterInput } from '../src/domain/workspace-types.ts';
+import { loadLessonCatalog } from './lessons.ts';
+import { suggestLessons, suggestShelterLessons } from '../src/domain/lessons.ts';
+import { validateShelterDraft } from '../src/domain/shelter.ts';
+import type { ShelterDraft } from '../src/domain/workspace-types.ts';
+import { validateDraft, type Draft } from '../src/domain/notes.ts';
 
 type Services = {
+  generateOwner?: (input: OwnerInput, signal?: AbortSignal) => Promise<unknown>;
+  generateBrief?: (input: BriefInput, signal?: AbortSignal) => Promise<unknown>;
+  generateShelter?: (input: ShelterInput, signal?: AbortSignal) => Promise<unknown>;
   generate: (text: string, sourceKind: SourceKind, signal?: AbortSignal) => Promise<unknown>;
   transcribe: (buffer: Buffer, filename: string, petName: string, signal?: AbortSignal) => Promise<string>;
 };
 const NoteInput = z.object({ text: z.string().min(1).max(8000).refine(value => !!value.trim()),
   sourceKind: z.enum(['trainer_summary_text', 'trainer_summary_voice']), consent: z.literal(true) }).strict();
-const AudioInput = z.object({ duration: z.coerce.number().min(3).max(60), petName: z.string().max(40).default(''), consent: z.literal('true') }).strict();
+const AudioInput = z.object({ duration: z.coerce.number().min(3).max(60), petName: z.string().max(3200).default(''), consent: z.literal('true') }).strict();
 
 export function createApp(config: Config, services: Services) {
   const app = express();
+  const lessons = loadLessonCatalog(config.lessonCatalogPath);
   app.disable('x-powered-by');
   app.set('trust proxy', config.trustProxy);
   app.use(helmet({ contentSecurityPolicy: { directives: { 'media-src': ["'self'", 'blob:'], 'connect-src': ["'self'"], 'upgrade-insecure-requests': config.production ? [] : null } }, strictTransportSecurity: config.production ? undefined : false }));
@@ -45,10 +58,10 @@ export function createApp(config: Config, services: Services) {
     }
     next();
   });
-  app.use('/api', express.json({ limit: '64kb' }));
+  app.use('/api', express.json({ limit: '2mb' }));
   app.get('/api/health', (_req, res) => res.json({ ok: true }));
   const sessionInfo = (req: Request) => ({ authenticated: authenticated(req), requirePassword: !!config.password,
-    aiEnabled: config.aiEnabled, configured: !!config.apiKey, textModel: config.textModel, sttModel: config.sttModel });
+    aiEnabled: config.aiEnabled, configured: !!config.apiKey, textModel: config.textModel, sttModel: config.sttModel, features: config.features });
   app.get('/api/session', (req, res) => res.json(sessionInfo(req)));
   const loginLimit = rateLimit({ windowMs: 60_000, limit: 10, keyGenerator: () => 'login', standardHeaders: 'draft-8', legacyHeaders: false,
     message: { error: '잠시 후 다시 로그인해 주세요.', code: 'RATE_LIMIT' } });
@@ -69,10 +82,27 @@ export function createApp(config: Config, services: Services) {
     if (!authenticated(req)) { res.status(401).json({ error: '로그인이 필요합니다.', code: 'AUTH', requestId: res.locals.requestId }); return; }
     next();
   });
+  app.get('/api/lessons', (_req, res) => res.json({ lessons }));
+  app.post('/api/lessons/match', (req, res) => {
+    const parsed = z.object({ draft: z.custom<Draft>(value => { try { return validateDraft(value as Draft).length === 0; } catch { return false; } }), species: z.enum(['dog', 'cat']), ageMonths: z.number().int().min(0).max(600), completedLessonIds: z.array(z.string().min(1).max(100)).max(100), healthFlags: z.array(z.string().min(1).max(100)).max(100) }).strict().safeParse(req.body);
+    if (!parsed.success) { res.status(400).json({ error: '상담일지와 반려동물 정보를 확인해 주세요.', code: 'INPUT' }); return; }
+    res.json({ suggestions: suggestLessons(lessons, parsed.data) });
+  });
+  app.post('/api/lessons/shelter-match', (req, res) => {
+    if (!config.features.shelter) { res.status(503).json({ error: '보호소 기능을 활성화해 주세요.', code: 'FEATURE_DISABLED' }); return; }
+    const parsed = z.object({ draft: z.custom<ShelterDraft>(value => { try { return validateShelterDraft(value as ShelterDraft).length === 0; } catch { return false; } }), completedLessonIds: z.array(z.string().min(1).max(100)).max(100), healthFlags: z.array(z.string().min(1).max(100)).max(100) }).strict().safeParse(req.body);
+    if (!parsed.success) { res.status(400).json({ error: '프로필과 반려동물 정보를 확인해 주세요.', code: 'INPUT' }); return; }
+    res.json({ suggestions: suggestShelterLessons(lessons, parsed.data) });
+  });
   const aiLimit = rateLimit({ windowMs: 60_000, limit: 30, keyGenerator: () => 'ai', standardHeaders: 'draft-8', legacyHeaders: false,
     message: { error: '요청이 많습니다. 잠시 후 다시 시도해 주세요.', code: 'RATE_LIMIT' } });
   let day = ''; let calls = 0; let active = 0;
-  app.use(['/api/notes', '/api/transcribe'], aiLimit, (_req, res, next) => {
+  const featureRoutes = { '/api/owner-logs': 'ownerLog', '/api/briefs': 'brief', '/api/shelter-profiles': 'shelter' } as const;
+  for (const [route, feature] of Object.entries(featureRoutes)) app.use(route, (_req, res, next) => {
+    if (!config.features[feature]) { res.status(503).json({ error: '서버에서 이 기능을 활성화해 주세요.', code: 'FEATURE_DISABLED', requestId: res.locals.requestId }); return; }
+    next();
+  });
+  app.use(['/api/notes', '/api/transcribe', ...Object.keys(featureRoutes)], aiLimit, (_req, res, next) => {
     if (!config.aiEnabled || !config.apiKey) { res.status(503).json({ error: '서버에서 AI 기능과 API 키를 설정해 주세요. 로컬 규칙 모드는 계속 사용할 수 있습니다.', code: 'AI_DISABLED', requestId: res.locals.requestId }); return; }
     const today = new Date().toISOString().slice(0, 10);
     if (today !== day) { day = today; calls = 0; }
@@ -93,7 +123,18 @@ export function createApp(config: Config, services: Services) {
     if (!input.success) { res.status(400).json({ error: '원문은 1~8,000자이며 외부 AI 처리 동의가 필요합니다.', code: 'INPUT', requestId: res.locals.requestId }); return; }
     res.json(await services.generate(input.data.text, input.data.sourceKind, withSignal(res)));
   });
-  const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024, files: 1, fields: 3, fieldSize: 200, parts: 4 } });
+  function featureRoute<T>(route: string, schema: z.ZodType<T>, generate: ((input: T, signal?: AbortSignal) => Promise<unknown>) | undefined) {
+    app.post(route, async (req, res) => {
+      const parsed = z.object({ input: schema, consent: z.literal(true) }).strict().safeParse(req.body);
+      if (!parsed.success) { res.status(400).json({ error: '입력 내용과 외부 AI 처리 동의를 확인해 주세요.', code: 'INPUT', requestId: res.locals.requestId }); return; }
+      if (!generate) { res.status(503).json({ error: '기능을 준비 중입니다.', code: 'FEATURE_DISABLED', requestId: res.locals.requestId }); return; }
+      res.json(await generate(parsed.data.input, withSignal(res)));
+    });
+  }
+  featureRoute('/api/owner-logs', OwnerInputSchema, services.generateOwner);
+  featureRoute('/api/briefs', BriefInputSchema, services.generateBrief);
+  featureRoute('/api/shelter-profiles', ShelterInputSchema, services.generateShelter);
+  const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024, files: 1, fields: 3, fieldSize: 12800, parts: 4 } });
   app.post('/api/transcribe', upload.single('audio'), async (req, res) => {
     const input = AudioInput.safeParse(req.body);
     const file = req.file;

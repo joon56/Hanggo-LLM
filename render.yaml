@@ -26,6 +26,12 @@ services:
         generateValue: true
       - key: AI_ENABLED
         value: "false"
+      - key: FEATURE_OWNER_LOG_ENABLED
+        value: "false"
+      - key: FEATURE_BRIEF_ENABLED
+        value: "false"
+      - key: FEATURE_SHELTER_ENABLED
+        value: "false"
       - key: OPENAI_TEXT_MODEL
         value: gpt-4.1-mini
       - key: OPENAI_STT_MODEL

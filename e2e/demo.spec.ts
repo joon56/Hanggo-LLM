@@ -1,6 +1,7 @@
 import { expect, test } from '@playwright/test';
 
 test.beforeEach(async ({ page }) => {
+  await page.route('**/api/lessons', route => route.fulfill({ json: { lessons: [] } }));
   await page.route('**/api/session', async route => {
     await route.fulfill({ json: { authenticated: true, requirePassword: false, aiEnabled: false, configured: false, textModel: '', sttModel: '' } });
   });

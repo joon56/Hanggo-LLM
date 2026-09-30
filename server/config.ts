@@ -18,8 +18,10 @@ export function readConfig(env: NodeJS.ProcessEnv = process.env) {
   return { production, host, password, publicOrigin,
     port: number('PORT', 3001, 65535),
     aiEnabled: env.AI_ENABLED === 'true', apiKey: env.OPENAI_API_KEY || '',
+    features: { ownerLog: env.FEATURE_OWNER_LOG_ENABLED === 'true', brief: env.FEATURE_BRIEF_ENABLED === 'true', shelter: env.FEATURE_SHELTER_ENABLED === 'true' },
     textModel: env.OPENAI_TEXT_MODEL || 'gpt-4.1-mini', sttModel: env.OPENAI_STT_MODEL || 'gpt-4o-mini-transcribe',
     ffprobePath: env.FFPROBE_PATH || 'ffprobe',
+    lessonCatalogPath: env.LESSON_CATALOG_PATH || '',
     timeoutMs: number('OPENAI_TIMEOUT_MS', 15000, 60000), dailyLimit: number('AI_DAILY_LIMIT', 200, 10000),
     trustProxy: env.TRUST_PROXY === '1' ? 1 : false as false | number,
   };

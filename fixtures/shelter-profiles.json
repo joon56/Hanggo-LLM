@@ -1,0 +1,307 @@
+[
+  {
+    "id": "one-memo",
+    "description": "one-memo",
+    "input": {
+      "animal": {
+        "id": "a",
+        "name": "Choco",
+        "species": "dog",
+        "ageMonths": null
+      },
+      "memos": [
+        {
+          "id": "m0",
+          "date": "2026-09-20",
+          "role": "staff",
+          "text": "사람을 좋아함."
+        }
+      ]
+    },
+    "expect": {
+      "people": "observed_positive",
+      "cautions": 0
+    }
+  },
+  {
+    "id": "contradiction",
+    "description": "contradiction",
+    "input": {
+      "animal": {
+        "id": "a",
+        "name": "Choco",
+        "species": "dog",
+        "ageMonths": null
+      },
+      "memos": [
+        {
+          "id": "m0",
+          "date": "2026-09-20",
+          "role": "staff",
+          "text": "다른 개와 잘 놀았음."
+        },
+        {
+          "id": "m1",
+          "date": "2026-09-21",
+          "role": "volunteer",
+          "text": "다른 개를 보면 짖음."
+        }
+      ]
+    },
+    "expect": {
+      "dogs": "mixed",
+      "cautions": 1
+    }
+  },
+  {
+    "id": "only-caution",
+    "description": "only-caution",
+    "input": {
+      "animal": {
+        "id": "a",
+        "name": "Choco",
+        "species": "dog",
+        "ageMonths": null
+      },
+      "memos": [
+        {
+          "id": "m0",
+          "date": "2026-09-20",
+          "role": "staff",
+          "text": "발 만지면 피함."
+        }
+      ]
+    },
+    "expect": {
+      "people": "unknown",
+      "cautions": 1
+    }
+  },
+  {
+    "id": "health",
+    "description": "health",
+    "input": {
+      "animal": {
+        "id": "a",
+        "name": "Choco",
+        "species": "dog",
+        "ageMonths": null
+      },
+      "memos": [
+        {
+          "id": "m0",
+          "date": "2026-09-20",
+          "role": "staff",
+          "text": "구토를 했음."
+        }
+      ]
+    },
+    "expect": {
+      "people": "unknown",
+      "cautions": 1,
+      "safetyFlag": "구토"
+    }
+  },
+  {
+    "id": "breed-inference",
+    "description": "breed-inference",
+    "input": {
+      "animal": {
+        "id": "a",
+        "name": "Choco",
+        "species": "dog",
+        "ageMonths": null
+      },
+      "memos": [
+        {
+          "id": "m0",
+          "date": "2026-09-20",
+          "role": "staff",
+          "text": "진돗개라 그런지 충성심이 강할 듯."
+        }
+      ]
+    },
+    "expect": {
+      "people": "unknown",
+      "cautions": 0,
+      "introExclude": "충성심"
+    }
+  },
+  {
+    "id": "unknown",
+    "description": "unknown",
+    "input": {
+      "animal": {
+        "id": "a",
+        "name": "Choco",
+        "species": "dog",
+        "ageMonths": null
+      },
+      "memos": [
+        {
+          "id": "m0",
+          "date": "2026-09-20",
+          "role": "staff",
+          "text": "오늘 입소 기록."
+        }
+      ]
+    },
+    "expect": {
+      "people": "unknown",
+      "dogs": "unknown",
+      "cats": "unknown",
+      "cautions": 0
+    }
+  },
+  {
+    "id": "cat-observation",
+    "description": "cat-observation",
+    "input": {
+      "animal": {
+        "id": "a",
+        "name": "Choco",
+        "species": "dog",
+        "ageMonths": null
+      },
+      "memos": [
+        {
+          "id": "m0",
+          "date": "2026-09-20",
+          "role": "staff",
+          "text": "고양이와 잘 놀았음."
+        }
+      ]
+    },
+    "expect": {
+      "cats": "observed_positive",
+      "cautions": 0
+    }
+  },
+  {
+    "id": "all-cautions",
+    "description": "all-cautions",
+    "input": {
+      "animal": {
+        "id": "a",
+        "name": "Choco",
+        "species": "dog",
+        "ageMonths": null
+      },
+      "memos": [
+        {
+          "id": "m0",
+          "date": "2026-09-20",
+          "role": "staff",
+          "text": "다른 개를 보면 짖음. 발 만지면 피함. 소음이 무서움."
+        }
+      ]
+    },
+    "expect": {
+      "dogs": "observed_caution",
+      "cautions": 3
+    }
+  },
+  {
+    "id": "dates-provenance",
+    "description": "dates-provenance",
+    "input": {
+      "animal": {
+        "id": "a",
+        "name": "Choco",
+        "species": "dog",
+        "ageMonths": null
+      },
+      "memos": [
+        {
+          "id": "m0",
+          "date": "2026-09-20",
+          "role": "staff",
+          "text": "사람을 좋아함."
+        },
+        {
+          "id": "m1",
+          "date": "2026-09-21",
+          "role": "volunteer",
+          "text": "사람을 경계함."
+        }
+      ]
+    },
+    "expect": {
+      "people": "mixed",
+      "cautions": 1
+    }
+  },
+  {
+    "id": "numbers",
+    "description": "numbers",
+    "input": {
+      "animal": {
+        "id": "a",
+        "name": "Choco",
+        "species": "dog",
+        "ageMonths": null
+      },
+      "memos": [
+        {
+          "id": "m0",
+          "date": "2026-09-20",
+          "role": "staff",
+          "text": "산책 20분 했음."
+        }
+      ]
+    },
+    "expect": {
+      "people": "unknown",
+      "cautions": 0
+    }
+  },
+  {
+    "id": "sensitive-context",
+    "description": "sensitive-context",
+    "input": {
+      "animal": {
+        "id": "a",
+        "name": "Choco",
+        "species": "dog",
+        "ageMonths": null
+      },
+      "memos": [
+        {
+          "id": "m0",
+          "date": "2026-09-20",
+          "role": "staff",
+          "text": "연락처 010-1234-5678. 간식을 좋아함."
+        }
+      ]
+    },
+    "expect": {
+      "people": "unknown",
+      "cautions": 0
+    }
+  },
+  {
+    "id": "unsupported-guarantee",
+    "description": "unsupported-guarantee",
+    "input": {
+      "animal": {
+        "id": "a",
+        "name": "Choco",
+        "species": "dog",
+        "ageMonths": null
+      },
+      "memos": [
+        {
+          "id": "m0",
+          "date": "2026-09-20",
+          "role": "staff",
+          "text": "완벽한 천사라 반드시 적응함."
+        }
+      ]
+    },
+    "expect": {
+      "people": "unknown",
+      "cautions": 0,
+      "introExclude": "완벽"
+    }
+  }
+]

@@ -111,3 +111,28 @@ it('rejects unsafe production startup configuration', () => {
   expect(() => readConfig({ NODE_ENV: 'production', APP_ACCESS_PASSWORD: 'long-password-123456', PUBLIC_ORIGIN: 'http://example.com' })).toThrow();
   expect(readConfig({ NODE_ENV: 'production', APP_ACCESS_PASSWORD: 'long-password-123456', PUBLIC_ORIGIN: 'https://notes.example.com' }).production).toBe(true);
 });
+
+it('defaults new features off and guards their routes before generation', async () => {
+  const { app } = make();
+  const status = await request(app).get('/api/session').expect(200);
+  expect(status.body.features).toEqual({ ownerLog: false, brief: false, shelter: false });
+  for (const route of ['owner-logs', 'briefs', 'shelter-profiles', 'owner-logs/', 'OWNER-LOGS', 'BRIEFS/', 'SHELTER-PROFILES/']) {
+    const result = await request(app).post(`/api/${route}`).set('Origin', origin).send({ input: {}, consent: true }).expect(503);
+    expect(result.body.code).toBe('FEATURE_DISABLED');
+  }
+});
+
+it('requires consent and valid feature input, and shares the global AI quota', async () => {
+  const config = readConfig({ AI_ENABLED: 'true', OPENAI_API_KEY: 'test', FEATURE_OWNER_LOG_ENABLED: 'true', FEATURE_BRIEF_ENABLED: 'true', FEATURE_SHELTER_ENABLED: 'true', AI_DAILY_LIMIT: '5' });
+  const generateOwner = vi.fn(async (_input: unknown) => ({ draft: {}, fallbackUsed: false }));
+  const app = createApp(config, { generate: async () => ({}), transcribe: async () => '', generateOwner });
+  const input = { text: '초코가 짖었어요.', pets: [{ id: 'choco', name: '초코', nicknames: [] }], now: '2026-09-30T10:00:00+09:00', timeZone: 'Asia/Seoul', sourceKind: 'nl_log_text' };
+  await request(app).post('/api/owner-logs').set('Origin', origin).send({ input }).expect(400);
+  await request(app).post('/api/owner-logs').set('Origin', origin).send({ input: { ...input, timeZone: 'invalid-zone' }, consent: true }).expect(400);
+  await request(app).post('/api/briefs').set('Origin', origin).send({ input: {}, consent: true }).expect(400);
+  await request(app).post('/api/shelter-profiles').set('Origin', origin).send({ input: {}, consent: true }).expect(400);
+  await request(app).post('/api/owner-logs').set('Origin', origin).send({ input, consent: true }).expect(200);
+  await request(app).post('/api/notes').set('Origin', origin).send({ text: '관찰했습니다.', sourceKind: 'trainer_summary_text', consent: true }).expect(429);
+  expect(generateOwner).toHaveBeenCalledOnce();
+  expect(generateOwner.mock.calls[0][0]).toEqual(input);
+});

@@ -8,7 +8,7 @@ const mocks = vi.hoisted(() => ({
   getSession: vi.fn(), login: vi.fn(), logout: vi.fn(), generateNote: vi.fn(), transcribe: vi.fn(), verifyAudibleAudio: vi.fn(),
   recorder: { status: 'idle', duration: 0, audioUrl: null as string | null, audioBlob: null as Blob | null, error: '', start: vi.fn(), stop: vi.fn(), reset: vi.fn() },
 }));
-vi.mock('./api', () => ({ getSession: mocks.getSession, login: mocks.login, logout: mocks.logout, generateNote: mocks.generateNote, transcribe: mocks.transcribe, verifyAudibleAudio: mocks.verifyAudibleAudio }));
+vi.mock('./api', () => ({ request: vi.fn(async () => ({ lessons: [] })), getSession: mocks.getSession, login: mocks.login, logout: mocks.logout, generateNote: mocks.generateNote, transcribe: mocks.transcribe, verifyAudibleAudio: mocks.verifyAudibleAudio }));
 vi.mock('./hooks/useRecorder', () => ({ useRecorder: () => mocks.recorder }));
 
 const demoSession = { authenticated: true, requirePassword: false, aiEnabled: false, configured: false, textModel: '', sttModel: '' };

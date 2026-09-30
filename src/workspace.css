@@ -1,0 +1,51 @@
+.ws-layout { display: grid; grid-template-columns: minmax(300px, .9fr) minmax(0, 1.1fr); gap: 20px; align-items: start; }
+.ws-panel { min-width: 0; }
+.ws-panel h3 { color: #343d32; font-size: 14px; margin: 0 0 12px; }
+.ws-muted, .ws-empty { color: #697369; font-size: 12px; line-height: 1.7; margin: 0 0 16px; }
+.ws-empty { padding: 46px 16px; text-align: center; background: #f8f9f5; border: 1px dashed #dce1d6; border-radius: 8px; }
+.ws-box { background: #fafbf8; border: 1px solid #e4e8df; border-radius: 8px; padding: 17px; margin: 18px 0; }
+.ws-box p { font-size: 12px; line-height: 1.65; margin: 6px 0; }
+.ws-row, .ws-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; align-items: end; }
+.ws-row { grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr) auto; }
+.ws-label { display: grid; gap: 6px; color: #576453; font-size: 11px; font-weight: 700; margin: 10px 0; min-width: 0; }
+.ws-label input, .ws-label select, .ws-label textarea { box-sizing: border-box; width: 100%; min-height: 41px; border: 1px solid #d8dfd3; border-radius: 6px; color: #30392e; background: #fff; padding: 10px 11px; font: inherit; font-size: 13px; line-height: 1.5; }
+.ws-label textarea { resize: vertical; min-height: 72px; }
+.ws-label input:focus, .ws-label select:focus, .ws-label textarea:focus { outline: 2px solid #789365; outline-offset: 1px; }
+.ws-label :disabled { background: #f2f4ef; color: #5e675b; }
+.ws-chips { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 12px; }
+.ws-chips span { border-radius: 20px; background: #e9f0e4; color: #455b3e; padding: 6px 9px; font-size: 11px; }
+.ws-source { display: grid; gap: 12px; }
+.ws-switch { display: grid; grid-template-columns: 1fr 1fr; border-bottom: 1px solid #dfe5db; }
+.ws-switch button { padding: 10px; font-size: 12px; color: #6a7567; border-bottom: 2px solid transparent; }
+.ws-switch .selected { color: #354d30; border-color: #58744e; font-weight: 700; }
+.ws-voice { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding: 10px 0; }
+.ws-voice p { width: 100%; margin: 0; font-size: 11px; color: #687568; }
+.ws-voice audio { width: min(100%, 300px); }
+.ws-check { display: flex; align-items: flex-start; gap: 8px; color: #4a5547; line-height: 1.55; font-size: 12px; margin: 14px 0; }
+.ws-check input { margin-top: 3px; accent-color: #537647; }
+.ws-notice, .ws-error, .ws-alert, .ws-evidence { border-radius: 6px; padding: 11px 13px; font-size: 12px; line-height: 1.6; margin: 12px 0; }
+.ws-notice { background: #e9f2e6; color: #385732; }
+.ws-error, .ws-alert { background: #fff2eb; color: #85422b; }
+.ws-error ul { margin: 5px 0 0; padding-left: 20px; }
+.ws-evidence { background: #eff3ea; color: #405441; }
+.ws-item, .ws-memo { background: #fff; border: 1px solid #e1e6dc; border-radius: 7px; padding: 14px; margin: 12px 0; }
+.ws-item-head { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-bottom: 10px; color: #333f33; font-size: 12px; }
+.ws-item p { font-size: 12px; line-height: 1.6; }
+.ws-link, .ws-history-item button, .ws-refs button { color: #476743; font-size: 11px; text-decoration: underline; text-underline-offset: 2px; }
+.ws-quote { color: #727c6d; border-left: 2px solid #c8d4c1; padding-left: 10px; font-size: 11px; line-height: 1.6; overflow-wrap: anywhere; }
+.ws-history { border-top: 1px solid #e1e6dc; margin-top: 25px; padding-top: 18px; }
+.ws-history > p { color: #7a8376; font-size: 12px; }
+.ws-history-item { display: flex; justify-content: space-between; align-items: center; gap: 12px; border-bottom: 1px solid #edf0ea; padding: 10px 0; color: #4b5949; font-size: 11px; }
+.ws-history-item > div { display: flex; gap: 10px; }
+.ws-facts { overflow-x: auto; margin: 12px 0 20px; }
+.ws-facts table { width: 100%; border-collapse: collapse; font-size: 11px; }
+.ws-facts th, .ws-facts td { text-align: left; vertical-align: top; padding: 9px 7px; border-bottom: 1px solid #e2e8de; }
+.ws-facts thead { background: #f1f5ed; }
+.ws-facts tbody th { font-weight: 600; }
+.ws-refs { display: flex; gap: 5px; flex-wrap: wrap; }
+.ws-refs button { white-space: nowrap; }
+.ws-refs .selected { color: #9a4e2c; font-weight: 700; }
+.ws-brief-section { margin: 20px 0; }
+.ws-report { display: inline-block; margin: 8px 0 14px; }
+@media (max-width: 1000px) { .ws-layout { grid-template-columns: 1fr; } }
+@media (max-width: 600px) { .ws-row, .ws-grid { grid-template-columns: 1fr; } .ws-history-item { align-items: flex-start; flex-direction: column; } .ws-panel .panel-heading { flex-wrap: wrap; } }

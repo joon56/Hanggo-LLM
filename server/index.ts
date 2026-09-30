@@ -11,7 +11,13 @@ const app = createApp(config, {
     return result;
   },
   transcribe: services.transcribe,
+  async generateOwner(...args) { const result = await services.generateOwner(...args); logResult('owner_log', result); return result; },
+  async generateBrief(...args) { const result = await services.generateBrief(...args); logResult('brief', result); return result; },
+  async generateShelter(...args) { const result = await services.generateShelter(...args); logResult('shelter', result); return result; },
 });
+function logResult(feature: string, result: { requestId: string; model: string; latencyMs: number; fallbackUsed: boolean }) {
+  console.info(JSON.stringify({ feature, requestId: result.requestId, model: result.model, latencyMs: result.latencyMs, fallbackUsed: result.fallbackUsed }));
+}
 const server = app.listen(config.port, config.host, () => console.info(`Hanggo server: ${config.host}:${config.port}; AI ${config.aiEnabled ? 'enabled' : 'disabled'}`));
 server.requestTimeout = 90_000;
 server.headersTimeout = 15_000;

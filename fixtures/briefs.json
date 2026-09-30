@@ -1,0 +1,842 @@
+[
+  {
+    "id": "empty",
+    "description": "empty",
+    "input": {
+      "pet": {
+        "id": "p",
+        "name": "Choco",
+        "nicknames": []
+      },
+      "now": "2026-09-30T00:00:00Z",
+      "timeZone": "Asia/Seoul",
+      "records": []
+    },
+    "expect": {
+      "days": 0,
+      "insufficient": true
+    }
+  },
+  {
+    "id": "one-day",
+    "description": "one-day",
+    "input": {
+      "pet": {
+        "id": "p",
+        "name": "Choco",
+        "nicknames": []
+      },
+      "now": "2026-09-30T00:00:00Z",
+      "timeZone": "Asia/Seoul",
+      "records": [
+        {
+          "id": "s",
+          "savedAt": "2026-09-30T00:00:00Z",
+          "draft": {
+            "id": "d",
+            "sourceText": "walk 20 minutes",
+            "sourceKind": "nl_log_text",
+            "pets": [
+              {
+                "id": "p",
+                "name": "Choco",
+                "nicknames": []
+              }
+            ],
+            "now": "2026-09-30T00:00:00Z",
+            "timeZone": "Asia/Seoul",
+            "events": [
+              {
+                "id": "e",
+                "petId": "p",
+                "type": "walk",
+                "occurredAt": "2026-09-29T01:00:00Z",
+                "timeHint": null,
+                "durationMin": 20,
+                "trigger": null,
+                "intervention": null,
+                "outcome": null,
+                "details": {
+                  "amountText": null,
+                  "isTreat": null,
+                  "excretionKinds": [],
+                  "placeText": null
+                },
+                "sourceQuote": "walk 20 minutes",
+                "edited": false
+              }
+            ],
+            "safetyFlags": [],
+            "clarification": null,
+            "mode": "manual"
+          }
+        }
+      ]
+    },
+    "expect": {
+      "days": 1,
+      "walk": 1,
+      "insufficient": true
+    }
+  },
+  {
+    "id": "three-days",
+    "description": "three-days",
+    "input": {
+      "pet": {
+        "id": "p",
+        "name": "Choco",
+        "nicknames": []
+      },
+      "now": "2026-09-30T00:00:00Z",
+      "timeZone": "Asia/Seoul",
+      "records": [
+        {
+          "id": "s",
+          "savedAt": "2026-09-30T00:00:00Z",
+          "draft": {
+            "id": "d",
+            "sourceText": "walk 20 minutes",
+            "sourceKind": "nl_log_text",
+            "pets": [
+              {
+                "id": "p",
+                "name": "Choco",
+                "nicknames": []
+              }
+            ],
+            "now": "2026-09-30T00:00:00Z",
+            "timeZone": "Asia/Seoul",
+            "events": [
+              {
+                "id": "e27",
+                "petId": "p",
+                "type": "walk",
+                "occurredAt": "2026-09-27T01:00:00Z",
+                "timeHint": null,
+                "durationMin": 20,
+                "trigger": null,
+                "intervention": null,
+                "outcome": null,
+                "details": {
+                  "amountText": null,
+                  "isTreat": null,
+                  "excretionKinds": [],
+                  "placeText": null
+                },
+                "sourceQuote": "walk 20 minutes",
+                "edited": false
+              },
+              {
+                "id": "e28",
+                "petId": "p",
+                "type": "walk",
+                "occurredAt": "2026-09-28T01:00:00Z",
+                "timeHint": null,
+                "durationMin": 20,
+                "trigger": null,
+                "intervention": null,
+                "outcome": null,
+                "details": {
+                  "amountText": null,
+                  "isTreat": null,
+                  "excretionKinds": [],
+                  "placeText": null
+                },
+                "sourceQuote": "walk 20 minutes",
+                "edited": false
+              },
+              {
+                "id": "e29",
+                "petId": "p",
+                "type": "walk",
+                "occurredAt": "2026-09-29T01:00:00Z",
+                "timeHint": null,
+                "durationMin": 20,
+                "trigger": null,
+                "intervention": null,
+                "outcome": null,
+                "details": {
+                  "amountText": null,
+                  "isTreat": null,
+                  "excretionKinds": [],
+                  "placeText": null
+                },
+                "sourceQuote": "walk 20 minutes",
+                "edited": false
+              }
+            ],
+            "safetyFlags": [],
+            "clarification": null,
+            "mode": "manual"
+          }
+        }
+      ]
+    },
+    "expect": {
+      "days": 3,
+      "walk": 3,
+      "insufficient": false
+    }
+  },
+  {
+    "id": "same-day",
+    "description": "same-day",
+    "input": {
+      "pet": {
+        "id": "p",
+        "name": "Choco",
+        "nicknames": []
+      },
+      "now": "2026-09-30T00:00:00Z",
+      "timeZone": "Asia/Seoul",
+      "records": [
+        {
+          "id": "s",
+          "savedAt": "2026-09-30T00:00:00Z",
+          "draft": {
+            "id": "d",
+            "sourceText": "walk 20 minutes",
+            "sourceKind": "nl_log_text",
+            "pets": [
+              {
+                "id": "p",
+                "name": "Choco",
+                "nicknames": []
+              }
+            ],
+            "now": "2026-09-30T00:00:00Z",
+            "timeZone": "Asia/Seoul",
+            "events": [
+              {
+                "id": "e1",
+                "petId": "p",
+                "type": "walk",
+                "occurredAt": "2026-09-29T01:00:00Z",
+                "timeHint": null,
+                "durationMin": 20,
+                "trigger": null,
+                "intervention": null,
+                "outcome": null,
+                "details": {
+                  "amountText": null,
+                  "isTreat": null,
+                  "excretionKinds": [],
+                  "placeText": null
+                },
+                "sourceQuote": "walk 20 minutes",
+                "edited": false
+              },
+              {
+                "id": "e2",
+                "petId": "p",
+                "type": "walk",
+                "occurredAt": "2026-09-29T01:00:00Z",
+                "timeHint": null,
+                "durationMin": 20,
+                "trigger": null,
+                "intervention": null,
+                "outcome": null,
+                "details": {
+                  "amountText": null,
+                  "isTreat": null,
+                  "excretionKinds": [],
+                  "placeText": null
+                },
+                "sourceQuote": "walk 20 minutes",
+                "edited": false
+              },
+              {
+                "id": "e3",
+                "petId": "p",
+                "type": "walk",
+                "occurredAt": "2026-09-29T01:00:00Z",
+                "timeHint": null,
+                "durationMin": 20,
+                "trigger": null,
+                "intervention": null,
+                "outcome": null,
+                "details": {
+                  "amountText": null,
+                  "isTreat": null,
+                  "excretionKinds": [],
+                  "placeText": null
+                },
+                "sourceQuote": "walk 20 minutes",
+                "edited": false
+              }
+            ],
+            "safetyFlags": [],
+            "clarification": null,
+            "mode": "manual"
+          }
+        }
+      ]
+    },
+    "expect": {
+      "days": 1,
+      "walk": 3,
+      "insufficient": true
+    }
+  },
+  {
+    "id": "unknown-time",
+    "description": "unknown-time",
+    "input": {
+      "pet": {
+        "id": "p",
+        "name": "Choco",
+        "nicknames": []
+      },
+      "now": "2026-09-30T00:00:00Z",
+      "timeZone": "Asia/Seoul",
+      "records": [
+        {
+          "id": "s",
+          "savedAt": "2026-09-30T00:00:00Z",
+          "draft": {
+            "id": "d",
+            "sourceText": "walk 20 minutes",
+            "sourceKind": "nl_log_text",
+            "pets": [
+              {
+                "id": "p",
+                "name": "Choco",
+                "nicknames": []
+              }
+            ],
+            "now": "2026-09-30T00:00:00Z",
+            "timeZone": "Asia/Seoul",
+            "events": [
+              {
+                "id": "e",
+                "petId": "p",
+                "type": "walk",
+                "occurredAt": null,
+                "timeHint": null,
+                "durationMin": 20,
+                "trigger": null,
+                "intervention": null,
+                "outcome": null,
+                "details": {
+                  "amountText": null,
+                  "isTreat": null,
+                  "excretionKinds": [],
+                  "placeText": null
+                },
+                "sourceQuote": "walk 20 minutes",
+                "edited": false
+              }
+            ],
+            "safetyFlags": [],
+            "clarification": null,
+            "mode": "manual"
+          }
+        }
+      ]
+    },
+    "expect": {
+      "days": 0,
+      "insufficient": true,
+      "timeGap": true
+    }
+  },
+  {
+    "id": "timezone-start",
+    "description": "timezone-start",
+    "input": {
+      "pet": {
+        "id": "p",
+        "name": "Choco",
+        "nicknames": []
+      },
+      "now": "2026-09-30T00:00:00Z",
+      "timeZone": "Asia/Seoul",
+      "records": [
+        {
+          "id": "s",
+          "savedAt": "2026-09-30T00:00:00Z",
+          "draft": {
+            "id": "d",
+            "sourceText": "walk 20 minutes",
+            "sourceKind": "nl_log_text",
+            "pets": [
+              {
+                "id": "p",
+                "name": "Choco",
+                "nicknames": []
+              }
+            ],
+            "now": "2026-09-30T00:00:00Z",
+            "timeZone": "Asia/Seoul",
+            "events": [
+              {
+                "id": "e",
+                "petId": "p",
+                "type": "walk",
+                "occurredAt": "2026-09-16T16:00:00Z",
+                "timeHint": null,
+                "durationMin": 20,
+                "trigger": null,
+                "intervention": null,
+                "outcome": null,
+                "details": {
+                  "amountText": null,
+                  "isTreat": null,
+                  "excretionKinds": [],
+                  "placeText": null
+                },
+                "sourceQuote": "walk 20 minutes",
+                "edited": false
+              }
+            ],
+            "safetyFlags": [],
+            "clarification": null,
+            "mode": "manual"
+          }
+        }
+      ]
+    },
+    "expect": {
+      "days": 1,
+      "walk": 1,
+      "insufficient": true
+    }
+  },
+  {
+    "id": "prior-boundary",
+    "description": "prior-boundary",
+    "input": {
+      "pet": {
+        "id": "p",
+        "name": "Choco",
+        "nicknames": []
+      },
+      "now": "2026-09-30T00:00:00Z",
+      "timeZone": "Asia/Seoul",
+      "records": [
+        {
+          "id": "s",
+          "savedAt": "2026-09-30T00:00:00Z",
+          "draft": {
+            "id": "d",
+            "sourceText": "walk 20 minutes",
+            "sourceKind": "nl_log_text",
+            "pets": [
+              {
+                "id": "p",
+                "name": "Choco",
+                "nicknames": []
+              }
+            ],
+            "now": "2026-09-30T00:00:00Z",
+            "timeZone": "Asia/Seoul",
+            "events": [
+              {
+                "id": "e",
+                "petId": "p",
+                "type": "walk",
+                "occurredAt": "2026-09-16T14:00:00Z",
+                "timeHint": null,
+                "durationMin": 20,
+                "trigger": null,
+                "intervention": null,
+                "outcome": null,
+                "details": {
+                  "amountText": null,
+                  "isTreat": null,
+                  "excretionKinds": [],
+                  "placeText": null
+                },
+                "sourceQuote": "walk 20 minutes",
+                "edited": false
+              }
+            ],
+            "safetyFlags": [],
+            "clarification": null,
+            "mode": "manual"
+          }
+        }
+      ]
+    },
+    "expect": {
+      "days": 0,
+      "walk": 0,
+      "previousWalk": 1,
+      "insufficient": true
+    }
+  },
+  {
+    "id": "future",
+    "description": "Historical briefing excludes events after cutoff even when saved later",
+    "input": {
+      "pet": {
+        "id": "p",
+        "name": "Choco",
+        "nicknames": []
+      },
+      "now": "2026-09-30T00:00:00Z",
+      "timeZone": "Asia/Seoul",
+      "records": [
+        {
+          "id": "s",
+          "savedAt": "2026-10-01T01:00:00Z",
+          "draft": {
+            "id": "d",
+            "sourceText": "walk 20 minutes",
+            "sourceKind": "nl_log_text",
+            "pets": [
+              {
+                "id": "p",
+                "name": "Choco",
+                "nicknames": []
+              }
+            ],
+            "now": "2026-10-01T01:00:00Z",
+            "timeZone": "Asia/Seoul",
+            "events": [
+              {
+                "id": "e",
+                "petId": "p",
+                "type": "walk",
+                "occurredAt": "2026-10-01T00:00:00Z",
+                "timeHint": null,
+                "durationMin": 20,
+                "trigger": null,
+                "intervention": null,
+                "outcome": null,
+                "details": {
+                  "amountText": null,
+                  "isTreat": null,
+                  "excretionKinds": [],
+                  "placeText": null
+                },
+                "sourceQuote": "walk 20 minutes",
+                "edited": false
+              }
+            ],
+            "safetyFlags": [],
+            "clarification": null,
+            "mode": "manual"
+          }
+        }
+      ]
+    },
+    "expect": {
+      "days": 0,
+      "insufficient": true
+    }
+  },
+  {
+    "id": "old",
+    "description": "old",
+    "input": {
+      "pet": {
+        "id": "p",
+        "name": "Choco",
+        "nicknames": []
+      },
+      "now": "2026-09-30T00:00:00Z",
+      "timeZone": "Asia/Seoul",
+      "records": [
+        {
+          "id": "s",
+          "savedAt": "2026-09-30T00:00:00Z",
+          "draft": {
+            "id": "d",
+            "sourceText": "walk 20 minutes",
+            "sourceKind": "nl_log_text",
+            "pets": [
+              {
+                "id": "p",
+                "name": "Choco",
+                "nicknames": []
+              }
+            ],
+            "now": "2026-09-30T00:00:00Z",
+            "timeZone": "Asia/Seoul",
+            "events": [
+              {
+                "id": "e",
+                "petId": "p",
+                "type": "walk",
+                "occurredAt": "2026-08-01T00:00:00Z",
+                "timeHint": null,
+                "durationMin": 20,
+                "trigger": null,
+                "intervention": null,
+                "outcome": null,
+                "details": {
+                  "amountText": null,
+                  "isTreat": null,
+                  "excretionKinds": [],
+                  "placeText": null
+                },
+                "sourceQuote": "walk 20 minutes",
+                "edited": false
+              }
+            ],
+            "safetyFlags": [],
+            "clarification": null,
+            "mode": "manual"
+          }
+        }
+      ]
+    },
+    "expect": {
+      "days": 0,
+      "insufficient": true
+    }
+  },
+  {
+    "id": "risk",
+    "description": "risk",
+    "input": {
+      "pet": {
+        "id": "p",
+        "name": "Choco",
+        "nicknames": []
+      },
+      "now": "2026-09-30T00:00:00Z",
+      "timeZone": "Asia/Seoul",
+      "records": [
+        {
+          "id": "s",
+          "savedAt": "2026-09-30T00:00:00Z",
+          "draft": {
+            "id": "d",
+            "sourceText": "walk 20 minutes",
+            "sourceKind": "nl_log_text",
+            "pets": [
+              {
+                "id": "p",
+                "name": "Choco",
+                "nicknames": []
+              }
+            ],
+            "now": "2026-09-30T00:00:00Z",
+            "timeZone": "Asia/Seoul",
+            "events": [
+              {
+                "id": "e",
+                "petId": "p",
+                "type": "walk",
+                "occurredAt": "2026-09-29T01:00:00Z",
+                "timeHint": null,
+                "durationMin": 20,
+                "trigger": null,
+                "intervention": null,
+                "outcome": null,
+                "details": {
+                  "amountText": null,
+                  "isTreat": null,
+                  "excretionKinds": [],
+                  "placeText": null
+                },
+                "sourceQuote": "walk 20 minutes",
+                "edited": false
+              }
+            ],
+            "safetyFlags": [
+              "vomiting"
+            ],
+            "clarification": null,
+            "mode": "manual"
+          }
+        }
+      ]
+    },
+    "expect": {
+      "days": 1,
+      "walk": 1,
+      "insufficient": true,
+      "safetyFlag": "vomiting"
+    }
+  },
+  {
+    "id": "increase",
+    "description": "increase",
+    "input": {
+      "pet": {
+        "id": "p",
+        "name": "Choco",
+        "nicknames": []
+      },
+      "now": "2026-09-30T00:00:00Z",
+      "timeZone": "Asia/Seoul",
+      "records": [
+        {
+          "id": "s",
+          "savedAt": "2026-09-30T00:00:00Z",
+          "draft": {
+            "id": "d",
+            "sourceText": "walk 20 minutes",
+            "sourceKind": "nl_log_text",
+            "pets": [
+              {
+                "id": "p",
+                "name": "Choco",
+                "nicknames": []
+              }
+            ],
+            "now": "2026-09-30T00:00:00Z",
+            "timeZone": "Asia/Seoul",
+            "events": [
+              {
+                "id": "old",
+                "petId": "p",
+                "type": "walk",
+                "occurredAt": "2026-09-10T01:00:00Z",
+                "timeHint": null,
+                "durationMin": 20,
+                "trigger": null,
+                "intervention": null,
+                "outcome": null,
+                "details": {
+                  "amountText": null,
+                  "isTreat": null,
+                  "excretionKinds": [],
+                  "placeText": null
+                },
+                "sourceQuote": "walk 20 minutes",
+                "edited": false
+              },
+              {
+                "id": "e27",
+                "petId": "p",
+                "type": "walk",
+                "occurredAt": "2026-09-27T01:00:00Z",
+                "timeHint": null,
+                "durationMin": 20,
+                "trigger": null,
+                "intervention": null,
+                "outcome": null,
+                "details": {
+                  "amountText": null,
+                  "isTreat": null,
+                  "excretionKinds": [],
+                  "placeText": null
+                },
+                "sourceQuote": "walk 20 minutes",
+                "edited": false
+              },
+              {
+                "id": "e28",
+                "petId": "p",
+                "type": "walk",
+                "occurredAt": "2026-09-28T01:00:00Z",
+                "timeHint": null,
+                "durationMin": 20,
+                "trigger": null,
+                "intervention": null,
+                "outcome": null,
+                "details": {
+                  "amountText": null,
+                  "isTreat": null,
+                  "excretionKinds": [],
+                  "placeText": null
+                },
+                "sourceQuote": "walk 20 minutes",
+                "edited": false
+              },
+              {
+                "id": "e29",
+                "petId": "p",
+                "type": "walk",
+                "occurredAt": "2026-09-29T01:00:00Z",
+                "timeHint": null,
+                "durationMin": 20,
+                "trigger": null,
+                "intervention": null,
+                "outcome": null,
+                "details": {
+                  "amountText": null,
+                  "isTreat": null,
+                  "excretionKinds": [],
+                  "placeText": null
+                },
+                "sourceQuote": "walk 20 minutes",
+                "edited": false
+              }
+            ],
+            "safetyFlags": [],
+            "clarification": null,
+            "mode": "manual"
+          }
+        }
+      ]
+    },
+    "expect": {
+      "days": 3,
+      "walk": 3,
+      "previousWalk": 1,
+      "insufficient": false
+    }
+  },
+  {
+    "id": "other-pet",
+    "description": "other-pet",
+    "input": {
+      "pet": {
+        "id": "p",
+        "name": "Choco",
+        "nicknames": []
+      },
+      "now": "2026-09-30T00:00:00Z",
+      "timeZone": "Asia/Seoul",
+      "records": [
+        {
+          "id": "s",
+          "savedAt": "2026-09-30T00:00:00Z",
+          "draft": {
+            "id": "d",
+            "sourceText": "walk 20 minutes",
+            "sourceKind": "nl_log_text",
+            "pets": [
+              {
+                "id": "p",
+                "name": "Choco",
+                "nicknames": []
+              },
+              {
+                "id": "other",
+                "name": "Other",
+                "nicknames": []
+              }
+            ],
+            "now": "2026-09-30T00:00:00Z",
+            "timeZone": "Asia/Seoul",
+            "events": [
+              {
+                "id": "e",
+                "petId": "other",
+                "type": "walk",
+                "occurredAt": "2026-09-29T01:00:00Z",
+                "timeHint": null,
+                "durationMin": 20,
+                "trigger": null,
+                "intervention": null,
+                "outcome": null,
+                "details": {
+                  "amountText": null,
+                  "isTreat": null,
+                  "excretionKinds": [],
+                  "placeText": null
+                },
+                "sourceQuote": "walk 20 minutes",
+                "edited": false
+              }
+            ],
+            "safetyFlags": [],
+            "clarification": null,
+            "mode": "manual"
+          }
+        }
+      ]
+    },
+    "expect": {
+      "days": 0,
+      "insufficient": true
+    }
+  }
+]

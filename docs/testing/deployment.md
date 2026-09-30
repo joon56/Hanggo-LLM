@@ -1,4 +1,4 @@
-# 상담노트 단일 운영자 배포
+# 행고 기록 공간 단일 운영자 배포
 
 React 빌드와 Node API를 동일 출처에서 제공하는 단일 프로세스 구성입니다. 운영자 본인이 비밀번호로 접근하며 기록은 그 브라우저에 저장합니다. 중앙 데이터베이스·다중 사용자 권한·공유 기록은 포함하지 않습니다.
 
@@ -56,6 +56,10 @@ Git 원격 주소는 `https://github.com/joon56/Hanggo-LLM.git`입니다. `.env`
 | APP_ACCESS_PASSWORD | 고유한 16자 이상 운영자 비밀번호 |
 | OPENAI_API_KEY | 배포 환경 비밀값 저장소에 설정 |
 | AI_ENABLED | true |
+| FEATURE_OWNER_LOG_ENABLED | 보호자 기록 활성화 시 true, 기본 false |
+| FEATURE_BRIEF_ENABLED | 상담 전 브리핑 활성화 시 true, 기본 false |
+| FEATURE_SHELTER_ENABLED | 보호소 프로필 활성화 시 true, 기본 false |
+| LESSON_CATALOG_PATH | 실제 검수된 레슨 JSON 경로, 비어 있으면 후보 없음 |
 | OPENAI_TEXT_MODEL | 기본 gpt-4.1-mini |
 | OPENAI_STT_MODEL | 기본 gpt-4o-mini-transcribe |
 | OPENAI_TIMEOUT_MS | 기본 15000 |

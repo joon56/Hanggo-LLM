@@ -46,3 +46,35 @@ it('retains risk and retries malformed output through the real SDK response pars
   expect(result.draft.safetyFlags).toContain('통증');
   expect(result.draft.methodReview).toBe(true);
 });
+
+it('uses strict schemas for owner logs, briefs and shelter profiles through the SDK', async () => {
+  const sent: any[] = [];
+  vi.stubGlobal('fetch', vi.fn(async (_url: unknown, init: RequestInit) => {
+    const body = JSON.parse(init.body as string); sent.push(body);
+    const name = body.text.format.name;
+    const output = name === 'owner_log'
+      ? { events: [{ petId: 'pet_0', type: 'bark', timeHint: null, durationMin: null, trigger: null, intervention: null, outcome: null, details: { amountText: null, isTreat: null, excretionKinds: [], placeText: null }, sourceQuote: '초코가 짖었어요.' }], safetyFlags: [], clarification: null }
+      : name === 'owner_brief' ? { summary: ['record-days'], changes: [], questionsForOwner: [] }
+      : { observations: [{ memoId: 'memo-0', sourceQuote: '사람에게 다가왔습니다.', category: 'people', valence: 'positive' }], safetyFlags: [] };
+    return new Response(JSON.stringify({ id: 'resp_test', object: 'response', status: 'completed', output: [{ type: 'message', content: [{ type: 'output_text', text: JSON.stringify(output) }] }] }), { headers: { 'content-type': 'application/json' } });
+  }));
+  const services = createOpenAIServices(readConfig({ OPENAI_API_KEY: 'test' }));
+  const pet = { id: 'choco', name: '초코', nicknames: [] };
+  const owner = await services.generateOwner({ text: '010-1234-5678. 초코가 짖었어요.', pets: [pet], now: '2026-09-30T10:00:00+09:00', timeZone: 'Asia/Seoul', sourceKind: 'nl_log_text' });
+  const brief = await services.generateBrief({ pet, records: [], now: '2026-09-30T10:00:00+09:00', timeZone: 'Asia/Seoul' });
+  const shelter = await services.generateShelter({ animal: { id: 'dog', name: '보리', species: 'dog', ageMonths: 24 }, memos: [{ id: 'note', date: '2026-09-30', role: 'staff', text: '사람에게 다가왔습니다.' }] });
+  expect([owner.fallbackUsed, brief.fallbackUsed, shelter.fallbackUsed]).toEqual([false, false, false]);
+  expect(sent).toHaveLength(3);
+  expect(sent.every(body => body.store === false && body.text.format.strict === true)).toBe(true);
+  expect(JSON.stringify(sent)).not.toContain('010-1234-5678');
+});
+
+it.each(['refusal', 'incomplete-message', 'incomplete-response'])('discards %s even alongside valid JSON', async mode => {
+  vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ id: 'resp_test', object: 'response', status: mode === 'incomplete-response' ? 'incomplete' : 'completed', output: [{ type: 'message', status: mode === 'incomplete-message' ? 'incomplete' : 'completed', content: [
+    ...(mode === 'refusal' ? [{ type: 'refusal', refusal: 'Declined' }] : []),
+    { type: 'output_text', text: JSON.stringify({ summary: ['record-days'], changes: [], questionsForOwner: [] }) },
+  ] }] }), { headers: { 'content-type': 'application/json' } })));
+  const result = await createOpenAIServices(readConfig({ OPENAI_API_KEY: 'test' })).generateBrief({ pet: { id: 'p', name: '초코', nicknames: [] }, records: [], now: '2026-09-30T00:00:00Z', timeZone: 'Asia/Seoul' });
+  expect(result.fallbackUsed).toBe(true);
+  expect(result.draft.mode).toBe('manual');
+});
