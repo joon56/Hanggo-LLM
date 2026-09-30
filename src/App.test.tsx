@@ -1,5 +1,5 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { beforeEach, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import App from './App';
 import { approveDraft, createDraft } from './domain/notes';
 import { saveNote } from './domain/storage';
@@ -13,6 +13,7 @@ vi.mock('./hooks/useRecorder', () => ({ useRecorder: () => mocks.recorder }));
 
 const demoSession = { authenticated: true, requirePassword: false, aiEnabled: false, configured: false, textModel: '', sttModel: '' };
 const aiSession = { ...demoSession, aiEnabled: true, configured: true, textModel: 'text-test', sttModel: 'stt-test' };
+afterEach(() => vi.unstubAllEnvs());
 beforeEach(() => {
   localStorage.clear(); vi.clearAllMocks(); mocks.getSession.mockResolvedValue(demoSession); mocks.verifyAudibleAudio.mockResolvedValue(undefined);
   Object.assign(mocks.recorder, { status: 'idle', duration: 0, audioUrl: null, audioBlob: null, error: '' });
@@ -20,6 +21,30 @@ beforeEach(() => {
 async function ready() { await screen.findByRole('button', { name: '예시 불러오기' }); }
 async function example() { await ready(); fireEvent.click(screen.getByRole('button', { name: '예시 불러오기' })); }
 function deferred<T>() { let resolve!: (value: T) => void; const promise = new Promise<T>(a => { resolve = a; }); return { promise, resolve }; }
+
+it('public demo works without a server and never requests AI or a session', async () => {
+  vi.stubEnv('VITE_PUBLIC_DEMO', 'true');
+  mocks.getSession.mockRejectedValue(new Error('No backend'));
+  render(<App />);
+  await example();
+  expect(screen.getByText('공개 체험판 · AI 연결 없음')).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: '일지 초안 만들기' }));
+  fireEvent.click(screen.getByRole('checkbox', { name: /원문과 일지를 확인/ }));
+  fireEvent.click(screen.getByRole('button', { name: '승인하고 저장' }));
+  expect(screen.getByText('이 브라우저에 저장했습니다.')).toBeInTheDocument();
+  expect(mocks.getSession).not.toHaveBeenCalled();
+  expect(mocks.generateNote).not.toHaveBeenCalled();
+  expect(mocks.transcribe).not.toHaveBeenCalled();
+});
+
+it('normal production build stays locked when the API is unavailable', async () => {
+  vi.stubEnv('VITE_PUBLIC_DEMO', 'false'); vi.stubEnv('DEV', false);
+  mocks.getSession.mockRejectedValue(new Error('No backend'));
+  render(<App />);
+  await screen.findByRole('alert');
+  expect(screen.queryByRole('button', { name: '예시 불러오기' })).not.toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: '로컬 데모 사용' })).not.toBeInTheDocument();
+});
 
 it('requires session before mounting saved history and accepts password login', async () => {
   const locked = { ...aiSession, authenticated: false, requirePassword: true };

@@ -6,6 +6,14 @@ React 빌드와 Node API를 동일 출처에서 제공하는 단일 프로세스
 
 `npm.cmd run verify` 후 실제 키로 `npm.cmd run llm:eval -- --live`와 직접 음성 테스트를 수행합니다. 가상 음성·모의 API를 쓰는 브라우저 테스트만으로 실제 모델 품질이 검증되지는 않습니다.
 
+## GitHub Pages 공개 체험판
+
+주소: **https://joon56.github.io/Hanggo-LLM/**
+
+`CI`의 테스트와 Docker 검사가 통과하면 `pages` 작업이 체험판을 배포합니다. `VITE_PUBLIC_DEMO=true`를 이 빌드에만 설정합니다. 체험판은 서버 요청 없이 텍스트 규칙 분류·마이크 녹음과 재생·검토·승인·브라우저 저장·JSON 내보내기를 제공합니다. AI 생성·받아쓰기는 없으며 화면에 명시합니다.
+
+일반 `npm run build`와 Docker 빌드는 이 플래그를 사용하지 않아 서버 인증을 계속 요구합니다. 운영 서버의 빌드 환경에는 `VITE_PUBLIC_DEMO`를 설정하지 않습니다. GitHub Pages는 전체 AI 서버 배포를 대체하지 않습니다.
+
 ## Render로 공개 배포
 
 저장소 루트의 `render.yaml`은 Docker 웹 서비스 한 개를 만듭니다. 서버와 화면은 같은 HTTPS 주소를 사용하며 FFmpeg는 이미지에 포함됩니다. GitHub Pages 같은 정적 호스팅만으로는 음성·OpenAI API 서버가 실행되지 않습니다.

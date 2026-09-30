@@ -12,7 +12,7 @@
 ![TypeScript](https://img.shields.io/badge/TypeScript-7-405438?style=flat-square)
 ![OpenAI](https://img.shields.io/badge/OpenAI-Text_%2B_Voice-405438?style=flat-square)
 
-[빠른 시작](#빠른-시작) · [사용 흐름](#사용-흐름) · [테스트 가이드](docs/testing/manual-testing.md) · [배포 안내](docs/testing/deployment.md)
+[공개 체험판](https://joon56.github.io/Hanggo-LLM/) · [빠른 시작](#빠른-시작) · [테스트 가이드](docs/testing/manual-testing.md) · [배포 안내](docs/testing/deployment.md)
 
 </div>
 
@@ -40,6 +40,9 @@
 </details>
 
 화면은 가상 상담 자료를 사용한 데모입니다. 실제 OpenAI 호출에는 서버의 API 키가 필요합니다.
+
+**[공개 체험판 열기 →](https://joon56.github.io/Hanggo-LLM/)**  
+설치 없이 텍스트 정리·녹음과 재생·원문 검토·승인·저장·JSON 내보내기를 체험합니다. GitHub Pages 체험판에는 AI 생성과 받아쓰기가 없습니다. 실제 AI를 사용하려면 아래 Node/Docker 서버를 배포합니다.
 
 ## 빠른 시작
 

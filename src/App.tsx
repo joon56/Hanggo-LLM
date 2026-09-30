@@ -21,11 +21,14 @@ function initialHistory() {
 }
 
 export default function App() {
+  const publicDemo = import.meta.env.VITE_PUBLIC_DEMO === 'true';
   const [history, setHistory] = useState<ApprovedNote[]>([]);
   const [error, setError] = useState('');
-  const [session, setSession] = useState<Session | null>(null);
+  const [session, setSession] = useState<Session | null>(publicDemo ? {
+    authenticated: true, requirePassword: false, aiEnabled: false, configured: false, textModel: '', sttModel: '',
+  } : null);
   const [sessionError, setSessionError] = useState('');
-  const [sessionLoading, setSessionLoading] = useState(true);
+  const [sessionLoading, setSessionLoading] = useState(!publicDemo);
   const [localDemo, setLocalDemo] = useState(false);
   const [consent, setConsent] = useState(false);
   const [pending, setPending] = useState<'note' | 'transcribe' | null>(null);
@@ -50,6 +53,7 @@ export default function App() {
   const aiReady = !!session?.aiEnabled && !!session.configured && !localDemo;
 
   useEffect(() => {
+    if (publicDemo) return;
     let active = true;
     const controller = new AbortController();
     getSession(controller.signal).then(value => {
@@ -216,7 +220,9 @@ export default function App() {
   };
   const changeInputMode = (mode: 'text' | 'voice') => { setInputMode(mode); if (mode === 'text') { cancelPending(); recorder.reset(); } };
 
-  const connection = <ConnectionPanel session={session} loading={sessionLoading} error={sessionError} onRetry={retrySession} onLogin={loginSession} onLogout={logoutSession} localDemo={localDemo} onDemo={value => { cancelPending(); setLocalDemo(value); }} />;
+  const connection = publicDemo
+    ? <section className="connection-panel" aria-label="공개 체험판"><strong>공개 체험판 · AI 연결 없음</strong><span>텍스트 정리·녹음 재생·검토·저장을 체험하세요. AI 생성·받아쓰기는 제공하지 않습니다. 가상 자료를 사용하세요.</span></section>
+    : <ConnectionPanel session={session} loading={sessionLoading} error={sessionError} onRetry={retrySession} onLogin={loginSession} onLogout={logoutSession} localDemo={localDemo} onDemo={value => { cancelPending(); setLocalDemo(value); }} />;
   if (sessionLoading || (!session && !(import.meta.env.DEV && localDemo)) || (session?.requirePassword && !session.authenticated)) return <div className="connection-gate">{connection}</div>;
 
   return <div className="app-shell">
