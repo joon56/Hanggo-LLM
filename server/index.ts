@@ -1,0 +1,22 @@
+import { readConfig } from './config.ts';
+import { createApp } from './app.ts';
+import { createOpenAIServices } from './openai.ts';
+
+const config = readConfig();
+const services = createOpenAIServices(config);
+const app = createApp(config, {
+  async generate(...args) {
+    const result = await services.generate(...args);
+    console.info(JSON.stringify({ feature: 'notes', requestId: result.requestId, model: result.model, latencyMs: result.latencyMs, fallbackUsed: result.fallbackUsed }));
+    return result;
+  },
+  transcribe: services.transcribe,
+});
+const server = app.listen(config.port, config.host, () => console.info(`Hanggo server: ${config.host}:${config.port}; AI ${config.aiEnabled ? 'enabled' : 'disabled'}`));
+server.requestTimeout = 90_000;
+server.headersTimeout = 15_000;
+server.on('error', () => { console.error('서버를 시작하지 못했습니다. 포트와 환경 설정을 확인해 주세요.'); process.exitCode = 1; });
+for (const event of ['SIGINT', 'SIGTERM'] as const) process.on(event, () => {
+  server.close(() => process.exit(0));
+  setTimeout(() => { server.closeAllConnections(); process.exit(1); }, 10_000).unref();
+});

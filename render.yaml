@@ -1,0 +1,39 @@
+# yaml-language-server: $schema=https://render.com/schema/render.yaml.json
+services:
+  - type: web
+    name: hanggo-llm
+    runtime: docker
+    plan: free
+    region: singapore
+    branch: main
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    healthCheckPath: /api/health
+    autoDeployTrigger: checksPass
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: HOST
+        value: 0.0.0.0
+      - key: PORT
+        value: "3001"
+      - key: PUBLIC_ORIGIN
+        fromService:
+          name: hanggo-llm
+          type: web
+          envVarKey: RENDER_EXTERNAL_URL
+      - key: APP_ACCESS_PASSWORD
+        generateValue: true
+      - key: AI_ENABLED
+        value: "false"
+      - key: OPENAI_TEXT_MODEL
+        value: gpt-4.1-mini
+      - key: OPENAI_STT_MODEL
+        value: gpt-4o-mini-transcribe
+      - key: OPENAI_TIMEOUT_MS
+        value: "15000"
+      - key: AI_DAILY_LIMIT
+        value: "200"
+      # All current rate limits are global; forwarded client IPs are unnecessary.
+      - key: TRUST_PROXY
+        value: "0"

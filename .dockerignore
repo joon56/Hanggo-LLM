@@ -1,0 +1,12 @@
+node_modules
+dist
+.tmp
+.git
+.env
+.env.*
+test-output
+test-audio
+docs
+e2e
+**/*.test.ts
+**/*.test.tsx
