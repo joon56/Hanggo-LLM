@@ -75,6 +75,30 @@ test('브라우저 녹음·재생·초기화, 받아쓰기 자동 생성 없음'
   await expect(page.getByRole('button', { name: '녹음 시작' })).toBeEnabled();
 });
 
+test('녹음 삭제 확인을 취소하면 유지하고 확정하면 녹음만 삭제한다', async ({ page }) => {
+  await page.goto('/');
+  await page.getByRole('button', { name: '녹음 시작' }).click();
+  await expect(page.locator('.record-timer')).toContainText('00:03', { timeout: 10_000 });
+  await page.getByRole('button', { name: '녹음 정지' }).click();
+  const audio = page.getByLabel('상담 요약 녹음 재생');
+  await expect(audio).toHaveAttribute('src', /^blob:/);
+  const originalUrl = await audio.getAttribute('src');
+  await page.getByLabel('상담 요약 원문').fill('직접 입력한 요약은 유지합니다.');
+  const dismiss = async () => {
+    const dialog = await page.waitForEvent('dialog');
+    expect(dialog.type()).toBe('confirm');
+    expect(dialog.message()).toBe('녹음을 삭제할까요?\n삭제한 녹음은 복구할 수 없습니다.');
+    await dialog.dismiss();
+  };
+  await Promise.all([dismiss(), page.getByRole('button', { name: '녹음 삭제' }).click()]);
+  await expect(audio).toHaveAttribute('src', originalUrl!);
+  const accept = async () => { const dialog = await page.waitForEvent('dialog'); await dialog.accept(); };
+  await Promise.all([accept(), page.getByRole('button', { name: '녹음 삭제' }).click()]);
+  await expect(audio).toHaveCount(0);
+  await expect(page.getByLabel('상담 요약 원문')).toHaveValue('직접 입력한 요약은 유지합니다.');
+  await expect(page.getByRole('button', { name: '녹음 시작' })).toBeEnabled();
+});
+
 test('AI 초안 성공과 실패를 구분한다', async ({ page }) => {
   await page.route('**/api/session', route => route.fulfill({ json: { authenticated: true, requirePassword: false, aiEnabled: true, configured: true, textModel: 'test-model', sttModel: 'test-stt' } }));
   let fail = false;

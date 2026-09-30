@@ -126,6 +126,21 @@ it('preserves source and makes all items follow-up after AI failure', async () =
   expect(screen.queryByLabelText('합의한 과제 내용')).not.toBeInTheDocument();
 });
 
+it('keeps the recording when audio deletion is cancelled and deletes only after confirmation', async () => {
+  Object.assign(mocks.recorder, { status: 'ready', audioUrl: 'blob:demo', audioBlob: new Blob(['audio'], { type: 'audio/webm' }), duration: 5 });
+  const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false);
+  render(<App />); await ready();
+  fireEvent.change(screen.getByLabelText('상담 요약 원문'), { target: { value: '입력한 상담 요약' } });
+  fireEvent.click(screen.getByRole('button', { name: '녹음 삭제' }));
+  expect(confirm).toHaveBeenCalledWith('녹음을 삭제할까요?\n삭제한 녹음은 복구할 수 없습니다.');
+  expect(mocks.recorder.reset).not.toHaveBeenCalled();
+  expect(screen.getByLabelText('상담 요약 녹음 재생')).toBeInTheDocument();
+  confirm.mockReturnValue(true);
+  fireEvent.click(screen.getByRole('button', { name: '녹음 삭제' }));
+  expect(mocks.recorder.reset).toHaveBeenCalledOnce();
+  expect(screen.getByLabelText('상담 요약 원문')).toHaveValue('입력한 상담 요약');
+});
+
 it('keeps source and recording after transcription error', async () => {
   mocks.getSession.mockResolvedValue(aiSession);
   Object.assign(mocks.recorder, { status: 'ready', audioUrl: 'blob:demo', audioBlob: new Blob(['audio'], { type: 'audio/webm' }), duration: 5 });

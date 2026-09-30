@@ -264,7 +264,7 @@ export default function App() {
                 <strong>{recorder.status === 'requesting' ? '마이크 권한을 확인해 주세요' : recorder.status === 'recording' ? '요약을 듣고 있어요' : recorder.status === 'ready' ? '녹음을 다시 들어보세요' : '눌러서 녹음을 시작하세요'}</strong>
                 <div className="record-timer"><span>{String(Math.floor(recorder.duration / 60)).padStart(2, '0')}:{String(recorder.duration % 60).padStart(2, '0')}</span><span>/ 01:00</span></div>
                 {recorder.status === 'requesting' && <button className="text-button" onClick={() => { cancelPending(); recorder.reset(); }}>요청 취소</button>}
-                {recorder.audioUrl && <div className="audio-preview"><audio controls src={recorder.audioUrl} aria-label="상담 요약 녹음 재생" /><button className="icon-button" onClick={() => { cancelPending(); recorder.reset(); }} aria-label="녹음 삭제"><TrashIcon size={18} /></button></div>}
+                {recorder.audioUrl && <div className="audio-preview"><audio controls src={recorder.audioUrl} aria-label="상담 요약 녹음 재생" /><button className="icon-button" onClick={() => { if (!window.confirm('녹음을 삭제할까요?\n삭제한 녹음은 복구할 수 없습니다.')) return; cancelPending(); recorder.reset(); }} aria-label="녹음 삭제"><TrashIcon size={18} /></button></div>}
                 {aiReady && recorder.audioBlob && <button className="button secondary" onClick={transcribeRecording} disabled={!!pending || !consent}>음성 받아쓰기</button>}
                 <p>녹음은 재생 전에는 이 기기에만 있습니다. 받아쓰기를 누르면 동의한 음성이 외부 AI로 전송됩니다.</p>
                 {recorder.error && <p className="recorder-error" role="alert">{recorder.error}</p>}
