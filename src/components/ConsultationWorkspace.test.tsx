@@ -4,6 +4,7 @@ import ConsultationWorkspace from './ConsultationWorkspace';
 import type { ConsultationSession } from '../domain/consultation';
 import * as api from '../consultation-api';
 import { useConsultationRecorder } from '../hooks/useConsultationRecorder';
+import { ApiError } from '../api';
 
 vi.mock('../consultation-api',()=>({listConsultations:vi.fn(),getConsultation:vi.fn(),finishConsultation:vi.fn(),addBookmark:vi.fn(),updateSegment:vi.fn(),generateConsultationNote:vi.fn(),updateConsultationNote:vi.fn(),approveConsultation:vi.fn(),deleteConsultation:vi.fn(),recordingUrl:(id:string)=>`/api/consultations/${id}/recording`,exportUrl:(id:string)=>`/api/consultations/${id}/export`}));
 vi.mock('../hooks/useConsultationRecorder',()=>({useConsultationRecorder:vi.fn()}));
@@ -12,10 +13,31 @@ const recorder={status:'idle',error:'',session:null,durationMs:0,pendingBytes:0,
 beforeEach(()=>{
   vi.clearAllMocks(); Object.assign(recorder,{status:'idle',error:'',session:null,durationMs:0,pendingBytes:0,preview:null,busy:false});
   saved={id:'saved-1',metadata:{petName:'초코',trainerName:'훈련사',sessionDate:'2026-10-07'},createdAt:'2026-10-07T01:00:00Z',state:'ready',durationMs:10000,recordingChunkCount:3,segments:[{id:'seg-1',sequence:0,startMs:0,endMs:10000,text:'초코가 앉았습니다.',originalText:'초코가 앉았습니다.',state:'complete',latencyMs:200}],bookmarks:[{id:'b-1',atMs:5000,text:'앉기 연습'}],errors:[],note:{items:[{id:'n-1',section:'observation',text:'초코가 앉았습니다.',evidence:[{kind:'segment',id:'seg-1',quote:'초코가 앉았습니다.',startMs:0,endMs:10000}],fallback:true}],missingSections:['purpose','owner_report','guidance','task','follow_up','moments'],coveredSegmentIds:['seg-1'],createdAt:'2026-10-07T01:00:00Z',fallbackUsed:true,warnings:['분류 결과를 확인해 주세요.']}};
+  saved.noteRevision='saved-revision';
   vi.mocked(useConsultationRecorder).mockReturnValue(recorder as never); vi.mocked(api.listConsultations).mockResolvedValue({sessions:[saved]}); vi.mocked(api.getConsultation).mockImplementation(async()=>saved); vi.mocked(api.updateSegment).mockImplementation(async(_id,_segment,text)=>({...saved,note:undefined,segments:[{...saved.segments[0],text}]})); vi.mocked(api.updateConsultationNote).mockImplementation(async(_id,note)=>({...saved,note}));
 });
 async function open(){await screen.findByRole('button',{name:/초코.*열기/});fireEvent.click(screen.getByRole('button',{name:/초코.*열기/}));await screen.findByRole('textbox',{name:'받아쓰기 1'});}
 test('recovers persisted session and uses seekable recording endpoint',async()=>{render(<ConsultationWorkspace ready model="whisper-turbo"/>);await open();expect(screen.getByLabelText('상담 녹화 재생')).toHaveAttribute('src','/api/consultations/saved-1/recording');expect(screen.getByRole('link',{name:'JSON 내보내기'})).toHaveAttribute('href','/api/consultations/saved-1/export');});
+
+test('exports retained transcript JSON from an incomplete session without any media', async () => {
+  saved={...saved,state:'incomplete',recordingChunkCount:0}; render(<ConsultationWorkspace ready model="whisper-turbo"/>); await open();
+  expect(screen.getByRole('link',{name:'JSON 내보내기'})).toHaveAttribute('href','/api/consultations/saved-1/export');
+  expect(screen.queryByLabelText('상담 녹화 재생')).not.toBeInTheDocument(); expect(screen.queryByRole('link',{name:'녹화 내려받기'})).not.toBeInTheDocument();
+  expect(screen.getByRole('textbox',{name:'받아쓰기 1'})).toHaveValue('초코가 앉았습니다.');
+});
+
+test('approval uses reviewed persisted revision and reloads changed notes with review cleared', async () => {
+  Object.assign(saved,{noteRevision:'reviewed-revision'}); render(<ConsultationWorkspace ready model="whisper-turbo"/>); await open();
+  await waitFor(()=>expect(screen.getByRole('checkbox',{name:/녹화·받아쓰기·모든 일지 항목/})).toBeEnabled());
+  const changed=structuredClone(saved); Object.assign(changed,{noteRevision:'new-revision'}); changed.note!.items[0].section='purpose'; changed.note!.missingSections=['owner_report','observation','guidance','task','follow_up','moments'];
+  vi.mocked(api.getConsultation).mockResolvedValue(changed); vi.mocked(api.approveConsultation).mockRejectedValueOnce(new ApiError('Note changed after review.','NOTE_CHANGED')).mockResolvedValueOnce({...changed,note:{...changed.note!,approvedAt:'2026-10-07T02:00:00Z'}});
+  fireEvent.click(screen.getByRole('checkbox',{name:/녹화·받아쓰기·모든 일지 항목/})); fireEvent.click(screen.getByRole('button',{name:'검토 후 확정'}));
+  await waitFor(()=>expect(api.approveConsultation).toHaveBeenCalledWith('saved-1','reviewed-revision'));
+  await waitFor(()=>expect(screen.getByRole('combobox',{name:'일지 항목 1 분류'})).toHaveValue('purpose'));
+  expect(screen.getByRole('checkbox',{name:/녹화·받아쓰기·모든 일지 항목/})).not.toBeChecked(); expect(screen.getByRole('button',{name:'검토 후 확정'})).toBeDisabled(); expect(screen.getByRole('alert')).toHaveTextContent('다시 검토');
+  fireEvent.click(screen.getByRole('checkbox',{name:/녹화·받아쓰기·모든 일지 항목/})); fireEvent.click(screen.getByRole('button',{name:'검토 후 확정'}));
+  await waitFor(()=>expect(api.approveConsultation).toHaveBeenLastCalledWith('saved-1','new-revision')); expect(await screen.findByText('검토·확정됨')).toBeInTheDocument();
+});
 test('requires explicit deletion confirmation before removing persisted session',async()=>{render(<ConsultationWorkspace ready model="whisper-turbo"/>);await open();vi.spyOn(window,'confirm').mockReturnValue(false);fireEvent.click(screen.getByRole('button',{name:'초코 상담 삭제'}));expect(api.deleteConsultation).not.toHaveBeenCalled();vi.mocked(window.confirm).mockReturnValue(true);vi.mocked(api.deleteConsultation).mockResolvedValue();fireEvent.click(screen.getByRole('button',{name:'초코 상담 삭제'}));await waitFor(()=>expect(api.deleteConsultation).toHaveBeenCalledWith('saved-1'));});
 test('shows all seven sections, exact evidence and fallback warnings',async()=>{render(<ConsultationWorkspace ready model="whisper-turbo"/>);await open();for(const title of ['상담 목적·고민','보호자 보고','상담 중 관찰','훈련사 안내','합의한 과제','후속 확인','중요 장면'])expect(screen.getByRole('heading',{name:title})).toBeInTheDocument();expect(screen.getByText('원문 인용으로 대체한 항목입니다.')).toBeInTheDocument();expect(screen.getByText('분류 결과를 확인해 주세요.')).toBeInTheDocument();expect(screen.getAllByText('분류된 항목 없음 · 원문을 확인해 주세요')).toHaveLength(6);});
 test('unsupported note text gives validation feedback and cannot approve',async()=>{render(<ConsultationWorkspace ready model="whisper-turbo"/>);await open();fireEvent.change(screen.getByRole('textbox',{name:'일지 항목 1'}),{target:{value:'새 진단을 받았습니다.'}});fireEvent.click(screen.getByRole('button',{name:'일지 수정 저장'}));expect(await screen.findByRole('alert')).toHaveTextContent('원문에 있는 정확한 인용');expect(api.updateConsultationNote).not.toHaveBeenCalled();expect(screen.getByRole('button',{name:'검토 후 확정'})).toBeDisabled();});

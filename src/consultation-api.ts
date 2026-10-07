@@ -13,7 +13,7 @@ export const addBookmark = (id: string, atMs: number, text: string) => request<C
 export const updateSegment = (id: string, segmentId: string, text: string) => request<ConsultationSession>(`${path(id)}/segments/${encodeURIComponent(segmentId)}`, json('PATCH', { text }));
 export const generateConsultationNote = (id: string) => request<ConsultationSession>(`${path(id)}/note`, json('POST', {}));
 export const updateConsultationNote = (id: string, note: ConsultationNote) => request<ConsultationSession>(`${path(id)}/note`, json('PATCH', { note }));
-export const approveConsultation = (id: string) => request<ConsultationSession>(`${path(id)}/approve`, json('POST', { reviewed: true }));
+export const approveConsultation = (id: string, noteRevision: string) => request<ConsultationSession>(`${path(id)}/approve`, json('POST', { reviewed: true, noteRevision }));
 export const recordingUrl = (id: string) => `${path(id)}/recording`;
 export const exportUrl = (id: string) => `${path(id)}/export`;
 export async function uploadAudio(id: string, sequence: number, bytes: Blob, startMs: number, endMs: number) {

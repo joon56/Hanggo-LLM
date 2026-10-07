@@ -70,7 +70,7 @@ try {
   }
   const range = await request(`/api/consultations/${session.id}/recording`, { headers: { Range: 'bytes=0-127' } });
   if (range.status !== 206 || (await range.arrayBuffer()).byteLength !== 128) throw new Error('Recording range failed.');
-  const approved = await (await request(`/api/consultations/${session.id}/approve`, json({ reviewed: true }))).json() as ConsultationSession;
+  const approved = await (await request(`/api/consultations/${session.id}/approve`, json({ reviewed: true, noteRevision: note.noteRevision }))).json() as ConsultationSession;
   const report = { createdAt: new Date().toISOString(), testKind: 'accelerated-60-minute-fixture', realTimeCaptureTest: false,
     elapsedMs: Math.round(performance.now() - started), model: config.liveSpeechModel, sessionId: session.id,
     audioSegments: approved.segments.length, durationMs: approved.durationMs, recordingBytes: media.length,

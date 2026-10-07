@@ -6,7 +6,7 @@ import { validateConsultationNote } from '../src/domain/consultation.ts';
 import type { ConsultationSession, ConsultationNote } from '../src/domain/consultation.ts';
 import type { SourceKind } from '../src/domain/notes.ts';
 import type { LiveSpeechService } from './live-speech.ts';
-import { ConsultationError, ConsultationStore, MAX_SESSION_MS } from './consultation-store.ts';
+import { ConsultationError, ConsultationStore, consultationNoteRevision, MAX_SESSION_MS } from './consultation-store.ts';
 import { generateConsultationNote } from './consultation-notes.ts';
 import { recordingHandler } from './consultation-media.ts';
 
@@ -42,34 +42,44 @@ function validateWav(bytes: Buffer, startMs: number, endMs: number) {
 export function createConsultationRouter(options: Options) {
   const router = express.Router(); const store = new ConsultationStore(options.directory);
   let activeId: string | undefined; let preparing = false; let mutationTail: Promise<unknown> = Promise.resolve();
-  type Capture = { controller: AbortController; tail: Promise<void>; pending: number; release: () => void; timer?: NodeJS.Timeout; closing?: Promise<ConsultationSession>; storageErrors: { code: string; message: string; sequence?: number }[] };
+  type Capture = { controller: AbortController; tail: Promise<void>; pending: number; release: () => void; released?: boolean; timer?: NodeJS.Timeout; closing?: Promise<ConsultationSession>; finalization?: { durationMs: number; expired: boolean; captureError?: string }; storageErrors: { code: string; message: string; sequence?: number }[] };
   const work = new Map<string, Capture>();
   const noteWork = new Map<string, { controller: AbortController; task: Promise<ConsultationSession> }>();
   const deleting = new Set<string>();
   const busy = () => preparing || !!activeId || noteWork.size > 0;
   const lock = <T>(operation: () => Promise<T>): Promise<T> => { const result = mutationTail.then(operation); mutationTail = result.catch(() => {}); return result; };
   const currentCapture = async (id: string) => { const session = await store.get(id); if (deleting.has(id) || activeId !== id || session.state !== 'recording') throw new ConsultationError('STATE', 'Session is not capturing.', 409); return session; };
+  async function releaseCapture(id: string, capture: Capture) {
+    if (capture.released) return;
+    capture.released = true;
+    try { await options.speech!.release(); } finally { capture.release(); if (activeId === id) activeId = undefined; }
+  }
   async function closeCapture(id: string, durationMs: number, expired = false, captureError?: string): Promise<ConsultationSession> {
     const capture = work.get(id); if (!capture) return store.get(id);
     const { task } = await lock(async () => {
       if (capture.closing) return { task: capture.closing };
-      await store.update(id, session => { if (durationMs < Math.max(0, ...session.segments.map(segment => segment.endMs), ...session.bookmarks.map(bookmark => bookmark.atMs))) throw new ConsultationError('INPUT', 'Capture duration is shorter than accepted evidence.'); session.state = 'processing'; session.durationMs = durationMs; });
+      if (!capture.finalization) {
+        await store.update(id, session => { if (durationMs < Math.max(0, ...session.segments.map(segment => segment.endMs), ...session.bookmarks.map(bookmark => bookmark.atMs))) throw new ConsultationError('INPUT', 'Capture duration is shorter than accepted evidence.'); session.state = 'processing'; session.durationMs = durationMs; });
+        capture.finalization = { durationMs, expired, captureError };
+      }
+      const finalization = capture.finalization;
       clearTimeout(capture.timer);
       capture.closing = (async () => {
       try { await capture.tail; } catch { capture.storageErrors.push({ code: 'STORAGE', message: 'Transcription queue storage failed.' }); }
-      finally { try { await options.speech!.release(); } finally { capture.release(); if (activeId === id) activeId = undefined; work.delete(id); } }
-      return store.update(id, session => {
+      finally { await releaseCapture(id, capture); }
+      const finished = await store.update(id, session => {
         session.errors.push(...capture.storageErrors);
-        if (captureError) session.errors.push({ code: 'CAPTURE_INTERRUPTED', message: captureError });
+        if (finalization.captureError) session.errors.push({ code: 'CAPTURE_INTERRUPTED', message: finalization.captureError });
         session.segments.forEach(segment => { if (segment.state === 'queued' || segment.state === 'processing') { segment.state = 'failed'; session.errors.push({ code: 'STORAGE', message: 'Accepted transcript window could not be completed.', sequence: segment.sequence }); } });
         let end = 0; let gap = false;
         for (const segment of session.segments) { if (segment.startMs > end + 2) gap = true; end = Math.max(end, segment.endMs); }
-        if (end < durationMs - 2 || gap) session.errors.push({ code: 'MISSING_AUDIO', message: 'Transcript audio does not cover the full capture.' });
+        if (end < finalization.durationMs - 2 || gap) session.errors.push({ code: 'MISSING_AUDIO', message: 'Transcript audio does not cover the full capture.' });
         if (!session.recordingChunkCount) session.errors.push({ code: 'MISSING_RECORDING', message: 'No recording chunks were saved.' });
-        if (expired) session.errors.push({ code: 'DURATION_LIMIT', message: 'Capture reached the 60 minute limit.' });
+        if (finalization.expired) session.errors.push({ code: 'DURATION_LIMIT', message: 'Capture reached the 60 minute limit.' });
         session.state = session.errors.length || session.segments.some(segment => segment.state !== 'complete') ? 'incomplete' : 'ready';
       });
-      })();
+      work.delete(id); return finished;
+      })().catch(error => { capture.closing = undefined; throw error; });
       return { task: capture.closing };
     }); return task;
   }
@@ -144,28 +154,28 @@ export function createConsultationRouter(options: Options) {
   });
   router.post('/:id/bookmarks', async (req, res) => {
     const input = parse(z.object({ atMs: integerTime, text: z.string().trim().min(1).max(2000) }).strict(), req.body);
-    res.json(await store.update(req.params.id, session => { if (session.bookmarks.length >= 1000 || (session.state !== 'recording' && input.atMs > session.durationMs)) throw new ConsultationError('INPUT', 'Bookmark exceeds session bounds.'); session.bookmarks.push({ id: randomUUID(), ...input }); delete session.note; }));
+    res.json(await store.update(req.params.id, session => { if (session.bookmarks.length >= 1000 || (session.state !== 'recording' && input.atMs > session.durationMs)) throw new ConsultationError('INPUT', 'Bookmark exceeds session bounds.'); session.bookmarks.push({ id: randomUUID(), ...input }); delete session.note; delete session.noteRevision; }));
   });
   router.patch('/:id/segments/:segmentId', async (req, res) => {
     const input = parse(z.object({ text: z.string().max(16000) }).strict(), req.body);
-    res.json(await store.update(req.params.id, session => { const segment = session.segments.find(segment => segment.id === req.params.segmentId); if (!segment || segment.state !== 'complete') throw new ConsultationError('STATE', 'Transcript segment is not editable.', 409); segment.text = input.text; delete session.note; }));
+    res.json(await store.update(req.params.id, session => { const segment = session.segments.find(segment => segment.id === req.params.segmentId); if (!segment || segment.state !== 'complete') throw new ConsultationError('STATE', 'Transcript segment is not editable.', 409); segment.text = input.text; delete session.note; delete session.noteRevision; }));
   });
   router.post('/:id/note', async (req, res) => {
     const id = req.params.id; const session = await store.get(id);
     if (busy() || ['recording', 'processing', 'preparing'].includes(session.state)) throw new ConsultationError('STATE', 'Finish local AI work before generating notes.', 409);
     const release = options.acquireAi(true); const controller = new AbortController(); res.once('close', () => { if (!res.writableEnded) controller.abort(); });
     const task = (async () => {
-      try { const note = await generateConsultationNote(session, options.generate, controller.signal); controller.signal.throwIfAborted(); return await store.update(id, current => { if (JSON.stringify(current.segments) !== JSON.stringify(session.segments) || JSON.stringify(current.bookmarks) !== JSON.stringify(session.bookmarks)) throw new ConsultationError('CONFLICT', 'Transcript changed during generation.', 409); current.note = note; }); }
+      try { const note = await generateConsultationNote(session, options.generate, controller.signal); controller.signal.throwIfAborted(); return await store.update(id, current => { if (JSON.stringify(current.segments) !== JSON.stringify(session.segments) || JSON.stringify(current.bookmarks) !== JSON.stringify(session.bookmarks)) throw new ConsultationError('CONFLICT', 'Transcript changed during generation.', 409); current.note = note; current.noteRevision = randomUUID(); }); }
       finally { release(); noteWork.delete(id); }
     })(); noteWork.set(id, { controller, task }); res.json(await task);
   });
   router.patch('/:id/note', async (req, res) => {
     const input = parse(z.object({ note: z.unknown() }).strict(), req.body);
-    res.json(await store.update(req.params.id, session => { const note = structuredClone(input.note) as ConsultationNote; if (validateConsultationNote(note, session).length) throw new ConsultationError('EVIDENCE', 'Note must use exact persisted source evidence.'); delete note.approvedAt; session.note = note; }));
+    res.json(await store.update(req.params.id, session => { const note = structuredClone(input.note) as ConsultationNote; if (validateConsultationNote(note, session).length) throw new ConsultationError('EVIDENCE', 'Note must use exact persisted source evidence.'); delete note.approvedAt; session.note = note; session.noteRevision = randomUUID(); }));
   });
   router.post('/:id/approve', async (req, res) => {
-    parse(z.object({ reviewed: z.literal(true) }).strict(), req.body);
-    res.json(await store.update(req.params.id, session => { if (session.state !== 'ready' || !session.note || validateConsultationNote(session.note, session).length) throw new ConsultationError('STATE', 'Only complete evidence-valid notes can be approved.', 409); session.note.approvedAt = new Date().toISOString(); }));
+    const input = parse(z.object({ reviewed: z.literal(true), noteRevision: z.string().min(1).max(100) }).strict(), req.body);
+    res.json(await store.update(req.params.id, session => { if (input.noteRevision !== consultationNoteRevision(session)) throw new ConsultationError('NOTE_CHANGED', 'Note changed after review. Reload and review current sources.', 409); if (session.state !== 'ready' || !session.note || validateConsultationNote(session.note, session).length) throw new ConsultationError('STATE', 'Only complete evidence-valid notes can be approved.', 409); session.note.approvedAt = new Date().toISOString(); }));
   });
   router.get('/:id/export', async (req, res) => { res.set('Content-Disposition', 'attachment; filename="consultation.json"').json(await store.get(req.params.id)); });
   router.get('/:id/recording', recordingHandler(store, options.ffmpegPath ?? 'ffmpeg'));
@@ -173,7 +183,7 @@ export function createConsultationRouter(options: Options) {
     const id = req.params.id; await store.get(id); await lock(async () => { if (deleting.has(id)) throw new ConsultationError('STATE', 'Session is being deleted.', 409); deleting.add(id); });
     try {
       const note = noteWork.get(id); note?.controller.abort(); await note?.task.catch(() => {}); const capture = work.get(id);
-      if (capture) { clearTimeout(capture.timer); capture.controller.abort(); await capture.tail.catch(() => {}); if (capture.closing) await capture.closing.catch(() => {}); else { await options.speech!.release(); capture.release(); work.delete(id); if (activeId === id) activeId = undefined; } }
+      if (capture) { clearTimeout(capture.timer); capture.controller.abort(); await capture.tail.catch(() => {}); if (capture.closing) await capture.closing.catch(() => {}); await releaseCapture(id, capture); work.delete(id); }
       await lock(() => store.delete(id)); res.status(204).end();
     } finally { deleting.delete(id); }
   });

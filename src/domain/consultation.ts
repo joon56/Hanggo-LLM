@@ -6,7 +6,7 @@ export type TranscriptSegment = { id: string; sequence: number; startMs: number;
 export type ConsultationBookmark = { id: string; atMs: number; text: string };
 export type ConsultationEvidence = { kind: 'segment' | 'bookmark'; id: string; quote: string; startMs: number; endMs: number };
 export type ConsultationNote = { items: { id: string; section: ConsultationSection; text: string; evidence: ConsultationEvidence[]; fallback?: boolean }[]; missingSections: ConsultationSection[]; coveredSegmentIds: string[]; createdAt: string; approvedAt?: string; fallbackUsed?: boolean; warnings?: string[] };
-export type ConsultationSession = { id: string; metadata: Metadata; createdAt: string; state: 'preparing' | 'recording' | 'processing' | 'ready' | 'incomplete' | 'interrupted'; durationMs: number; segments: TranscriptSegment[]; bookmarks: ConsultationBookmark[]; recordingChunkCount: number; errors: { code: string; message: string; sequence?: number }[]; note?: ConsultationNote };
+export type ConsultationSession = { id: string; metadata: Metadata; createdAt: string; state: 'preparing' | 'recording' | 'processing' | 'ready' | 'incomplete' | 'interrupted'; durationMs: number; segments: TranscriptSegment[]; bookmarks: ConsultationBookmark[]; recordingChunkCount: number; errors: { code: string; message: string; sequence?: number }[]; note?: ConsultationNote; noteRevision?: string };
 
 export function validateConsultationNote(value: unknown, session: ConsultationSession): string[] {
   if (!value || typeof value !== 'object') return ['INPUT'];

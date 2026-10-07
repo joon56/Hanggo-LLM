@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { afterEach, expect, it, vi } from 'vitest';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, writeFile, rm } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import request from 'supertest';
@@ -8,6 +8,7 @@ import { createApp } from './app.ts';
 import { readConfig } from './config.ts';
 import { createDraft } from '../src/domain/notes.ts';
 import { ConsultationStore } from './consultation-store.ts';
+import { consultationSections } from '../src/domain/consultation.ts';
 
 const origin = 'http://127.0.0.1:5173';
 const metadata = { petName: 'Choco', trainerName: 'Kim', sessionDate: '2026-10-07' };
@@ -48,7 +49,7 @@ it('captures ordered chunks, drains speech, persists evidence notes and invalida
   expect(finished.body.state).toBe('ready'); expect(finished.body.segments[0].text).toBe('Exact source');
   expect(liveSpeech.transcribe).toHaveBeenCalledOnce(); expect(liveSpeech.release).toHaveBeenCalledOnce();
   const generated = await post(`/${id}/note`).expect(200); expect(generated.body.note.coveredSegmentIds).toHaveLength(1);
-  await post(`/${id}/approve`, { reviewed: true }).expect(200);
+  await post(`/${id}/approve`, { reviewed: true, noteRevision: generated.body.noteRevision }).expect(200);
   const edited = await request(app).patch(`/api/consultations/${id}/segments/${finished.body.segments[0].id}`).set('Origin', origin).send({ text: 'Corrected source' }).expect(200);
   expect(edited.body.note).toBeUndefined(); expect(edited.body.segments[0].originalText).toBe('Exact source');
   const exportResult = await request(app).get(`/api/consultations/${id}/export`).expect(200); expect(exportResult.body.segments[0].text).toBe('Corrected source');
@@ -62,8 +63,8 @@ it('keeps a browser-reported capture failure incomplete even when uploaded chunk
   const finished = await post(`/${id}/finish`, { durationMs: 5000, captureError: '  Audio worklet stopped unexpectedly.  ' }).expect(200);
   expect(finished.body.state).toBe('incomplete');
   expect(finished.body.errors).toContainEqual({ code: 'CAPTURE_INTERRUPTED', message: 'Audio worklet stopped unexpectedly.' });
-  await post(`/${id}/note`).expect(200);
-  await post(`/${id}/approve`, { reviewed: true }).expect(409);
+  const generated = await post(`/${id}/note`).expect(200);
+  await post(`/${id}/approve`, { reviewed: true, noteRevision: generated.body.noteRevision }).expect(409);
 });
 
 it('checks byte-derived PCM duration, allows short tail and rejects conflicting retry times', async () => {
@@ -79,7 +80,7 @@ it('preserves recording and reports incomplete capture after transcription failu
   const { start, upload, post, liveSpeech } = await make({}, async () => { throw new Error('Speech failed'); }); const { body: { id } } = await start().expect(201);
   await upload(id).expect(202); const finished = await post(`/${id}/finish`, { durationMs: 5000 }).expect(200);
   expect(finished.body.state).toBe('incomplete'); expect(finished.body.segments[0].state).toBe('failed'); expect(finished.body.errors[0].code).toBe('TRANSCRIPTION');
-  expect(liveSpeech.release).toHaveBeenCalledOnce(); await post(`/${id}/approve`, { reviewed: true }).expect(409);
+  expect(liveSpeech.release).toHaveBeenCalledOnce(); await post(`/${id}/approve`, { reviewed: true, noteRevision: 'missing-note' }).expect(409);
 });
 
 it('deletes active session only after aborting its work and releasing speech', async () => {
@@ -176,4 +177,74 @@ it('rejects forged note evidence and clears forged approvedAt when saving edits'
   const result = await post(`/${id}/note`).expect(200); const note = result.body.note; note.approvedAt = new Date().toISOString();
   const saved = await request(app).patch(`/api/consultations/${id}/note`).set('Origin', origin).send({ note }).expect(200); expect(saved.body.note.approvedAt).toBeUndefined();
   note.items[0].evidence[0].quote = 'Invented source'; await request(app).patch(`/api/consultations/${id}/note`).set('Origin', origin).send({ note }).expect(400);
+});
+
+it('rejects approval from another tab after note edits and same-text source regeneration', async () => {
+  const { app, start, upload, post } = await make(); const { body: { id } } = await start().expect(201);
+  await request(app).put(`/api/consultations/${id}/media/0`).set('Origin', origin).set('Content-Type', 'video/webm').send(Buffer.from([0x1a, 0x45, 0xdf, 0xa3, 1])).expect(200);
+  await upload(id).expect(202); await post(`/${id}/finish`, { durationMs: 5000 }).expect(200);
+  const reviewed = (await post(`/${id}/note`).expect(200)).body;
+  const editedNote = structuredClone(reviewed.note); editedNote.items[0].section = 'purpose';
+  editedNote.missingSections = consultationSections.filter(section => !editedNote.items.some((item: { section: string }) => item.section === section));
+  const edited = (await request(app).patch(`/api/consultations/${id}/note`).set('Origin', origin).send({ note: editedNote }).expect(200)).body;
+  const stale = await post(`/${id}/approve`, { reviewed: true, noteRevision: reviewed.noteRevision ?? 'missing-revision' }).expect(409);
+  expect(stale.body.code).toBe('NOTE_CHANGED'); expect(edited.noteRevision).not.toBe(reviewed.noteRevision);
+  expect((await request(app).get(`/api/consultations/${id}`)).body.note.approvedAt).toBeUndefined();
+  const identical = (await request(app).patch(`/api/consultations/${id}/note`).set('Origin', origin).send({ note: editedNote }).expect(200)).body;
+  expect(identical.note).toEqual(edited.note); expect(identical.noteRevision).not.toBe(edited.noteRevision);
+  await post(`/${id}/approve`, { reviewed: true, noteRevision: edited.noteRevision }).expect(409);
+  await post(`/${id}/approve`, { reviewed: true, noteRevision: identical.noteRevision }).expect(200);
+  await request(app).patch(`/api/consultations/${id}/segments/${reviewed.segments[0].id}`).set('Origin', origin).send({ text: reviewed.segments[0].text }).expect(200);
+  const regenerated = (await post(`/${id}/note`).expect(200)).body;
+  expect(regenerated.noteRevision).not.toBe(edited.noteRevision);
+  await post(`/${id}/approve`, { reviewed: true, noteRevision: edited.noteRevision }).expect(409);
+  await post(`/${id}/approve`, { reviewed: true, noteRevision: regenerated.noteRevision }).expect(200);
+});
+
+it('loads and approves legacy persisted notes with a stable source fingerprint', async () => {
+  const { app, directory, start, upload, post, liveSpeech } = await make(); const { body: { id } } = await start().expect(201);
+  await request(app).put(`/api/consultations/${id}/media/0`).set('Origin', origin).set('Content-Type', 'video/webm').send(Buffer.from([0x1a, 0x45, 0xdf, 0xa3, 1])).expect(200);
+  await upload(id).expect(202); await post(`/${id}/finish`, { durationMs: 5000 }).expect(200); await post(`/${id}/note`).expect(200);
+  const filename = path.join(directory, id, 'session.json'); const stored = JSON.parse(await readFile(filename, 'utf8')); delete stored.noteRevision; await writeFile(filename, JSON.stringify(stored));
+  const recovered = createApp({ ...readConfig({ AI_ENABLED: 'true' }), liveConsultationEnabled: true, consultationDirectory: directory }, { liveSpeech, generate: async () => ({}), transcribe: async () => '' });
+  const reviewed = (await request(recovered).get(`/api/consultations/${id}`).expect(200)).body;
+  expect(reviewed.noteRevision).toMatch(/^[0-9a-f]{64}$/); expect((await request(recovered).get(`/api/consultations/${id}`)).body.noteRevision).toBe(reviewed.noteRevision);
+  await request(recovered).post(`/api/consultations/${id}/approve`).set('Origin', origin).send({ reviewed: true, noteRevision: reviewed.noteRevision }).expect(200);
+});
+
+it.each([undefined, 'Audio worklet stopped unexpectedly.'])('retries final metadata failure without releasing a newer session (captureError=%s)', async captureError => {
+  const original = ConsultationStore.prototype.update; let failed = false;
+  vi.spyOn(ConsultationStore.prototype, 'update').mockImplementation(async function (this: ConsultationStore, id, change) {
+    const current = await this.get(id); change(current);
+    if (!failed && ['ready', 'incomplete'].includes(current.state)) { failed = true; throw new Error('Transient final metadata save'); }
+    return original.call(this, id, change);
+  });
+  const { app, start, upload, post, liveSpeech } = await make(); const { body: { id } } = await start().expect(201);
+  await request(app).put(`/api/consultations/${id}/media/0`).set('Origin', origin).set('Content-Type', 'video/webm').send(Buffer.from([0x1a, 0x45, 0xdf, 0xa3, 1])).expect(200);
+  await upload(id).expect(202); await post(`/${id}/bookmarks`, { atMs: 2000, text: 'Retained evidence' }).expect(200);
+  await post(`/${id}/finish`, { durationMs: 5000, ...(captureError ? { captureError } : {}) }).expect(502);
+  expect((await request(app).get(`/api/consultations/${id}`)).body.state).toBe('processing');
+  expect(liveSpeech.release).toHaveBeenCalledOnce(); const newer = (await start().expect(201)).body;
+  const retried = await post(`/${id}/finish`, { durationMs: 6000 }).expect(200);
+  expect(retried.body).toMatchObject({ state: captureError ? 'incomplete' : 'ready', durationMs: 5000, bookmarks: [{ text: 'Retained evidence' }], segments: [{ text: 'Exact source', state: 'complete' }] });
+  expect(retried.body.errors).toEqual(captureError ? [{ code: 'CAPTURE_INTERRUPTED', message: captureError }] : []);
+  expect(liveSpeech.transcribe).toHaveBeenCalledOnce(); expect(liveSpeech.release).toHaveBeenCalledOnce();
+  await request(app).post('/api/notes').set('Origin', origin).send({ text: 'Other AI', sourceKind: 'trainer_summary_text', consent: true }).expect(429);
+  await request(app).delete(`/api/consultations/${id}`).set('Origin', origin).expect(204);
+  expect(liveSpeech.release).toHaveBeenCalledOnce(); await post(`/${newer.id}/finish`, { durationMs: 0 }).expect(200); expect(liveSpeech.release).toHaveBeenCalledTimes(2);
+});
+
+it('deleting a failed finalization preserves the newer session GPU and AI reservation', async () => {
+  const original = ConsultationStore.prototype.update; let failed = false;
+  vi.spyOn(ConsultationStore.prototype, 'update').mockImplementation(async function (this: ConsultationStore, id, change) {
+    const current = await this.get(id); change(current);
+    if (!failed && current.state === 'incomplete') { failed = true; throw new Error('Transient final metadata save'); }
+    return original.call(this, id, change);
+  });
+  const { app, start, post, liveSpeech } = await make(); const { body: { id } } = await start().expect(201);
+  await post(`/${id}/finish`, { durationMs: 0 }).expect(502); const newer = (await start().expect(201)).body;
+  await request(app).delete(`/api/consultations/${id}`).set('Origin', origin).expect(204);
+  expect(liveSpeech.release).toHaveBeenCalledOnce();
+  await request(app).post('/api/notes').set('Origin', origin).send({ text: 'Other AI', sourceKind: 'trainer_summary_text', consent: true }).expect(429);
+  await post(`/${newer.id}/finish`, { durationMs: 0 }).expect(200); expect(liveSpeech.release).toHaveBeenCalledTimes(2);
 });

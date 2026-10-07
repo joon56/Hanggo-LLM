@@ -4,6 +4,7 @@ import { consultationSections, validateConsultationNote } from '../domain/consul
 import type { ConsultationNote, ConsultationSection, ConsultationSession, TranscriptSegment } from '../domain/consultation';
 import type { Metadata } from '../domain/notes';
 import { useConsultationRecorder } from '../hooks/useConsultationRecorder';
+import { ApiError } from '../api';
 import '../consultation.css';
 
 const labels: Record<ConsultationSection, string> = { purpose: '상담 목적·고민', owner_report: '보호자 보고', observation: '상담 중 관찰', guidance: '훈련사 안내', task: '합의한 과제', follow_up: '후속 확인', moments: '중요 장면' };
@@ -64,6 +65,17 @@ export default function ConsultationWorkspace({ ready, model, onBusyChange }: { 
   const seek = (ms: number) => { if (replayRef.current) { replayRef.current.currentTime = ms / 1000; replayRef.current.focus(); } };
   const changeNote = (next: ConsultationNote) => { if (!selected) return; setNote(normalizeNote(next, selected)); setDirty(true); setReviewed(false); setError(''); };
   const saveNote = () => { if (!selected || !note) return; const next = normalizeNote(note, selected); const errors = validateConsultationNote(next, selected); if (errors.length) { setError(validationMessage(errors)); return; } void run(() => updateConsultationNote(selected.id, next), '원문 근거를 확인해 일지 수정을 저장했습니다.'); };
+  const approve = () => { if (!selected?.noteRevision) return; void run(async () => {
+    try { return await approveConsultation(selected.id, selected.noteRevision!); }
+    catch (cause) {
+      if (cause instanceof ApiError && cause.code === 'NOTE_CHANGED') {
+        setReviewed(false);
+        try { receive(await getConsultation(selected.id)); } catch { throw new Error('상담 원문·일지가 변경되었습니다. 다시 열어 최신 원문과 일지를 확인하고 다시 검토해 주세요.'); }
+        throw new Error('상담 원문·일지가 변경되었습니다. 최신 원문과 일지를 불러왔습니다. 다시 검토해 주세요.');
+      }
+      throw cause;
+    }
+  }, '상담 일지를 검토·확정했습니다.'); };
   const finished = selected && !['recording', 'processing', 'preparing'].includes(selected.state);
   const noteErrors = selected && note ? validateConsultationNote(note, selected) : ['INPUT'];
   const captureDuration = recorder.busy ? recorder.durationMs : selected?.durationMs ?? recorder.durationMs;
@@ -101,7 +113,7 @@ export default function ConsultationWorkspace({ ready, model, onBusyChange }: { 
             {!recorder.busy && ['recording', 'processing'].includes(selected.state) && <div className="consultation-warning"><p>이 화면에서는 녹화가 진행되고 있지 않습니다. 이전 공유 탭이 닫혔다면 저장된 구간만 남겨 중단된 상담을 정리하세요. 다른 탭에서 녹화 중이면 그 탭에서 종료하세요.</p><button className="button secondary" disabled={pending} onClick={() => { if (!window.confirm('다른 탭에서 이 상담을 녹화하고 있지 않은지 확인해 주세요. 저장된 구간만 남겨 불완전 기록으로 종료할까요?')) return; const durationMs = Math.max(selected.durationMs, 0, ...selected.segments.map(segment => segment.endMs), ...selected.bookmarks.map(bookmark => bookmark.atMs)); void run(() => finishConsultation(selected.id, durationMs, '이전 공유 탭이 닫혀 저장된 구간만 복구했습니다. 전송되지 않은 구간은 누락될 수 있습니다.'), '중단된 상담을 정리했습니다. 저장된 구간과 누락 상태를 확인해 주세요.'); }}>중단된 상담 정리</button></div>}
             {['interrupted', 'incomplete'].includes(selected.state) && <p className="consultation-warning">중단 또는 누락된 구간이 있습니다. 저장된 녹화·원문을 검토할 수 있으며 일지 확정은 차단됩니다. 녹화 이어하기는 지원하지 않습니다.</p>}
             {selected.errors.map((item, index) => <p className="consultation-warning" key={index}>{item.code}: {item.message}{item.sequence !== undefined ? ` · 구간 ${item.sequence + 1}` : ''}</p>)}
-            {finished && selected.recordingChunkCount > 0 && <><video key={selected.id} ref={replayRef} controls playsInline preload="metadata" className="consultation-video" src={recordingUrl(selected.id)} aria-label="상담 녹화 재생" onError={() => setError('녹화 재생을 준비하지 못했습니다. 서버 연결·저장 상태를 확인해 주세요.')} /><div className="consultation-actions"><a className="text-button" href={recordingUrl(selected.id)} download="consultation.webm">녹화 내려받기</a><a className="text-button" href={exportUrl(selected.id)} download="consultation.json">JSON 내보내기</a></div></>}
+            {finished && <>{selected.recordingChunkCount > 0 && <video key={selected.id} ref={replayRef} controls playsInline preload="metadata" className="consultation-video" src={recordingUrl(selected.id)} aria-label="상담 녹화 재생" onError={() => setError('녹화 재생을 준비하지 못했습니다. 서버 연결·저장 상태를 확인해 주세요.')} />}<div className="consultation-actions">{selected.recordingChunkCount > 0 && <a className="text-button" href={recordingUrl(selected.id)} download="consultation.webm">녹화 내려받기</a>}<a className="text-button" href={exportUrl(selected.id)} download="consultation.json">JSON 내보내기</a></div></>}
             <div className="consultation-bookmark"><h3>수동 순간 메모</h3><div className="consultation-bookmark-fields"><label>순간 시각 · 초<input type="number" min="0" max={Math.ceil(captureDuration / 1000)} step="0.001" value={recorder.busy ? (recorder.durationMs / 1000).toFixed(3) : bookmarkSeconds} disabled={recorder.busy || pending} onChange={event => setBookmarkSeconds(event.target.value)} /></label><label>순간 메모<input value={bookmarkText} maxLength={2000} disabled={pending} placeholder="직접 본 장면·들은 말" onChange={event => setBookmarkText(event.target.value)} /></label><button className="button secondary" disabled={!bookmarkText.trim() || pending || !['recording', 'ready', 'incomplete', 'interrupted'].includes(selected.state)} onClick={() => { const atMs = recorder.busy ? recorder.durationMs : Math.round(Number(bookmarkSeconds) * 1000); if (!Number.isFinite(atMs) || atMs < 0 || atMs > captureDuration) { setError('메모 시각은 상담 시간 안에서 지정해 주세요.'); return; } void run(() => addBookmark(selected.id, atMs, bookmarkText), '순간 메모를 저장했습니다. 일지를 다시 생성해 주세요.'); setBookmarkText(''); }}>순간 메모 저장</button></div>
               {selected.bookmarks.map(bookmark => <div className="consultation-row" key={bookmark.id}><button className="text-button" onClick={() => seek(bookmark.atMs)}>{time(bookmark.atMs)}</button><span>{bookmark.text}</span></div>)}
             </div>
@@ -120,7 +132,7 @@ export default function ConsultationWorkspace({ ready, model, onBusyChange }: { 
               </article>)}
             </section>)}
             {note && <><div className="consultation-actions"><button className="button secondary" disabled={busy || !dirty} onClick={saveNote}>일지 수정 저장</button>{note.approvedAt && <strong className="consultation-approved">검토·확정됨</strong>}</div>
-              <label className="review-checkbox"><input type="checkbox" checked={reviewed} disabled={busy || dirty || dirtySegments.size > 0 || !!note.approvedAt} onChange={event => setReviewed(event.target.checked)} />녹화·받아쓰기·모든 일지 항목의 원문 근거를 확인했습니다.</label><button className="button primary" disabled={busy || dirty || dirtySegments.size > 0 || !reviewed || noteErrors.length > 0 || selected.state !== 'ready' || !!note.approvedAt} onClick={() => void run(() => approveConsultation(selected.id), '상담 일지를 검토·확정했습니다.')}>검토 후 확정</button>
+              <label className="review-checkbox"><input type="checkbox" checked={reviewed} disabled={busy || dirty || dirtySegments.size > 0 || !!note.approvedAt} onChange={event => setReviewed(event.target.checked)} />녹화·받아쓰기·모든 일지 항목의 원문 근거를 확인했습니다.</label><button className="button primary" disabled={busy || dirty || dirtySegments.size > 0 || !reviewed || !selected.noteRevision || noteErrors.length > 0 || selected.state !== 'ready' || !!note.approvedAt} onClick={approve}>검토 후 확정</button>
             </>}
           </section>
         </>}

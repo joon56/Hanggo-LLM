@@ -16,13 +16,17 @@ export const MAX_SESSION_MS = 3600000;
 export const MAX_AUDIO_CHUNKS = 720;
 export const MAX_MEDIA_CHUNKS = 3600;
 export const MAX_SESSION_BYTES = 2 * 1024 ** 3;
+export function consultationNoteRevision(session: ConsultationSession): string | undefined {
+  if (!session.note) return undefined;
+  return session.noteRevision ?? createHash('sha256').update(JSON.stringify({ note: session.note, segments: session.segments, bookmarks: session.bookmarks })).digest('hex');
+}
 const time = z.number().int().min(0).max(MAX_SESSION_MS);
 const storedSchema = z.object({
   id: z.uuid(), metadata: z.object({ petName: z.string().min(1).max(200), trainerName: z.string().min(1).max(200), sessionDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/) }),
   createdAt: z.string().refine(value => Number.isFinite(Date.parse(value))), state: z.enum(['preparing', 'recording', 'processing', 'ready', 'incomplete', 'interrupted']), durationMs: time,
   segments: z.array(z.object({ id: z.string().min(1).max(100), sequence: z.number().int().min(0).max(MAX_AUDIO_CHUNKS - 1), startMs: time, endMs: time, text: z.string().max(16000), originalText: z.string().max(16000), state: z.enum(['queued', 'processing', 'complete', 'failed']), model: z.string().max(500).optional(), latencyMs: z.number().finite().min(0).optional() }).refine(segment => segment.endMs > segment.startMs)).max(MAX_AUDIO_CHUNKS),
   bookmarks: z.array(z.object({ id: z.string().min(1).max(100), atMs: time, text: z.string().min(1).max(2000) })).max(1000), recordingChunkCount: z.number().int().min(0).max(MAX_MEDIA_CHUNKS),
-  errors: z.array(z.object({ code: z.string().min(1).max(100), message: z.string().max(1000), sequence: z.number().int().min(0).max(MAX_AUDIO_CHUNKS - 1).optional() })).max(2000), note: z.unknown().optional(),
+  errors: z.array(z.object({ code: z.string().min(1).max(100), message: z.string().max(1000), sequence: z.number().int().min(0).max(MAX_AUDIO_CHUNKS - 1).optional() })).max(2000), note: z.unknown().optional(), noteRevision: z.string().min(1).max(100).optional(),
   chunks: z.object({ audio: z.array(z.object({ hash: z.string().regex(/^[0-9a-f]{64}$/), size: z.number().int().min(1).max(1024 ** 2) })).max(MAX_AUDIO_CHUNKS), media: z.array(z.object({ hash: z.string().regex(/^[0-9a-f]{64}$/), size: z.number().int().min(1).max(16 * 1024 ** 2) })).max(MAX_MEDIA_CHUNKS) }),
 });
 
@@ -36,7 +40,7 @@ export class ConsultationStore {
     if (!/^[0-9a-f-]{36}$/.test(id)) throw new ConsultationError('INPUT', 'Invalid session ID.');
     return path.join(this.directory, id);
   }
-  private snapshot(stored: Stored): ConsultationSession { const { chunks: _chunks, ...session } = stored; return structuredClone(session); }
+  private snapshot(stored: Stored): ConsultationSession { const { chunks: _chunks, ...session } = stored; return structuredClone({ ...session, noteRevision: consultationNoteRevision(session) }); }
   private async save(stored: Stored) {
     const directory = this.location(stored.id); const temporary = path.join(directory, `${randomUUID()}.tmp`);
     if ((await lstat(directory)).isSymbolicLink()) throw new ConsultationError('STORAGE', 'Unsafe session directory.', 500);
@@ -90,7 +94,7 @@ export class ConsultationStore {
       const stored = structuredClone(this.find(id)); const chunks = stored.chunks[kind];
       if (!Number.isInteger(sequence) || sequence < 0 || sequence > chunks.length || sequence >= (kind === 'media' ? MAX_MEDIA_CHUNKS : MAX_AUDIO_CHUNKS)) throw new ConsultationError('SEQUENCE', 'Chunk sequence is out of order.');
       const hash = createHash('sha256').update(bytes).digest('hex');
-      const register = () => { if (!segment || stored.segments.some(current => current.sequence === sequence)) return false; stored.segments.push(structuredClone(segment)); stored.durationMs = Math.max(stored.durationMs, segment.endMs); delete stored.note; return true; };
+      const register = () => { if (!segment || stored.segments.some(current => current.sequence === sequence)) return false; stored.segments.push(structuredClone(segment)); stored.durationMs = Math.max(stored.durationMs, segment.endMs); delete stored.note; delete stored.noteRevision; return true; };
       if (sequence < chunks.length) { if (chunks[sequence].hash !== hash) throw new ConsultationError('CONFLICT', 'Chunk retry has different content.', 409); if (!register()) return false; await this.save(stored); this.sessions.set(id, stored); return true; }
       const maximum = kind === 'media' ? 16 * 1024 ** 2 : 1024 ** 2;
       if (!bytes.length || bytes.length > maximum || [...stored.chunks.media, ...stored.chunks.audio].reduce((size, chunk) => size + chunk.size, 0) + bytes.length > MAX_SESSION_BYTES) throw new ConsultationError('TOO_LARGE', 'Session storage budget exceeded.', 413);
