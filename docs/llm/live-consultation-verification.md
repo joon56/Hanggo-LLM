@@ -68,3 +68,5 @@ Whisper large-v3-turbo GPU, Ollama를 연결했다. 화면은 합성 canvas이�
 - 사용자 실제 마이크·발음·실제 상담 화면의 인식 품질은 [시연 대본](../testing/live-consultation.md)으로 확인한다.
 
 시험 자료와 상세 실행 결과는 Git 제외 폴더 `.tmp/live-validation`에 보관한다.
+
+로컬 main 통합 후 단위 테스트 354개·빌드를 다시 통과했고, 동일한 실제 Chrome·GPU·Ollama 흐름을 약 24초 자료로 재확인했다. 탭·마이크 두 발언, 3개 전사 구간, 중요 장면, 9개 일지 항목, 버전 확인을 거친 승인·녹화 탐색을 확인했다. JavaScript 오류는 없었다.

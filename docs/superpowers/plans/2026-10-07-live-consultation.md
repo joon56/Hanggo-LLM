@@ -81,4 +81,4 @@ Files: `docs/testing/live-consultation.md`, `docs/llm/live-consultation-verifica
 - [x] Drive a 60-minute synthetic input through recording/segment storage; verify start/middle/end coverage and replay duration. Distinguish accelerated storage testing from wall-clock capture testing.
 - [x] Run a real GPU transcription and note-generation demo with available synthetic audio; ask user to validate their microphone quality using recorded fixed phrases.
 - [x] Ask user to select speech default after presenting results; retain separate candidate setup until selected.
-- [ ] Final code review, fixes, and documented remaining limitations. Integrate reviewed branch into local main; publish only source/docs when authorized, never captures/models.
+- [x] Final code review, fixes, and documented remaining limitations. Integrate reviewed branch into local main; publish only source/docs when authorized, never captures/models.
