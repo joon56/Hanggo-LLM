@@ -1,0 +1,39 @@
+.consultation-workspace { margin: 0 auto; max-width: 1440px; }
+.consultation-layout { display: grid; grid-template-columns: 230px minmax(0, 1fr); gap: 24px; align-items: start; }
+.consultation-main { min-width: 0; display: grid; gap: 24px; }
+.consultation-panel { border: 1px solid var(--line, #deded6); border-radius: 16px; padding: 24px; background: var(--paper, #fffefb); min-width: 0; }
+.consultation-panel h2 { margin: 8px 0 16px; font-size: 20px; }
+.consultation-panel h3 { font-size: 15px; margin: 18px 0 10px; }
+.consultation-hint { color: #676b60; font-size: 13px; line-height: 1.7; }
+.consultation-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; font-size: 13px; }
+.consultation-actions { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; margin: 16px 0; }
+.consultation-local { color: #5d7050; font-size: 11px; letter-spacing: .08em; }
+.consultation-history { position: sticky; top: 24px; padding: 18px; }
+.consultation-history h2 { font-size: 16px; }
+.consultation-history-item { display: flex; border-top: 1px solid #e6e7dd; padding: 12px 0; gap: 4px; }
+.consultation-history-item > button:first-child { min-width: 0; flex: 1; border: 0; background: transparent; text-align: left; cursor: pointer; color: inherit; }
+.consultation-history-item small { display: block; margin-top: 6px; line-height: 1.6; color: #74776d; }
+.consultation-history-item.selected strong { color: #587047; }
+.consultation-capture-status { display: flex; gap: 14px; flex-wrap: wrap; padding: 16px; border: 1px solid #e4e7dc; background: #f5f6ef; border-radius: 8px; font-size: 13px; }
+.consultation-video { display: block; width: 100%; max-height: 420px; aspect-ratio: 16 / 9; background: #20231f; border-radius: 10px; margin: 20px 0 10px; }
+.consultation-bookmark { margin: 20px 0; padding: 4px 0 16px; border-bottom: 1px solid #e4e7dc; }
+.consultation-bookmark-fields { display: grid; grid-template-columns: 130px minmax(0, 1fr) auto; gap: 12px; align-items: end; margin-bottom: 12px; }
+.consultation-workspace label { font-size: 12px; font-weight: 600; }
+.consultation-workspace input:not([type=checkbox]), .consultation-workspace select { display: block; width: 100%; padding: 10px; border: 1px solid #dce0d3; border-radius: 6px; background: #fff; color: inherit; font: inherit; margin-top: 6px; }
+.consultation-workspace textarea { display: block; width: 100%; resize: vertical; min-height: 80px; border: 1px solid #dce0d3; border-radius: 6px; background: #fff; color: inherit; font: inherit; padding: 12px; line-height: 1.7; margin: 10px 0; }
+.consultation-segment { padding: 14px 0; border-top: 1px solid #e8e9e2; }
+.consultation-segment.failed { color: #934a2c; }
+.consultation-note-section { margin-top: 20px; padding-top: 8px; border-top: 1px solid #dfe3d5; }
+.consultation-note-item { margin: 14px 0; padding: 16px; background: #f7f8f2; border-radius: 8px; }
+.consultation-note-item select { min-width: 150px; }
+.consultation-evidence { padding-left: 12px; border-left: 2px solid #c5d0b6; margin: 12px 0; }
+.consultation-evidence blockquote { margin: 6px 0; font-size: 13px; line-height: 1.7; white-space: pre-wrap; overflow-wrap: anywhere; }
+.consultation-missing { font-size: 13px; color: #75786f; }
+.consultation-warning { padding: 12px 14px; background: #fff4dd; color: #79522c; border-radius: 6px; font-size: 13px; line-height: 1.7; overflow-wrap: anywhere; }
+.consultation-approved { color: #526c40; font-size: 13px; }
+.consultation-audio-level { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin: 16px 0; color: #5e6955; }
+.consultation-audio-level meter { width: 180px; }
+.consultation-connection-lock { border: 0; padding: 0; margin: 0; min-width: 0; }
+.consultation-workspace button:disabled { cursor: default; opacity: .5; }
+@media (max-width: 1050px) { .consultation-layout { grid-template-columns: 1fr; } .consultation-history { position: static; } .consultation-history-item { display: inline-flex; max-width: 300px; width: 100%; margin-right: 12px; } }
+@media (max-width: 600px) { .consultation-panel { padding: 16px; } .consultation-bookmark-fields { grid-template-columns: 1fr; } .consultation-actions .button { width: 100%; } .consultation-row { align-items: start; } }
