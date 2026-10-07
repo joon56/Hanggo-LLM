@@ -78,4 +78,4 @@ createConsultation(metadata: Metadata, captureSource?: 'camera' | 'tab')
 - [x] Exercise camera/audio recording with browser fake devices, analysis, sources, notes, review and export. Cover interrupted recording and vision cancellation separately from the successful path.
 - [x] Write the physical-camera beta flow: device permission, pet behavior plus spoken explanation, important moment, stop, analysis, original scene verification, note, export. Include a timing check against a visible/spoken cue.
 - [x] Run `npm.cmd run verify` and actual local integration. Record untested real hardware / human performance limits.
-- [ ] Review complete diff; fix material findings, rerun covering checks, integrate into main and refresh local service after checking process ownership.
+- [x] Review complete diff; fix material findings, rerun covering checks, integrate into main and refresh local service after checking process ownership.
