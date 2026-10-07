@@ -46,11 +46,11 @@ type VisionAnalysis = {
 // GET /:id/vision/scenes/:sceneId/frames/:index -> saved JPEG.
 ```
 
-- [ ] Write failing focused tests for camera creation, visual evidence persistence, incomplete vision generation/approval rejection, scene review revision, job cancellation and GPU reservation.
-- [ ] Run focused tests and record expected failures.
-- [ ] Implement bounded schemas, restart recovery, ffmpeg frame extraction, strictly local vision requests with assertLocalModel and vision capability check. Validate observations as short strings; never use transcript text to invent visual observations. Use asynchronous jobs, persisted per-scene results, fixed frame paths and generated IDs. Release AI reservation exactly once. Treat missing model/images/invalid output as visible errors, not fallback observations.
-- [ ] Extend note generation, revision/source conflict checks, approval and deletion for visual sources. Camera notes require complete analysis; approval requires reviewed analysis. Successful empty visual observations remain legitimate.
-- [ ] Verify with focused Vitest suites, typecheck and backend tests. Commit task files only. Report RED/GREEN evidence and exact interfaces to `.tmp/camera-backend-report.md`.
+- [x] Write failing focused tests for camera creation, visual evidence persistence, incomplete vision generation/approval rejection, scene review revision, job cancellation and GPU reservation.
+- [x] Run focused tests and record expected failures.
+- [x] Implement bounded schemas, restart recovery, ffmpeg frame extraction, strictly local vision requests with assertLocalModel and vision capability check. Validate observations as short strings; never use transcript text to invent visual observations. Use asynchronous jobs, persisted per-scene results, fixed frame paths and generated IDs. Release AI reservation exactly once. Treat missing model/images/invalid output as visible errors, not fallback observations.
+- [x] Extend note generation, revision/source conflict checks, approval and deletion for visual sources. Camera notes require complete analysis; approval requires reviewed analysis. Successful empty visual observations remain legitimate.
+- [x] Verify with focused Vitest suites, typecheck and backend tests. Commit task files only. Report RED/GREEN evidence and exact interfaces to `.tmp/camera-backend-report.md`.
 
 ## Task 2: Camera capture and vision review UI
 
@@ -63,19 +63,19 @@ start(metadata: Metadata, microphoneEnabled: boolean, source?: 'camera' | 'tab')
 createConsultation(metadata: Metadata, captureSource?: 'camera' | 'tab')
 ```
 
-- [ ] Add failing tests for camera video/audio permissions without display capture, track cleanup and disconnected camera handling; new default camera UI and legacy tab option.
-- [ ] Run focused tests and record failures.
-- [ ] Implement camera capture reusing media/audio queues, with camera microphone always present. Show camera/source labels, preview, consent and device errors. Ensure preparation delay does not enter recording timestamps.
-- [ ] Add analysis start/progress/cancel/retry, thumbnails with time, scene observations editing and explicit revision-bound review. Poll processing even after navigation/reload. Prevent source edits while analysis runs and prevent stale approval after any change. Capture the exact moment when the moment action is used; explain elapsed time is recording time.
-- [ ] Extend note editor source lookup/labels and generation/approval availability for vision sources. Do not offer valid-looking camera notes when analysis incomplete. Preserve empty observation edits and original model results.
-- [ ] Run hook, component/API tests, build and browser tests. Commit task files only; report to `.tmp/camera-frontend-report.md`.
+- [x] Add failing tests for camera video/audio permissions without display capture, track cleanup and disconnected camera handling; new default camera UI and legacy tab option.
+- [x] Run focused tests and record failures.
+- [x] Implement camera capture reusing media/audio queues, with camera microphone always present. Show camera/source labels, preview, consent and device errors. Ensure preparation delay does not enter recording timestamps.
+- [x] Add analysis start/progress/cancel/retry, thumbnails with time, scene observations editing and explicit revision-bound review. Poll processing even after navigation/reload. Prevent source edits while analysis runs and prevent stale approval after any change. Capture the exact moment when the moment action is used; explain elapsed time is recording time.
+- [x] Extend note editor source lookup/labels and generation/approval availability for vision sources. Do not offer valid-looking camera notes when analysis incomplete. Preserve empty observation edits and original model results.
+- [x] Run hook, component/API tests, build and browser tests. Commit task files only; report to `.tmp/camera-frontend-report.md`.
 
 ## Task 3: Actual model/browser verification, demo guide and integration
 
 **Files:** `docs/testing/live-consultation.md`, `docs/llm/camera-analysis-verification.md`, `README.md`, optional `scripts/verify-camera-consultation.ts`.
 
-- [ ] Test actual ffmpeg images and installed local model; record latency and output without claiming pet behavior accuracy from synthetic imagery.
-- [ ] Exercise camera/audio recording with browser fake devices, analysis, sources, notes, review and export. Cover interrupted recording and vision cancellation separately from the successful path.
-- [ ] Write the physical-camera beta flow: device permission, pet behavior plus spoken explanation, important moment, stop, analysis, original scene verification, note, export. Include a timing check against a visible/spoken cue.
-- [ ] Run `npm.cmd run verify` and actual local integration. Record untested real hardware / human performance limits.
+- [x] Test actual ffmpeg images and installed local model; record latency and output without claiming pet behavior accuracy from synthetic imagery.
+- [x] Exercise camera/audio recording with browser fake devices, analysis, sources, notes, review and export. Cover interrupted recording and vision cancellation separately from the successful path.
+- [x] Write the physical-camera beta flow: device permission, pet behavior plus spoken explanation, important moment, stop, analysis, original scene verification, note, export. Include a timing check against a visible/spoken cue.
+- [x] Run `npm.cmd run verify` and actual local integration. Record untested real hardware / human performance limits.
 - [ ] Review complete diff; fix material findings, rerun covering checks, integrate into main and refresh local service after checking process ownership.

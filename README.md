@@ -11,7 +11,7 @@
 ![React](https://img.shields.io/badge/React-19-405438?style=flat-square)
 ![Local AI](https://img.shields.io/badge/Ollama_%2B_Whisper-Local_AI-405438?style=flat-square)
 
-[공개 체험판](https://joon56.github.io/Hanggo-LLM/) · [빠른 시작](#빠른-시작) · [실시간 상담 시연](docs/testing/live-consultation.md) · [기존 기능 시연](docs/testing/beta-test-script.md)
+[공개 체험판](https://joon56.github.io/Hanggo-LLM/) · [빠른 시작](#빠른-시작) · [카메라 상담 시연](docs/testing/camera-consultation.md) · [기존 기능 시연](docs/testing/beta-test-script.md)
 
 </div>
 
@@ -23,7 +23,8 @@
 
 | 기능 | 흐름 |
 |---|---|
-| 실시간 상담 · 로컬 | Chrome/Edge 탭 화면·음성 + 선택한 마이크 → 최대 60분 전사·녹화 → 중요 장면 표시 → 7개 항목 상세 일지·근거 시간·승인 |
+| 카메라 상담 · 로컬 | 실제 카메라·마이크 → 최대 60분 전사·녹화 → 중요 장면 표시 → 종료 후 영상 관찰·검토 → 7개 항목 상세 일지·근거 시간·확정 |
+| 탭 녹화 · 로컬 | Chrome/Edge 탭 화면·음성 + 선택한 마이크 → 전사·녹화 → 원문 검토·일지 |
 | 상담일지 | 3~60초 음성 또는 8,000자 이하 텍스트 → 원문·분류·숫자 확인 → 승인·저장 |
 | 보호자 일상 기록 | 반려동물 등록 → 음성 또는 텍스트 → 사건별 반려동물·시각·근거 확인 → 저장 |
 | 상담 전 브리핑 | 같은 브라우저에 저장된 보호자 기록 → 최근 14일 사실표·근거·자료 부족 표시 |
@@ -33,11 +34,13 @@
 
 ### 실시간 상담의 흐름
 
-**탭 공유 → 전사·녹화 → 중요 장면 표시 → 전사 수정 → 상세 일지 → 검토·내보내기**
+**카메라·마이크 → 전사·녹화 → 중요 장면 표시 → 종료 후 영상 분석 → 원문·관찰 수정 → 상세 일지 → 검토·내보내기**
 
-상담 목적·고민 / 보호자 보고 / 상담 중 관찰 / 훈련사 안내 / 합의한 과제 / 후속 확인 / 중요 장면으로 정리합니다. 각 항목은 전사나 수동 메모의 인용문·시간으로 연결합니다. 영상 AI 분석과 자동 화자 식별은 이번 범위에 포함하지 않습니다.
+상담 목적·고민 / 보호자 보고 / 상담 중 관찰 / 훈련사 안내 / 합의한 과제 / 후속 확인 / 중요 장면으로 정리합니다. 각 항목의 전사 인용·수동 메모·AI 영상 관찰을 구분하고 근거 시각으로 이동합니다. 중요 장면은 버튼을 누른 순간을 먼저 고정하고 나중에 메모를 저장합니다.
 
-[60분 상담 시연 대본](docs/testing/live-consultation.md) · [무료 음성 모델 비교 결과](docs/llm/speech-comparison.md)
+영상은 기본 30초 간격과 중요 메모 주변의 최대 3개 프레임을 `qwen3.5:9b`로 분석합니다. 장면 사이의 짧은 행동은 빠질 수 있습니다. 프레임 시각은 관찰 근거 위치이며 행동 시작·종료나 보상 반응 시간을 자동 측정한 값이 아닙니다. 영상 관찰에도 오인식이 있어 근거 장면 검토·수정 후 일지를 확정합니다. 자동 화자 식별과 보호자·훈련사 원격 통화는 제공하지 않습니다.
+
+[카메라 상담 시연 대본](docs/testing/camera-consultation.md) · [탭 공유 시연 대본](docs/testing/live-consultation.md) · [무료 음성 모델 비교 결과](docs/llm/speech-comparison.md)
 
 <details>
 <summary><strong>모바일 검토 화면 보기</strong></summary>
@@ -78,7 +81,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts/setup-speech-candida
 
 이 스크립트는 비교 후보 3개와 GPU 실행기를 약 10.8GB 다운로드하고 해시를 검증합니다.
 `.env`에 `FEATURE_LIVE_CONSULTATION_ENABLED=true`, `LIVE_SPEECH_MODEL=whisper-turbo`를 설정한 뒤
-서버를 다시 시작합니다. 상담 시작 시 GPU 음성 모델을 준비하고, 전사 종료 후 텍스트 모델로 일지를 만듭니다.
+서버를 다시 시작합니다. 상담 시작 시 GPU 음성 모델을 준비하고, 전사 종료 후 음성 모델을 해제합니다. 카메라 상담은 이미지 입력을 지원하는 로컬 `qwen3.5:9b`로 장면을 분석한 뒤 일지를 만듭니다. 현재 PC에는 해당 모델이 설치돼 있습니다.
 
 ## 사용 흐름과 확인
 
@@ -102,7 +105,7 @@ npm.cmd run llm:eval:workspace -- --feature owner --case bark-delivery --live
 
 `verify`는 단위·빌드·모의 브라우저 테스트와 자료 형식 평가를 실행합니다. `llm:eval:local`과 `--live`는 로컬 모델 평가입니다. 전체 평가는 오래 걸릴 수 있습니다. 음성 평가는 `--audio-dir test-audio`와 사례 ID에 맞는 WAV/WebM/MP4/MP3 파일이 필요합니다. 결과 JSON에는 가상 원문을 사용하세요.
 
-실시간 상담 추가 후 단위 테스트 354개, Chrome 테스트 13개, 빌드·타입 검사와 82개 테스트 자료 검사가 통과했습니다. 실제 GPU를 연결한 합성 음성 브라우저 시험과 60분 자료 가속 시험도 확인했습니다. 물리 마이크·실제 상담의 인식 품질과 60분 연속 브라우저 녹화는 추가 확인 대상입니다. [실시간 상담 검증](docs/llm/live-consultation-verification.md)
+카메라 상담 추가 후 단위 테스트 399개, Chrome 테스트 14개, 빌드·타입 검사와 82개 테스트 자료 검사가 통과했습니다. 가상 카메라·합성 음성과 실제 로컬 모델을 연결해 녹화·전사·장면 수정·일지 확정·내보내기를 확인했습니다. 영상에서 보이지 않는 자세 추측과 전사 구간 경계의 단어 누락도 발견돼, 원본 검토·수정이 필요합니다. 물리 카메라·마이크, 실제 반려동물 행동 인식과 60분 연속 브라우저 녹화는 추가 확인 대상입니다. [카메라 상담 검증](docs/llm/camera-analysis-verification.md) · [이전 실시간 상담·60분 자료 가속 검증](docs/llm/live-consultation-verification.md)
 
 이전 실모델 측정에서 `qwen3.5:9b` 전체 사례는 74/82개 자동 조건을 통과했습니다. 같은 16개 사례 비교에서는 이전 모델 6/16개, 현재 모델 15/16개였습니다. 실모델 수치는 당시 환경의 측정값이며 모든 입력에 대한 품질 보장은 아닙니다. [이전 베타 검증](docs/llm/beta-verification.md) · [이전 로컬 모델 검증](docs/llm/local-verification.md) · [과거 외부 AI 실험](docs/llm/openai-verification.md)
 
