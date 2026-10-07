@@ -1,5 +1,6 @@
 import { afterEach, expect, test, vi } from 'vitest';
 import { createConsultation, listConsultations, uploadAudio, uploadMedia, deleteConsultation, recordingUrl, approveConsultation } from './consultation-api';
+import * as api from './consultation-api';
 afterEach(()=>vi.unstubAllGlobals());
 test('API uses guarded same-origin JSON and raw ordered uploads', async () => {
   const fetcher=vi.fn().mockResolvedValue({ok:true,json:async()=>({id:'s',sessions:[]})}); vi.stubGlobal('fetch',fetcher);
@@ -11,4 +12,13 @@ test('approval submits the revision of the persisted note that was reviewed', as
   const fetcher=vi.fn().mockResolvedValue({ok:true,json:async()=>({id:'s'})}); vi.stubGlobal('fetch',fetcher);
   await approveConsultation('s', 'reviewed-revision');
   expect(JSON.parse(fetcher.mock.calls[0][1].body)).toEqual({reviewed:true,noteRevision:'reviewed-revision'});
+});
+test('camera and revision-bound vision API preserve exact observations including empty edits', async () => {
+  const fetcher=vi.fn().mockResolvedValue({ok:true,json:async()=>({id:'s'})}); vi.stubGlobal('fetch',fetcher);
+  await createConsultation({petName:'초코',trainerName:'훈련사',sessionDate:'2026-10-07'},'camera');
+  await api.startVision('s'); await api.cancelVision('s'); await api.updateVisionScene('s','scene/1','r1',[]); await api.reviewVision('s','r2');
+  expect(JSON.parse(fetcher.mock.calls[0][1].body).captureSource).toBe('camera');
+  expect(fetcher.mock.calls[1][0]).toBe('/api/consultations/s/vision'); expect(fetcher.mock.calls[2][0]).toBe('/api/consultations/s/vision/cancel');
+  expect(fetcher.mock.calls[3][0]).toBe('/api/consultations/s/vision/scenes/scene%2F1'); expect(JSON.parse(fetcher.mock.calls[3][1].body)).toEqual({revision:'r1',observations:[]});
+  expect(JSON.parse(fetcher.mock.calls[4][1].body)).toEqual({revision:'r2',reviewed:true}); expect(api.visionFrameUrl('s','scene/1',2)).toBe('/api/consultations/s/vision/scenes/scene%2F1/frames/2');
 });

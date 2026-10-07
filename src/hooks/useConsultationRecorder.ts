@@ -102,20 +102,24 @@ export function useConsultationRecorder() {
     return current.stopped;
   };
   stopRef.current = stop;
-  const start = async (metadata: Metadata, microphoneEnabled: boolean) => {
+  const start = async (metadata: Metadata, microphoneEnabled: boolean, source: 'camera' | 'tab' = 'tab') => {
     if (capture.current && !['idle', 'ready'].includes(status)) return;
     const current: Capture = { stopping: false, cancelled: false, durationMs: 0 }; capture.current = current;
     update(() => { setStatus('requesting'); setError(''); setSession(null); setDurationMs(0); setPendingBytes(0); });
     try {
-      if (!navigator.mediaDevices?.getDisplayMedia || typeof AudioWorkletNode === 'undefined' || typeof MediaRecorder === 'undefined') throw new Error('Windows Chrome/Edge에서 탭 공유와 오디오 녹화를 지원하는지 확인해 주세요.');
+      if (!(source === 'camera' ? navigator.mediaDevices?.getUserMedia : navigator.mediaDevices?.getDisplayMedia) || typeof AudioWorkletNode === 'undefined' || typeof MediaRecorder === 'undefined') throw new Error('Windows Chrome/Edge에서 카메라·탭과 오디오 녹화를 지원하는지 확인해 주세요.');
       // First await comes after display picker to preserve user activation.
-      const selected = navigator.mediaDevices.getDisplayMedia({ video: { width: { max: 1280 }, height: { max: 720 }, frameRate: { max: 15 } }, audio: true });
+      const video = { width: { max: 1280 }, height: { max: 720 }, frameRate: { max: 15 } };
+      const selected = source === 'camera'
+        ? navigator.mediaDevices.getUserMedia({ video, audio: { echoCancellation: true, noiseSuppression: true } })
+        : navigator.mediaDevices.getDisplayMedia({ video, audio: true });
       current.display = await selected;
       if (current.cancelled) { release(current); update(() => setStatus('idle')); return; }
-      if (current.display.getVideoTracks()[0]?.getSettings().displaySurface !== 'browser') throw new Error('브라우저 탭만 공유할 수 있습니다. 창·전체 화면 대신 상담 탭을 선택해 주세요.');
-      if (!current.display.getAudioTracks().length) throw new Error('탭 오디오가 없습니다. 탭 오디오 공유를 켜고 다시 선택해 주세요.');
-      current.display.getVideoTracks()[0].addEventListener('ended', () => { void stopRef.current(); }, { once: true });
-      if (microphoneEnabled) current.microphone = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true }, video: false });
+      if (!current.display.getVideoTracks().length) throw new Error('카메라 영상이 없습니다. 카메라 연결과 권한을 확인해 주세요.');
+      if (source === 'tab' && current.display.getVideoTracks()[0]?.getSettings().displaySurface !== 'browser') throw new Error('브라우저 탭만 공유할 수 있습니다. 창·전체 화면 대신 상담 탭을 선택해 주세요.');
+      if (!current.display.getAudioTracks().length) throw new Error(source === 'camera' ? '마이크 음성이 없습니다. 마이크 연결과 권한을 확인해 주세요.' : '탭 오디오가 없습니다. 탭 오디오 공유를 켜고 다시 선택해 주세요.');
+      current.display.getVideoTracks()[0].addEventListener('ended', () => { if (source === 'camera' && !current.stopping && !current.cancelled) { current.fatal = '카메라 연결이 끊겼습니다. 영상 일부가 누락될 수 있습니다.'; update(() => setError(current.fatal!)); } void stopRef.current(); }, { once: true });
+      if (source === 'tab' && microphoneEnabled) current.microphone = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true }, video: false });
       if (current.cancelled) { release(current); update(() => setStatus('idle')); return; }
       current.context = new AudioContext(); await current.context.audioWorklet.addModule('/consultation-audio-worklet.js'); await current.context.resume();
       if (current.cancelled) { release(current); update(() => setStatus('idle')); return; }
@@ -123,15 +127,16 @@ export function useConsultationRecorder() {
       const mute = current.context.createGain(); mute.gain.value = 0; worklet.connect(mute); mute.connect(current.context.destination);
       const sources = [current.display, ...(current.microphone ? [current.microphone] : [])];
       const connectSources = () => { for (const stream of sources) { const source = current.context!.createMediaStreamSource(stream); source.connect(mix); source.connect(worklet); } };
-      update(() => setStatus('preparing')); current.session = await createConsultation(metadata); update(() => setSession(current.session!));
+      update(() => setStatus('preparing')); current.session = await createConsultation(metadata, source); update(() => setSession(current.session!));
       if (current.cancelled) { release(current); await finish(current); return; }
-      if (current.display.getAudioTracks().some(track => track.readyState === 'ended') || current.microphone?.getAudioTracks().some(track => track.readyState === 'ended')) {
+      if (current.display.getVideoTracks().some(track => track.readyState === 'ended') || current.display.getAudioTracks().some(track => track.readyState === 'ended') || current.microphone?.getAudioTracks().some(track => track.readyState === 'ended')) {
         current.fatal = current.display.getAudioTracks().some(track => track.readyState === 'ended') ? '모델 준비 중 탭 오디오가 끊겼습니다. 다시 공유해 주세요.' : '모델 준비 중 마이크가 끊겼습니다. 연결 후 다시 시작해 주세요.';
+        if (source === 'camera') current.fatal = '모델 준비 중 카메라·마이크 연결이 끊겼습니다. 연결 후 다시 시작해 주세요.';
         throw new Error(current.fatal);
       }
       const failed = (cause: Error) => { update(() => setError(`업로드 중지: ${cause.message}. 데이터 보존 후 재시도 필요.`)); if (!current.stopping) void stopRef.current(); };
       const lostAudio = (message: string) => { if (current.stopping || current.cancelled) return; current.fatal = message; failed(new Error(message)); };
-      current.display.getAudioTracks().forEach(track => track.addEventListener('ended', () => { if (current.display!.getVideoTracks()[0].readyState === 'ended') { void stopRef.current(); } else lostAudio('탭 오디오가 끊겼습니다. 받아쓰기 일부가 누락될 수 있습니다.'); }, { once: true }));
+      current.display.getAudioTracks().forEach(track => track.addEventListener('ended', () => { if (current.display!.getVideoTracks()[0].readyState === 'ended') { void stopRef.current(); } else lostAudio(source === 'camera' ? '카메라 마이크가 끊겼습니다. 받아쓰기 일부가 누락될 수 있습니다.' : '탭 오디오가 끊겼습니다. 받아쓰기 일부가 누락될 수 있습니다.'); }, { once: true }));
       current.microphone?.getAudioTracks().forEach(track => track.addEventListener('ended', () => lostAudio('마이크가 끊겼습니다. 내 목소리 일부가 누락될 수 있습니다.'), { once: true }));
       worklet.onprocessorerror = () => lostAudio('오디오 처리 오류. 받아쓰기 일부가 누락될 수 있습니다.');
       const changed = () => { const bytes = (current.mediaQueue?.pendingBytes ?? 0) + (current.audioQueue?.pendingBytes ?? 0); update(() => setPendingBytes(bytes)); if (bytes > 32 * 1024 * 1024 && !current.stopping) failed(new Error('업로드 대기 증가')); };
@@ -153,7 +158,9 @@ export function useConsultationRecorder() {
       current.timer = setInterval(() => { changed(); if (current.context?.state === 'suspended') { current.fatal = '오디오 처리 일시 중지. 끝부분 누락을 확인해 주세요.'; failed(new Error(current.fatal)); } }, 1000);
       current.cutoff = setTimeout(() => { update(() => setError('60분 제한에 도달해 녹화를 종료합니다.')); void stopRef.current(); }, MAX_MS);
     } catch (cause) {
-      const message = cause instanceof DOMException && cause.name === 'NotAllowedError' ? '공유 또는 마이크 권한이 거부되었습니다. 권한을 확인하고 다시 시작해 주세요.' : cause instanceof Error ? cause.message : '녹화를 시작하지 못했습니다.';
+      const message = cause instanceof DOMException && cause.name === 'NotAllowedError' ? '카메라·공유 또는 마이크 권한이 거부되었습니다. 권한을 확인하고 다시 시작해 주세요.'
+        : cause instanceof DOMException && ['NotFoundError', 'NotReadableError'].includes(cause.name) ? '카메라·마이크를 사용할 수 없습니다. 장치 연결을 확인하고 다른 앱의 장치 사용을 종료한 뒤 다시 시작해 주세요.'
+        : cause instanceof Error ? cause.message : '녹화를 시작하지 못했습니다.';
       update(() => setError(message)); release(current);
       if (current.session) await finish(current); else update(() => setStatus('idle'));
     }

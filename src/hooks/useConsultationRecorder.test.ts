@@ -52,6 +52,37 @@ test('display picker runs in click gesture before model prepare', async () => {
   await act(() => start); expect(result.current.status).toBe('recording'); expect(getUserMedia).not.toHaveBeenCalled();
   await act(() => result.current.stop());
 });
+test('camera captures video and microphone together without display picker and releases both', async () => {
+  const camera = new Stream([new Track('video'), new Track('audio')]); getUserMedia.mockResolvedValue(camera);
+  const { result } = renderHook(() => useConsultationRecorder());
+  await act(() => result.current.start(metadata, false, 'camera'));
+  expect(getDisplayMedia).not.toHaveBeenCalled(); expect(getUserMedia).toHaveBeenCalledWith({ video: { width: { max: 1280 }, height: { max: 720 }, frameRate: { max: 15 } }, audio: { echoCancellation: true, noiseSuppression: true } });
+  expect(api.createConsultation).toHaveBeenCalledWith(metadata, 'camera'); expect(result.current.preview).toBe(camera);
+  await act(() => result.current.stop()); camera.getTracks().forEach(track => expect(track.stop).toHaveBeenCalled());
+});
+test('camera disconnection marks incomplete recording and preserves elapsed time', async () => {
+  const camera = new Stream([new Track('video'), new Track('audio')]); getUserMedia.mockResolvedValue(camera);
+  const { result } = renderHook(() => useConsultationRecorder()); await act(() => result.current.start(metadata, false, 'camera'));
+  act(() => vi.advanceTimersByTime(1234)); await act(async () => camera.getVideoTracks()[0].dispatchEvent(new Event('ended')));
+  expect(api.finishConsultation).toHaveBeenCalledWith('session-1', 1234, expect.stringContaining('카메라'));
+});
+test('camera permissions fail visibly without creating session', async () => {
+  getUserMedia.mockRejectedValue(new DOMException('denied', 'NotAllowedError'));
+  const { result } = renderHook(() => useConsultationRecorder()); await act(() => result.current.start(metadata, false, 'camera'));
+  expect(getDisplayMedia).not.toHaveBeenCalled(); expect(api.createConsultation).not.toHaveBeenCalled(); expect(result.current.error).toMatch(/권한/);
+});
+test.each(['NotFoundError','NotReadableError'])('camera device error %s gives Korean recovery and no server session', async name => {
+  getUserMedia.mockRejectedValue(new DOMException('Device unavailable',name));const {result}=renderHook(()=>useConsultationRecorder());await act(()=>result.current.start(metadata,true,'camera'));expect(result.current.error).toMatch(/카메라·마이크/);expect(api.createConsultation).not.toHaveBeenCalled();
+});
+test('camera preparation delay is excluded from audio and recording moment clock', async () => {
+  getUserMedia.mockResolvedValue(new Stream([new Track('video'), new Track('audio')]));
+  let resolveCreate!: (value: typeof session) => void; vi.mocked(api.createConsultation).mockImplementation(() => new Promise(resolve => { resolveCreate = resolve as never; }));
+  const { result } = renderHook(() => useConsultationRecorder()); let pending!: Promise<void>;
+  await act(async () => { pending = result.current.start(metadata, true, 'camera'); }); act(() => vi.advanceTimersByTime(30000));
+  await act(async () => { resolveCreate(session); await pending; }); expect(result.current.durationMs).toBe(0);
+  act(() => worklet.port.onmessage?.({ data: { type: 'samples', samples: new Float32Array(48000) } }));
+  await act(() => result.current.stop()); expect(api.finishConsultation).toHaveBeenCalledWith('session-1', 1000);
+});
 test('permission rejection never creates server capture', async () => {
   getDisplayMedia.mockRejectedValue(new DOMException('denied','NotAllowedError')); const {result}=renderHook(()=>useConsultationRecorder()); await act(()=>result.current.start(metadata,false));
   expect(result.current.error).toMatch(/권한/); expect(api.createConsultation).not.toHaveBeenCalled();
