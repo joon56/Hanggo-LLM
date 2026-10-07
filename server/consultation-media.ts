@@ -24,7 +24,8 @@ export function parseByteRange(value: string | undefined, size: number) {
   return { start, end };
 }
 
-export async function ensureSeekableRecording(files: MediaFile[], ffmpeg: string): Promise<string> {
+export async function ensureSeekableRecording(files: MediaFile[], ffmpeg: string, signal?: AbortSignal): Promise<string> {
+  signal?.throwIfAborted();
   if (!files.length) throw new Error('저장된 녹화가 없습니다.');
   const directory = dirname(resolve(files[0].filename));
   if (files.some(file => dirname(resolve(file.filename)) !== directory)) throw new Error('잘못된 녹화 경로입니다.');
@@ -38,6 +39,7 @@ export async function ensureSeekableRecording(files: MediaFile[], ffmpeg: string
     const temporary = join(directory, `recording-${randomUUID()}.tmp`);
     const child = spawn(ffmpeg, ['-v', 'error', '-nostdin', '-y', '-protocol_whitelist', 'pipe', '-format_whitelist', 'matroska,webm',
       '-i', 'pipe:0', '-map', '0:v?', '-map', '0:a?', '-c', 'copy', '-f', 'webm', temporary], { shell: false, windowsHide: true, stdio: ['pipe', 'ignore', 'pipe'] });
+    const abort = () => child.kill(); signal?.addEventListener('abort', abort, { once: true }); if (signal?.aborted) abort();
     let logBytes = 0; let timedOut = false;
     child.stderr.on('data', (chunk: Buffer) => { logBytes += chunk.length; if (logBytes > 64 * 1024) child.kill(); });
     const timeout = setTimeout(() => { timedOut = true; child.kill(); }, 120_000);
@@ -54,9 +56,9 @@ export async function ensureSeekableRecording(files: MediaFile[], ffmpeg: string
     try {
       await Promise.all([written, exited]);
       const info = await lstat(temporary); if (!info.size) throw new Error('녹화가 비어 있습니다.');
-      await rename(temporary, target); return target;
+      signal?.throwIfAborted(); await rename(temporary, target); return target;
     } catch (error) { child.kill(); await Promise.allSettled([written, exited]); throw error; }
-    finally { clearTimeout(timeout); await rm(temporary, { force: true }); }
+    finally { signal?.removeEventListener('abort', abort); clearTimeout(timeout); await rm(temporary, { force: true }); }
   })();
   pending.set(target, task);
   try { return await task; } finally { pending.delete(target); }

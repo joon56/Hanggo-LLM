@@ -1,0 +1,90 @@
+// @vitest-environment node
+import { afterEach, expect, it, vi } from 'vitest';
+import { mkdtemp, rm } from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
+import express from 'express';
+import request from 'supertest';
+import { ConsultationStore } from './consultation-store.ts';
+import { createConsultationRouter } from './consultation-router.ts';
+import { generateConsultationNote } from './consultation-notes.ts';
+import { validateConsultationNote } from '../src/domain/consultation.ts';
+import { createDraft } from '../src/domain/notes.ts';
+const dirs: string[] = [];
+const metadata = { petName: 'Choco', trainerName: 'Kim', sessionDate: '2026-10-07' };
+afterEach(async () => { await Promise.all(dirs.splice(0).map(dir => rm(dir, {recursive:true, force:true}))); });
+async function fixture(analyze: (frames: Buffer[], signal: AbortSignal) => Promise<string[]> = async () => ['Dog sits.']) {
+ const dir = await mkdtemp(path.join(os.tmpdir(), 'camera-')); dirs.push(dir);
+ const store = new ConsultationStore(dir); const session = await store.create(metadata, 'camera');
+ await store.update(session.id, s => { s.state='ready'; s.durationMs=5000; });
+ const release = vi.fn(); const acquire = vi.fn(() => release);
+ const routes = createConsultationRouter({enabled:true,directory:dir,generate:async text => ({draft:createDraft(text,'trainer_summary_voice')}),acquireAi:acquire,vision:{model:'test',extractFrames:async (_files,times) => ({frames:times.map(() => Buffer.from([0xff,0xd8,0xff,0xd9])),frameTimesMs:times}),analyze}});
+ const app = express(); app.use(express.json()); app.use(routes.router);
+ const post = (route: string, body = {}) => request(app).post(`/${session.id}${route}`).send(body);
+ return {store,session,app,post,release,acquire,dir};
+}
+it('persists camera source and rejects notes before complete vision',async () => {
+ const f=await fixture(); expect((await new ConsultationStore(f.dir).get(f.session.id)).captureSource).toBe('camera');
+ await f.post('/note').expect(409);
+});
+it('runs persisted vision, preserves exact visual evidence, requires review and invalidates stale revisions',async () => {
+ const f=await fixture(); const started=await f.post('/vision').expect(202); expect(started.body.vision.state).toBe('processing');
+ let result; for(let i=0;i<100;i++){result=(await request(f.app).get(`/${f.session.id}`)).body;if(result.vision.state!=='processing')break;}
+ expect(result.vision.state).toBe('complete'); expect(f.release).toHaveBeenCalledOnce();
+ const generated=await f.post('/note').expect(200); expect(generated.body.note.items[0].evidence[0].kind).toBe('vision');
+ expect(validateConsultationNote(generated.body.note,result)).toEqual([]);
+ await f.post('/approve',{reviewed:true,noteRevision:generated.body.noteRevision}).expect(409);
+ await f.post('/vision/review',{revision:'00000000-0000-4000-8000-000000000000',reviewed:true}).expect(409);
+ const reviewed=await f.post('/vision/review',{revision:result.vision.revision,reviewed:true}).expect(200);
+ await f.post('/approve',{reviewed:true,noteRevision:generated.body.noteRevision}).expect(200);
+ const edited=await request(f.app).patch(`/${f.session.id}/vision/scenes/${result.vision.scenes[0].id}`).send({revision:reviewed.body.vision.revision,observations:['Dog stands.']}).expect(200);
+ expect(edited.body.note).toBeUndefined(); expect(edited.body.vision.reviewedAt).toBeUndefined(); expect(edited.body.vision.scenes[0].originalObservations).toEqual(['Dog sits.']);
+});
+it('cancels jobs before releasing GPU once and keeps recording session',async () => {
+ let began!:()=>void; const started=new Promise<void>(r=>began=r);
+ const f=await fixture(async (_frames: Buffer[], signal: AbortSignal) => {began();await new Promise<void>((_,reject)=>signal.addEventListener('abort',()=>reject(new Error('aborted')),{once:true}));return [];});
+ await f.post('/vision').expect(202); await started;
+ await f.post('/vision/cancel').expect(200); expect(f.release).toHaveBeenCalledOnce();
+ expect((await new ConsultationStore(f.dir).get(f.session.id)).vision?.state).toBe('cancelled');
+});
+
+it('keeps failed vision visible and rejects camera note generation',async()=>{
+ const f=await fixture(async()=>{throw new Error('Missing vision capability.');}); await f.post('/vision').expect(202);
+ let result;for(let i=0;i<100;i++){result=(await request(f.app).get(`/${f.session.id}`)).body;if(result.vision.state!=='processing')break;}
+ expect(result.vision.state).toBe('failed');expect(result.vision.scenes[0].error).toBe('Missing vision capability.');await f.post('/note').expect(409);
+ expect((await new ConsultationStore(f.dir).get(f.session.id)).vision?.state).toBe('failed');
+});
+it('deletion aborts vision before removing session and releases reservation exactly once',async()=>{
+ let began!:()=>void;const started=new Promise<void>(r=>began=r);
+ const f=await fixture(async(_frames,signal)=>{began();await new Promise<void>((_,reject)=>signal.addEventListener('abort',()=>reject(new Error('aborted')),{once:true}));return [];});
+ await f.post('/vision').expect(202);await started;await f.post('/vision').expect(409);await request(f.app).delete(`/${f.session.id}`).expect(204);expect(f.release).toHaveBeenCalledOnce();await request(f.app).get(`/${f.session.id}`).expect(404);
+});
+it('recovers interrupted vision without discarding completed scenes or recording metadata',async()=>{
+ const f=await fixture();const revision='00000000-0000-4000-8000-000000000001';
+ await f.store.update(f.session.id,s=>{s.vision={revision,state:'processing',model:'test',intervalMs:30000,scenes:[{id:revision,atMs:0,frameTimesMs:[0],state:'pending',observations:[],originalObservations:[]}]};});
+ const restored=await new ConsultationStore(f.dir).get(f.session.id);expect(restored.vision?.state).toBe('failed');expect(restored.vision?.scenes[0].state).toBe('failed');expect(restored.captureSource).toBe('camera');expect(restored.state).toBe('ready');
+});
+it('accepts complete camera analysis with no visual observations and no speech',async()=>{
+ const f=await fixture(async()=>[]);await f.post('/vision').expect(202);
+ for(let i=0;i<100;i++){const result=(await request(f.app).get(`/${f.session.id}`)).body;if(result.vision.state!=='processing')break;}
+ const generated=await f.post('/note').expect(200);expect(generated.body.note.items).toEqual([]);
+});
+it('bookmark changes invalidate completed vision and reject source edits during vision processing',async()=>{
+ const f=await fixture();await f.post('/vision').expect(202);let result;for(let i=0;i<100;i++){result=(await request(f.app).get(`/${f.session.id}`)).body;if(result.vision.state!=='processing')break;}
+ const changed=await f.post('/bookmarks',{atMs:2000,text:'New moment'}).expect(200);expect(changed.body.vision).toBeUndefined();
+});
+it('serves persisted JPEG after scene edits and persists decoded evidence times',async()=>{
+ const f=await fixture();await f.post('/vision').expect(202);let result;for(let i=0;i<100;i++){result=(await request(f.app).get(`/${f.session.id}`)).body;if(result.vision.state!=='processing')break;}
+ const scene=result.vision.scenes[0];await request(f.app).get(`/${f.session.id}/vision/scenes/${scene.id}/frames/0`).expect('Content-Type',/image\/jpeg/).expect(200);
+ await request(f.app).patch(`/${f.session.id}/vision/scenes/${scene.id}`).send({revision:result.vision.revision,observations:[]}).expect(200);
+ await request(f.app).get(`/${f.session.id}/vision/scenes/${scene.id}/frames/0`).expect(200);await request(f.app).get(`/${f.session.id}/vision/scenes/${scene.id}/frames/99`).expect(404);
+});
+it('rejects visual note evidence omission and invented substrings',async()=>{
+ const f=await fixture();await f.post('/vision').expect(202);let result;for(let i=0;i<100;i++){result=(await request(f.app).get(`/${f.session.id}`)).body;if(result.vision.state!=='processing')break;}
+ const note=await generateConsultationNote(result,async text=>({draft:createDraft(text,'trainer_summary_voice')}));result.bookmarks=[{id:'b',atMs:0,text:'Bookmark'}];note.items=[{id:'item',section:'moments',text:'Bookmark',evidence:[{kind:'bookmark',id:'b',quote:'Bookmark',startMs:0,endMs:0}]}];note.missingSections=['purpose','owner_report','observation','guidance','task','follow_up'];expect(validateConsultationNote(note,result)).toContain('VISION_COVERAGE');
+});
+it('rejects JPEG storage when recording chunks exhaust existing session byte budget',async()=>{
+ const f=await fixture();const {readFile,writeFile}=await import('node:fs/promises');const file=path.join(f.dir,f.session.id,'session.json');const persisted=JSON.parse(await readFile(file,'utf8'));persisted.chunks.media=Array.from({length:128},()=>({hash:'0'.repeat(64),size:16*1024**2}));persisted.recordingChunkCount=128;await writeFile(file,JSON.stringify(persisted));
+ await f.post('/vision').expect(202);let result;for(let i=0;i<100;i++){result=(await request(f.app).get(`/${f.session.id}`)).body;if(result.vision.state!=='processing')break;}
+ expect(result.vision.state).toBe('failed');expect(result.vision.scenes[0].error).toContain('Session storage budget exceeded');expect(result.recordingChunkCount).toBe(128);
+});

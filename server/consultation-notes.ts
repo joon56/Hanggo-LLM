@@ -1,10 +1,12 @@
 import { randomUUID } from 'node:crypto';
 import { consultationSections, validateConsultationNote } from '../src/domain/consultation.ts';
 import type { ConsultationSession, ConsultationNote, ConsultationSection } from '../src/domain/consultation.ts';
+import { ConsultationError } from './consultation-store.ts';
 import { splitNoteSentences, validateDraft } from '../src/domain/notes.ts';
 import type { SourceKind, Draft } from '../src/domain/notes.ts';
 
 export async function generateConsultationNote(session: ConsultationSession, generate: (text: string, sourceKind: SourceKind, signal?: AbortSignal) => Promise<unknown>, signal?: AbortSignal): Promise<ConsultationNote> {
+  if (session.captureSource === 'camera' && session.vision?.state !== 'complete') throw new ConsultationError('VISION_REQUIRED', 'Complete camera analysis before generating notes.', 409);
   const note: ConsultationNote = { items: [], missingSections: [], coveredSegmentIds: [], createdAt: new Date().toISOString(), fallbackUsed: false, warnings: [] };
   const sources: { quote: string; segment: ConsultationSession['segments'][number] }[] = [];
   for (const segment of session.segments) {
@@ -39,6 +41,9 @@ export async function generateConsultationNote(session: ConsultationSession, gen
   if (note.fallbackUsed) note.warnings!.push('AI 분류에서 빠진 원문은 추가 확인 항목으로 보존했습니다. 직접 분류하고 검토해 주세요.');
   for (const bookmark of session.bookmarks) {
     for (const section of ['observation', 'moments'] as ConsultationSection[]) note.items.push({ id: randomUUID(), section, text: bookmark.text, evidence: [{ kind: 'bookmark', id: bookmark.id, quote: bookmark.text, startMs: bookmark.atMs, endMs: bookmark.atMs }] });
+  }
+  for (const scene of session.vision?.state === 'complete' ? session.vision.scenes : []) for (const quote of scene.observations) {
+    note.items.push({ id: randomUUID(), section: 'observation', text: quote, evidence: [{ kind: 'vision', id: scene.id, quote, startMs: Math.min(...scene.frameTimesMs), endMs: Math.max(...scene.frameTimesMs) }] });
   }
   note.missingSections = consultationSections.filter(section => !note.items.some(item => item.section === section));
   if (validateConsultationNote(note, session).length) throw new Error('Detailed note failed evidence validation.');

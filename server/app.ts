@@ -10,6 +10,8 @@ import { z } from 'zod';
 import type { Config } from './config.ts';
 import type { LiveSpeechService } from './live-speech.ts';
 import { createConsultationRouter } from './consultation-router.ts';
+import { createConsultationVision } from './consultation-vision.ts';
+import type { VisionService } from './consultation-vision.ts';
 import { ConsultationError } from './consultation-store.ts';
 import type { SourceKind } from '../src/domain/notes.ts';
 import { AudioValidationError, validateAudioDuration } from './audio.ts';
@@ -24,6 +26,7 @@ import type { ShelterDraft } from '../src/domain/workspace-types.ts';
 import { validateDraft, type Draft } from '../src/domain/notes.ts';
 
 type Services = {
+  vision?: VisionService;
   liveSpeech?: LiveSpeechService;
   status?: () => Promise<{ configured: boolean; sttReady: boolean; statusMessage: string }>;
   generateOwner?: (input: OwnerInput, signal?: AbortSignal) => Promise<unknown>;
@@ -102,7 +105,7 @@ export function createApp(config: Config, services: Services) {
   const aiLimit = rateLimit({ windowMs: 60_000, limit: 30, keyGenerator: () => 'ai', standardHeaders: 'draft-8', legacyHeaders: false,
     message: { error: '요청이 많습니다. 잠시 후 다시 시도해 주세요.', code: 'RATE_LIMIT' } });
   let day = ''; let calls = 0; let active = 0;
-  const consultation = createConsultationRouter({ enabled: config.liveConsultationEnabled && config.aiEnabled, directory: config.consultationDirectory, ffmpegPath: config.ffmpegPath, speech: services.liveSpeech, generate: services.generate, acquireAi: charge => {
+  const consultation = createConsultationRouter({ enabled: config.liveConsultationEnabled && config.aiEnabled, directory: config.consultationDirectory, ffmpegPath: config.ffmpegPath, vision: services.vision ?? createConsultationVision(config), speech: services.liveSpeech, generate: services.generate, acquireAi: charge => {
     const today = new Date().toISOString().slice(0, 10);
     if (today !== day) { day = today; calls = 0; }
     if (active >= 1 || (charge && calls >= config.dailyLimit)) throw new ConsultationError('AI_LIMIT', 'Local AI is busy or daily limit reached.', 429);

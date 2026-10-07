@@ -2,6 +2,8 @@ import { createHash, randomUUID } from 'node:crypto';
 import { mkdir, readFile, writeFile, rename, readdir, rm, lstat } from 'node:fs/promises';
 import path from 'node:path';
 import { z } from 'zod';
+import { visionAnalysisSchema } from '../src/domain/consultation-vision.ts';
+import type { CaptureSource } from '../src/domain/consultation-vision.ts';
 import type { Metadata } from '../src/domain/notes.ts';
 import { validateConsultationNote } from '../src/domain/consultation.ts';
 import type { ConsultationSession, TranscriptSegment } from '../src/domain/consultation.ts';
@@ -18,11 +20,11 @@ export const MAX_MEDIA_CHUNKS = 3600;
 export const MAX_SESSION_BYTES = 2 * 1024 ** 3;
 export function consultationNoteRevision(session: ConsultationSession): string | undefined {
   if (!session.note) return undefined;
-  return session.noteRevision ?? createHash('sha256').update(JSON.stringify({ note: session.note, segments: session.segments, bookmarks: session.bookmarks })).digest('hex');
+  return session.noteRevision ?? createHash('sha256').update(JSON.stringify({ note: session.note, segments: session.segments, bookmarks: session.bookmarks, vision: session.vision })).digest('hex');
 }
 const time = z.number().int().min(0).max(MAX_SESSION_MS);
 const storedSchema = z.object({
-  id: z.uuid(), metadata: z.object({ petName: z.string().min(1).max(200), trainerName: z.string().min(1).max(200), sessionDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/) }),
+  id: z.uuid(), captureSource: z.enum(['camera', 'tab']).optional(), vision: visionAnalysisSchema.optional(), metadata: z.object({ petName: z.string().min(1).max(200), trainerName: z.string().min(1).max(200), sessionDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/) }),
   createdAt: z.string().refine(value => Number.isFinite(Date.parse(value))), state: z.enum(['preparing', 'recording', 'processing', 'ready', 'incomplete', 'interrupted']), durationMs: time,
   segments: z.array(z.object({ id: z.string().min(1).max(100), sequence: z.number().int().min(0).max(MAX_AUDIO_CHUNKS - 1), startMs: time, endMs: time, text: z.string().max(16000), originalText: z.string().max(16000), state: z.enum(['queued', 'processing', 'complete', 'failed']), model: z.string().max(500).optional(), latencyMs: z.number().finite().min(0).optional() }).refine(segment => segment.endMs > segment.startMs)).max(MAX_AUDIO_CHUNKS),
   bookmarks: z.array(z.object({ id: z.string().min(1).max(100), atMs: time, text: z.string().min(1).max(2000) })).max(1000), recordingChunkCount: z.number().int().min(0).max(MAX_MEDIA_CHUNKS),
@@ -57,6 +59,7 @@ export class ConsultationStore {
           stored = JSON.parse(await readFile(path.join(this.location(entry.name), 'session.json'), 'utf8')) as Stored;
           if (!storedSchema.safeParse(stored).success || stored.id !== entry.name || (stored.note && validateConsultationNote(stored.note, stored).length)) continue;
         } catch { continue; }
+        if (stored.vision?.state === 'processing') { stored.vision.state = 'failed'; stored.vision.error = 'Vision analysis interrupted by restart.'; stored.vision.scenes.forEach(scene => { if (scene.state === 'pending') { scene.state = 'failed'; scene.error = stored.vision!.error; } }); await this.save(stored); }
         if (['preparing', 'recording', 'processing'].includes(stored.state)) {
           stored.state = 'interrupted';
           stored.segments.forEach(segment => { if (segment.state === 'queued' || segment.state === 'processing') segment.state = 'failed'; });
@@ -73,10 +76,10 @@ export class ConsultationStore {
     this.tail = result.catch(() => {}); return result;
   }
   private find(id: string) { this.location(id); const stored = this.sessions.get(id); if (!stored) throw new ConsultationError('NOT_FOUND', 'Session not found.', 404); return stored; }
-  async create(metadata: Metadata): Promise<ConsultationSession> {
+  async create(metadata: Metadata, captureSource?: CaptureSource): Promise<ConsultationSession> {
     return this.locked(async () => {
       if (this.sessions.size >= 100) throw new ConsultationError('STORAGE_LIMIT', 'Delete an existing session before creating another.', 429);
-      const stored: Stored = { id: randomUUID(), metadata: structuredClone(metadata), createdAt: new Date().toISOString(), state: 'recording', durationMs: 0, segments: [], bookmarks: [], recordingChunkCount: 0, errors: [], chunks: { audio: [], media: [] } };
+      const stored: Stored = { id: randomUUID(), ...(captureSource ? { captureSource } : {}), metadata: structuredClone(metadata), createdAt: new Date().toISOString(), state: 'recording', durationMs: 0, segments: [], bookmarks: [], recordingChunkCount: 0, errors: [], chunks: { audio: [], media: [] } };
       await mkdir(this.location(stored.id)); await this.save(stored); this.sessions.set(stored.id, stored); return this.snapshot(stored);
     });
   }
@@ -85,7 +88,7 @@ export class ConsultationStore {
   async update(id: string, change: (session: ConsultationSession) => void): Promise<ConsultationSession> {
     return this.locked(async () => {
       const stored = structuredClone(this.find(id)); change(stored);
-      if (stored.id !== id || !Number.isInteger(stored.durationMs) || stored.durationMs < 0 || stored.durationMs > MAX_SESSION_MS) throw new ConsultationError('INPUT', 'Invalid session duration.');
+      if (!storedSchema.safeParse(stored).success || stored.id !== id || !Number.isInteger(stored.durationMs) || stored.durationMs < 0 || stored.durationMs > MAX_SESSION_MS) throw new ConsultationError('INPUT', 'Invalid session duration.');
       await this.save(stored); this.sessions.set(id, stored); return this.snapshot(stored);
     });
   }
@@ -107,6 +110,7 @@ export class ConsultationStore {
       await this.save(stored); this.sessions.set(id, stored); return true;
     });
   }
+  async storageBytes(id: string): Promise<number> { return this.locked(async () => { const stored = this.find(id); return [...stored.chunks.audio, ...stored.chunks.media].reduce((bytes, chunk) => bytes + chunk.size, 0); }); }
   async recordingFiles(id: string): Promise<{ filename: string; size: number }[]> { return this.locked(async () => this.find(id).chunks.media.map((chunk, sequence) => ({ filename: path.join(this.location(id), `media-${sequence}.webm`), size: chunk.size }))); }
   async recording(id: string): Promise<Buffer> { const files = await this.recordingFiles(id); return Buffer.concat(await Promise.all(files.map(file => readFile(file.filename)))); }
   async audio(id: string, sequence: number): Promise<Buffer> { return this.locked(async () => { const stored = this.find(id); if (!stored.chunks.audio[sequence]) throw new ConsultationError('NOT_FOUND', 'Audio chunk not found.', 404); return readFile(path.join(this.location(id), `audio-${sequence}.wav`)); }); }
