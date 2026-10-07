@@ -20,14 +20,28 @@ export type OwnerDraft = {
 export type SavedOwnerLog = { id: string; draft: OwnerDraft; savedAt: string };
 export type Fact = { id: string; label: string; value: number | string; unit: string; previousValue: number | string | null; refs: string[] };
 export type ReferencedText = { text: string; refs: string[] };
+export type BriefConsultationChoice = { id: string; date: string; petName: string; trainerName: string; revision: string; approvedAt: string };
+export type BriefConsultationContext = BriefConsultationChoice & {
+  items: { id: string; text: string; category: string; evidence: { kind: 'segment' | 'bookmark' | 'vision'; quote: string; startMs: number; endMs: number }[]; truncated?: boolean }[];
+  omittedItems: number;
+};
+export type BriefSource = {
+  id: string; kind: 'owner' | 'legacy_consultation' | 'consultation'; date: string | null;
+  sourceQuote: string; text: string; occurredAt?: string | null; timeHint?: string | null;
+  recordId?: string; category?: string; trigger?: string | null; intervention?: string | null; outcome?: string | null;
+  scope?: 'current' | 'previous' | 'historical' | 'unknown'; truncated?: boolean;
+  evidence?: { kind: 'segment' | 'bookmark' | 'vision'; quote: string; startMs: number; endMs: number }[];
+};
 export type BriefInput = {
   pet: Pet; records: SavedOwnerLog[]; now: string; timeZone: string;
-  previousSession?: { date: string; items: { id: string; text: string; category: string }[] };
+  previousSession?: { date: string; items: { id: string; text: string; category: string; sourceQuote?: string }[] };
+  consultation?: { id: string; revision: string };
 };
 export type BriefDraft = {
   id: string; petId: string; period: { from: string; to: string; daysWithRecords: number };
   facts: Fact[]; summary: ReferencedText[]; changes: ReferencedText[]; questionsForOwner: ReferencedText[];
   previousTasks: ReferencedText[]; cautions: ReferencedText[]; dataGaps: string[]; safetyFlags: string[];
+  sources?: BriefSource[]; consultation?: BriefConsultationChoice;
   mode: NoteMode; generation?: Generation;
 };
 export type ShelterMemo = { id: string; date: string; role: 'staff' | 'volunteer'; text: string };

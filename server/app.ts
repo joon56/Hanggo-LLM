@@ -18,7 +18,7 @@ import { AudioValidationError, validateAudioDuration } from './audio.ts';
 import { OwnerInputSchema } from './owner-service.ts';
 import { BriefInputSchema } from './brief-service.ts';
 import { ShelterInputSchema } from './shelter-service.ts';
-import type { OwnerInput, BriefInput, ShelterInput } from '../src/domain/workspace-types.ts';
+import type { OwnerInput, BriefInput, BriefConsultationContext, ShelterInput } from '../src/domain/workspace-types.ts';
 import { loadLessonCatalog } from './lessons.ts';
 import { suggestLessons, suggestShelterLessons } from '../src/domain/lessons.ts';
 import { validateShelterDraft } from '../src/domain/shelter.ts';
@@ -30,7 +30,7 @@ type Services = {
   liveSpeech?: LiveSpeechService;
   status?: () => Promise<{ configured: boolean; sttReady: boolean; statusMessage: string }>;
   generateOwner?: (input: OwnerInput, signal?: AbortSignal) => Promise<unknown>;
-  generateBrief?: (input: BriefInput, signal?: AbortSignal) => Promise<unknown>;
+  generateBrief?: (input: BriefInput, signal?: AbortSignal, consultation?: BriefConsultationContext) => Promise<unknown>;
   generateShelter?: (input: ShelterInput, signal?: AbortSignal) => Promise<unknown>;
   generate: (text: string, sourceKind: SourceKind, signal?: AbortSignal) => Promise<unknown>;
   transcribe: (buffer: Buffer, filename: string, petName: string, signal?: AbortSignal) => Promise<string>;
@@ -153,7 +153,12 @@ export function createApp(config: Config, services: Services) {
     });
   }
   featureRoute('/api/owner-logs', OwnerInputSchema, services.generateOwner);
-  featureRoute('/api/briefs', BriefInputSchema, services.generateBrief);
+  featureRoute('/api/briefs', BriefInputSchema, services.generateBrief ? async (input, signal) => {
+    const context = input.consultation ? await consultation.resolveBrief(input.consultation, input.pet.name) : undefined;
+    const result = await services.generateBrief!(input, signal, context);
+    if (input.consultation) await consultation.resolveBrief(input.consultation, input.pet.name);
+    return result;
+  } : undefined);
   featureRoute('/api/shelter-profiles', ShelterInputSchema, services.generateShelter);
   const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024, files: 1, fields: 3, fieldSize: 12800, parts: 4 } });
   app.post('/api/transcribe', upload.single('audio'), async (req, res) => {
@@ -187,6 +192,7 @@ export function createApp(config: Config, services: Services) {
   }
   const errors: ErrorRequestHandler = (error, _req, res, _next) => {
     if (res.headersSent || res.destroyed) return;
+    if (error instanceof ConsultationError) { res.status(error.status).json({ error: error.message, code: error.code, requestId: res.locals.requestId }); return; }
     const large = error?.code === 'LIMIT_FILE_SIZE' || error?.type === 'entity.too.large';
     const malformed = error instanceof multer.MulterError || error?.type === 'entity.parse.failed';
     res.status(large ? 413 : malformed ? 400 : 502).json({ error: large ? '파일은 10MB 이하, 텍스트는 8,000자 이하로 입력해 주세요.' : malformed ? '요청 형식을 확인해 주세요.' : 'AI 요청을 완료하지 못했습니다. 입력은 유지됩니다. 잠시 후 다시 시도해 주세요.', code: large ? 'TOO_LARGE' : malformed ? 'INPUT' : 'UPSTREAM', requestId: res.locals.requestId });

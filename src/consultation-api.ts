@@ -1,12 +1,15 @@
 import { ApiError, request } from './api';
 import type { Metadata } from './domain/notes';
 import type { ConsultationNote, ConsultationSession } from './domain/consultation';
+import type { BriefConsultationChoice, BriefConsultationContext } from './domain/workspace-types';
 
 const base = '/api/consultations';
 const path = (id: string) => `${base}/${encodeURIComponent(id)}`;
 const json = (method: string, body: unknown): RequestInit => ({ method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
 export const listConsultations = () => request<{ sessions: ConsultationSession[] }>(base);
 export const getConsultation = (id: string) => request<ConsultationSession>(path(id));
+export const listBriefConsultations = (signal?: AbortSignal) => request<{ consultations: BriefConsultationChoice[] }>(`${base}/brief-context`, { signal });
+export const getBriefConsultation = (id: string, petName: string, revision: string, signal?: AbortSignal) => request<BriefConsultationContext>(`${path(id)}/brief-context?${new URLSearchParams({ petName, revision })}`, { signal });
 export const createConsultation = (metadata: Metadata, captureSource?: 'camera' | 'tab') => request<ConsultationSession>(base, json('POST', { metadata, consent: true, ...(captureSource ? { captureSource } : {}) }));
 export const finishConsultation = (id: string, durationMs: number, captureError?: string) => request<ConsultationSession>(`${path(id)}/finish`, json('POST', { durationMs, ...(captureError ? { captureError: captureError.slice(0, 500) } : {}) }));
 export const addBookmark = (id: string, atMs: number, text: string) => request<ConsultationSession>(`${path(id)}/bookmarks`, json('POST', { atMs, text }));

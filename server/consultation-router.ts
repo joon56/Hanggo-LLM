@@ -14,6 +14,7 @@ import type { LiveSpeechService } from './live-speech.ts';
 import { ConsultationError, ConsultationStore, consultationNoteRevision, MAX_SESSION_MS, MAX_SESSION_BYTES } from './consultation-store.ts';
 import { generateConsultationNote } from './consultation-notes.ts';
 import { recordingHandler } from './consultation-media.ts';
+import { briefConsultationChoice, resolveBriefConsultation } from './brief-consultation.ts';
 
 type Options = { vision?: VisionService; enabled: boolean; directory: string; ffmpegPath?: string; speech?: LiveSpeechService; generate: (text: string, sourceKind: SourceKind, signal?: AbortSignal) => Promise<unknown>; acquireAi: (charge: boolean) => () => void };
 const integerTime = z.number().int().min(0).max(MAX_SESSION_MS);
@@ -90,6 +91,12 @@ export function createConsultationRouter(options: Options) {
       return { task: capture.closing };
     }); return task;
   }
+  // Stored approved context remains readable when live capture or AI is disabled.
+  router.get('/brief-context', async (_req, res) => { res.json({ consultations: (await store.list()).map(briefConsultationChoice).filter(Boolean) }); });
+  router.get('/:id/brief-context', async (req, res) => {
+    const input = parse(z.object({ petName: z.string().trim().min(1).max(200), revision: z.string().min(1).max(100) }).strict(), req.query);
+    res.json(await resolveBriefConsultation(store, { id: req.params.id, revision: input.revision }, input.petName));
+  });
   router.use((req, _res, next) => { if (stopping && !['GET', 'HEAD'].includes(req.method)) next(new ConsultationError('SHUTTING_DOWN', 'Server is shutting down.', 503)); else if (!options.enabled) next(new ConsultationError('FEATURE_DISABLED', 'Live consultation is disabled.', 503)); else next(); });
   router.use('/:id', (req, _res, next) => { if (!['GET', 'HEAD'].includes(req.method) && deleting.has(req.params.id)) next(new ConsultationError('STATE', 'Session is being deleted.', 409)); else next(); });
   router.get('/', async (_req, res) => { res.json({ sessions: await store.list() }); });
@@ -308,5 +315,5 @@ export function createConsultationRouter(options: Options) {
     })();
     return shutdownTask;
   }
-  return { router, busy, shutdown };
+  return { router, busy, shutdown, resolveBrief: (reference: { id: string; revision: string }, petName: string) => resolveBriefConsultation(store, reference, petName) };
 }

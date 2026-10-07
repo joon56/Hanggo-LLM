@@ -9,6 +9,54 @@ export function briefInput(): BriefInput {
   return { pet: { id: 'p', name: '초코', nicknames: [] }, records, now: '2026-09-30T00:00:00Z', timeZone: 'Asia/Seoul' };
 }
 describe('brief deterministic facts', () => {
+  it('always gives three fixed roles with explicit missing data and grounded refs', () => {
+    const input = briefInput(); input.records = [];
+    const draft = computeBrief(input);
+    expect(draft.summary.map(line => line.text.split(':')[0])).toEqual(['핵심 상황', '변화·주의점', '이번 상담에서 확인할 일']);
+    expect(draft.summary.map(line => line.text).join(' ')).toMatch(/자료 부족|미확인/);
+    expect(draft.summary.every(line => line.refs.length && line.refs.every(id => draft.facts.some(f => f.id === id)))).toBe(true);
+  });
+  it('grounds questions in dated situations, interventions and responses', () => {
+    const input = briefInput(); const event = input.records[0].draft.events[0];
+    Object.assign(event, { type: 'bark', trigger: 'doorbell', intervention: '문에서 떨어져 기다렸다', outcome: 'reduced', sourceQuote: '초인종에 짖어서 문에서 떨어져 기다렸다. 짖음이 줄었다.' });
+    const draft = computeBrief(input);
+    expect(draft.summary[0].text).toContain('초인종');
+    expect(draft.questionsForOwner[0].text).toContain('문에서 떨어져 기다렸다');
+    expect(draft.questionsForOwner[0].text).toContain('줄');
+    expect(draft.questionsForOwner.length).toBeLessThanOrEqual(3);
+    expect(draft.sources?.find(source => source.id === event.id)).toMatchObject({ date: '2026-09-29', sourceQuote: event.sourceQuote, kind: 'owner', occurredAt: event.occurredAt });
+    expect(draft.summary[2].text.length).toBeLessThan(130);
+    expect(draft.summary[2].text).not.toContain(draft.questionsForOwner[0].text);
+  });
+  it('does not turn mixed-pet source-wide safety flags into selected-pet facts', () => {
+    const input = briefInput(); const record = input.records[0];
+    record.draft.pets.push({ id: 'other', name: '보리', nicknames: [] });
+    record.draft.events.push({ ...record.draft.events[0], id: 'risk-other', petId: 'other', sourceQuote: '보리가 구토했다.' });
+    record.draft.safetyFlags = ['vomiting'];
+    const draft = computeBrief(input);
+    expect(draft.safetyFlags).not.toContain('vomiting');
+    expect(draft.dataGaps.join(' ')).toContain('대상');
+    expect(draft.sources?.some(source => source.id === 'risk-other')).toBe(false);
+  });
+  it('marks old and unknown-time safety evidence separately and excludes future evidence', () => {
+    const input = briefInput(); const record = input.records[0];
+    record.draft.events = [{ ...record.draft.events[0], occurredAt: '2026-08-01T00:00:00Z', sourceQuote: '구토했다.' }, { ...record.draft.events[0], id: 'future-risk', occurredAt: '2026-10-01T00:00:00Z', sourceQuote: '구토했다.' }];
+    record.draft.safetyFlags = ['vomiting'];
+    const draft = computeBrief(input);
+    expect(draft.cautions.map(line => line.text).join(' ')).toContain('과거');
+    expect(draft.summary[1].text).not.toContain('최근 안전');
+    expect(draft.sources?.some(source => source.id === 'future-risk')).toBe(false);
+  });
+  it('keeps historical and recent safety sources distinct even in one saved log', () => {
+    const input = briefInput(), record = input.records[0];
+    record.draft.events = [{ ...record.draft.events[0], id: 'past', occurredAt: '2026-08-01T00:00:00Z', sourceQuote: '구토했다.' }, { ...record.draft.events[0], id: 'recent', sourceQuote: '출혈이 있었다.' }];
+    record.draft.safetyFlags = ['vomiting', 'bleeding'];
+    const draft = computeBrief(input);
+    expect(draft.cautions).toHaveLength(2);
+    expect(draft.summary[1].text).toContain('최근 안전');
+    expect(draft.cautions.find(line => line.text.includes('과거'))?.text).toContain('vomiting');
+    expect(draft.cautions.find(line => line.text.includes('최근'))?.text).not.toContain('vomiting');
+  });
   for (const fixture of fixtures) it(`fixture: ${fixture.id}`, () => {
     const d=computeBrief(fixture.input as BriefInput), expected=fixture.expect;
     expect(d.period.daysWithRecords).toBe(expected.days);
