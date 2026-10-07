@@ -241,9 +241,13 @@ export default function App() {
     cancelPending(); recorder.reset(); setWorkspace(next);
   };
 
+  const connectionSession = workspace === 'consultation' && session?.liveConsultation?.enabled && !localDemo ? {
+    ...session, sttModel: session.liveConsultation.model, sttReady: session.liveConsultation.ready,
+    statusMessage: session.liveConsultation.ready ? `실시간 상담 받아쓰기 · ${session.liveConsultation.model} · 준비됨` : '실시간 상담 받아쓰기 모델을 준비해 주세요.',
+  } : session;
   const connection = publicDemo
     ? <section className="connection-panel" aria-label="공개 체험판"><strong>공개 체험판 · AI 연결 없음</strong><span>텍스트 정리·녹음 재생·검토·저장을 체험하세요. AI 생성·받아쓰기는 제공하지 않습니다. 가상 자료를 사용하세요.</span></section>
-    : <ConnectionPanel session={session} loading={sessionLoading} error={sessionError} onRetry={retrySession} onLogin={loginSession} onLogout={logoutSession} localDemo={localDemo} onDemo={value => { cancelPending(); setLocalDemo(value); }} />;
+    : <ConnectionPanel session={connectionSession} loading={sessionLoading} error={sessionError} onRetry={retrySession} onLogin={loginSession} onLogout={logoutSession} localDemo={localDemo} onDemo={value => { cancelPending(); setLocalDemo(value); }} />;
   if (sessionLoading || (!session && !(import.meta.env.DEV && localDemo)) || (session?.requirePassword && !session.authenticated)) return <div className="connection-gate">{connection}</div>;
 
   return <div className="app-shell">

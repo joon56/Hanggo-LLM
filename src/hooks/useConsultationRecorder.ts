@@ -125,6 +125,10 @@ export function useConsultationRecorder() {
       const connectSources = () => { for (const stream of sources) { const source = current.context!.createMediaStreamSource(stream); source.connect(mix); source.connect(worklet); } };
       update(() => setStatus('preparing')); current.session = await createConsultation(metadata); update(() => setSession(current.session!));
       if (current.cancelled) { release(current); await finish(current); return; }
+      if (current.display.getAudioTracks().some(track => track.readyState === 'ended') || current.microphone?.getAudioTracks().some(track => track.readyState === 'ended')) {
+        current.fatal = current.display.getAudioTracks().some(track => track.readyState === 'ended') ? '모델 준비 중 탭 오디오가 끊겼습니다. 다시 공유해 주세요.' : '모델 준비 중 마이크가 끊겼습니다. 연결 후 다시 시작해 주세요.';
+        throw new Error(current.fatal);
+      }
       const failed = (cause: Error) => { update(() => setError(`업로드 중지: ${cause.message}. 데이터 보존 후 재시도 필요.`)); if (!current.stopping) void stopRef.current(); };
       const lostAudio = (message: string) => { if (current.stopping || current.cancelled) return; current.fatal = message; failed(new Error(message)); };
       current.display.getAudioTracks().forEach(track => track.addEventListener('ended', () => { if (current.display!.getVideoTracks()[0].readyState === 'ended') { void stopRef.current(); } else lostAudio('탭 오디오가 끊겼습니다. 받아쓰기 일부가 누락될 수 있습니다.'); }, { once: true }));

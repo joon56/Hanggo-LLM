@@ -6,7 +6,7 @@ import * as api from '../consultation-api';
 vi.mock('../consultation-api', () => ({ createConsultation: vi.fn(), finishConsultation: vi.fn(), uploadAudio: vi.fn(), uploadMedia: vi.fn() }));
 const metadata = { petName: '초코', trainerName: '훈련사', sessionDate: '2026-10-07' };
 const session = { id: 'session-1', metadata, state: 'recording', createdAt: '', durationMs: 0, segments: [], bookmarks: [], recordingChunkCount: 0, errors: [] } as const;
-class Track extends EventTarget { kind: string; stop = vi.fn(); constructor(kind: string, private surface = 'browser') { super(); this.kind = kind; } getSettings() { return { displaySurface: this.surface }; } }
+class Track extends EventTarget { kind: string; readyState='live'; stop = vi.fn(); constructor(kind: string, private surface = 'browser') { super(); this.kind = kind; } getSettings() { return { displaySurface: this.surface }; } dispatchEvent(event:Event) { if(event.type==='ended')this.readyState='ended';return super.dispatchEvent(event); } }
 class Stream { constructor(private tracks: Track[]) {} getTracks() { return this.tracks; } getVideoTracks() { return this.tracks.filter(t => t.kind === 'video'); } getAudioTracks() { return this.tracks.filter(t => t.kind === 'audio'); } }
 let display: Stream; const getDisplayMedia = vi.fn(); const getUserMedia = vi.fn();
 let worklet: Worklet;
@@ -97,4 +97,10 @@ test('audio meter returns to zero after capture stops',async()=>{
 });
 test('page departure releases hardware and reports incomplete recovery with keepalive',async()=>{
   const fetcher=vi.fn().mockResolvedValue({ok:true});vi.stubGlobal('fetch',fetcher);const {result}=renderHook(()=>useConsultationRecorder());await act(()=>result.current.start(metadata,false));act(()=>vi.advanceTimersByTime(1000));act(()=>window.dispatchEvent(new Event('pagehide')));expect(display.getVideoTracks()[0].stop).toHaveBeenCalled();expect(fetcher).toHaveBeenCalledWith('/api/consultations/session-1/finish',expect.objectContaining({method:'POST',credentials:'same-origin',keepalive:true}));expect(JSON.parse(fetcher.mock.calls[0][1].body)).toMatchObject({durationMs:1000,captureError:expect.stringContaining('닫혀')});
+});
+test.each(['microphone','tab-audio'])('%s ending during deferred model preparation cannot start a complete capture',async(kind)=>{
+  let resolveCreate!:(value:typeof session)=>void;vi.mocked(api.createConsultation).mockImplementation(()=>new Promise(resolve=>{resolveCreate=resolve as never;}));const {result}=renderHook(()=>useConsultationRecorder());let pending!:Promise<void>;
+  await act(async()=>{pending=result.current.start(metadata,kind==='microphone');});expect(api.createConsultation).toHaveBeenCalledTimes(1);expect(result.current.status).toBe('preparing');
+  const track=kind==='microphone'?(await getUserMedia.mock.results[0].value).getAudioTracks()[0]:display.getAudioTracks()[0];act(()=>track.dispatchEvent(new Event('ended')));
+  await act(async()=>{resolveCreate(session);await pending;});expect(api.finishConsultation).toHaveBeenCalledWith('session-1',0,expect.stringContaining(kind==='microphone'?'마이크':'탭 오디오'));expect(result.current.status).not.toBe('recording');expect(result.current.preview).toBeNull();expect(display.getVideoTracks()[0].stop).toHaveBeenCalled();expect(api.uploadMedia).not.toHaveBeenCalled();
 });

@@ -19,12 +19,12 @@ function validationMessage(errors: string[]) {
   if (errors.includes('COVERAGE')) return '일부 받아쓰기 근거가 빠졌습니다. 모든 원문 구간의 근거를 유지하거나 일지를 다시 생성해 주세요.';
   return '비어 있는 일지 항목 또는 잘못된 분류·근거가 있습니다. 원문 근거가 있는 항목을 유지해 주세요.';
 }
-function TranscriptEditor({ segment, index, disabled, onSave, onSeek }: { segment: TranscriptSegment; index: number; disabled: boolean; onSave: (text: string) => void; onSeek: () => void }) {
+function TranscriptEditor({ segment, index, disabled, onSave, onSeek, onDirtyChange }: { segment: TranscriptSegment; index: number; disabled: boolean; onSave: (text: string) => void; onSeek: () => void; onDirtyChange: (dirty: boolean) => void }) {
   const [text, setText] = useState(segment.text);
   useEffect(() => { setText(segment.text); }, [segment.text]);
   return <article className={`consultation-segment ${segment.state === 'failed' ? 'failed' : ''}`}>
     <div className="consultation-row"><button className="text-button" onClick={onSeek}>{time(segment.startMs)}–{time(segment.endMs)}</button><span>{segment.state === 'complete' ? `완료${segment.latencyMs !== undefined ? ` · 처리 ${(segment.latencyMs / 1000).toFixed(1)}초` : ''}` : segment.state === 'failed' ? '받아쓰기 실패 · 원본 녹화를 확인해 주세요' : segment.state === 'processing' ? '받아쓰기 처리 중' : '받아쓰기 대기'}</span></div>
-    {segment.state === 'complete' && <><textarea aria-label={`받아쓰기 ${index + 1}`} value={text} maxLength={16000} onChange={event => setText(event.target.value)} disabled={disabled} /><div className="consultation-row"><button className="text-button" aria-label={`받아쓰기 ${index + 1} 저장`} disabled={disabled || text === segment.text} onClick={() => onSave(text)}>원문 수정 저장</button>{segment.text !== segment.originalText && <span>원문 수정됨 · 최초 받아쓰기 보존</span>}</div></>}
+    {segment.state === 'complete' && <><textarea aria-label={`받아쓰기 ${index + 1}`} value={text} maxLength={16000} onChange={event => { setText(event.target.value); onDirtyChange(event.target.value !== segment.text); }} disabled={disabled} /><div className="consultation-row"><button className="text-button" aria-label={`받아쓰기 ${index + 1} 저장`} disabled={disabled || text === segment.text} onClick={() => onSave(text)}>원문 수정 저장</button>{text !== segment.text && <button className="text-button" aria-label={`받아쓰기 ${index + 1} 수정 취소`} disabled={disabled} onClick={() => { setText(segment.text); onDirtyChange(false); }}>수정 취소</button>}{segment.text !== segment.originalText && <span>원문 수정됨 · 최초 받아쓰기 보존</span>}</div></>}
   </article>;
 }
 
@@ -35,10 +35,12 @@ export default function ConsultationWorkspace({ ready, model, onBusyChange }: { 
   const [error, setError] = useState(''); const [notice, setNotice] = useState(''); const [pending, setPending] = useState(false);
   const [bookmarkText, setBookmarkText] = useState(''); const [bookmarkSeconds, setBookmarkSeconds] = useState('0');
   const [note, setNote] = useState<ConsultationNote | undefined>(); const [dirty, setDirty] = useState(false); const [reviewed, setReviewed] = useState(false);
+  const [dirtySegments, setDirtySegments] = useState<Set<string>>(new Set());
   const previewRef = useRef<HTMLVideoElement>(null); const replayRef = useRef<HTMLVideoElement>(null); const selectedId = useRef<string | undefined>(undefined); const mounted = useRef(true);
   const busy = recorder.busy || pending;
   const refresh = async () => { try { const result = await listConsultations(); if (mounted.current) setHistory(result.sessions); } catch (cause) { if (mounted.current) setError(cause instanceof Error ? cause.message : '저장한 상담을 읽지 못했습니다.'); } };
-  const receive = (session: ConsultationSession, resetNote = true) => { selectedId.current = session.id; setSelected(session); if (resetNote) { setNote(session.note); setDirty(false); setReviewed(false); } };
+  const receive = (session: ConsultationSession, resetNote = true) => { if (selectedId.current !== session.id) setDirtySegments(new Set()); selectedId.current = session.id; setSelected(session); if (resetNote) { setNote(session.note); setDirty(false); setReviewed(false); } };
+  const markTranscriptDirty = (id: string, value: boolean) => { setReviewed(false); setDirtySegments(current => { if (current.has(id) === value) return current; const next = new Set(current); if (value) next.add(id); else next.delete(id); return next; }); };
   useEffect(() => { mounted.current = true; void refresh(); return () => { mounted.current = false; }; }, []);
   useEffect(() => { onBusyChange?.(busy); return () => { onBusyChange?.(false); }; }, [busy, onBusyChange]);
   useEffect(() => { if (previewRef.current) previewRef.current.srcObject = recorder.preview; }, [recorder.preview]);
@@ -104,10 +106,11 @@ export default function ConsultationWorkspace({ ready, model, onBusyChange }: { 
               {selected.bookmarks.map(bookmark => <div className="consultation-row" key={bookmark.id}><button className="text-button" onClick={() => seek(bookmark.atMs)}>{time(bookmark.atMs)}</button><span>{bookmark.text}</span></div>)}
             </div>
             <h3>받아쓰기 · 직접 수정</h3><p className="consultation-hint">화자 자동 식별·영상 자동 해석은 하지 않습니다. 원문을 수정하면 기존 일지를 다시 생성해야 합니다.</p>
+            {dirtySegments.size > 0 && <p className="consultation-warning">저장하지 않은 받아쓰기 수정이 있습니다. 각 구간의 원문 수정을 저장하거나 취소한 뒤 일지 생성·검토를 진행하세요.</p>}
             {!selected.segments.length && <p>첫 받아쓰기 구간을 기다리고 있습니다.</p>}
-            {selected.segments.map((segment, index) => <TranscriptEditor key={segment.id} segment={segment} index={index} disabled={busy || !finished} onSeek={() => seek(segment.startMs)} onSave={text => void run(() => updateSegment(selected.id, segment.id, text), '받아쓰기를 수정했습니다. 일지를 다시 생성해 주세요.')} />)}
+            {selected.segments.map((segment, index) => <TranscriptEditor key={segment.id} segment={segment} index={index} disabled={busy || !finished} onSeek={() => seek(segment.startMs)} onDirtyChange={value => markTranscriptDirty(segment.id, value)} onSave={text => void run(async () => { const value = await updateSegment(selected.id, segment.id, text); markTranscriptDirty(segment.id, false); return value; }, '받아쓰기를 수정했습니다. 일지를 다시 생성해 주세요.')} />)}
           </section>
-          <section className="consultation-panel"><div className="consultation-row"><div><span className="eyebrow">03 / REVIEW</span><h2>근거가 연결된 상담 일지</h2></div><button className="button secondary" disabled={!finished || busy || !selected.segments.some(segment => segment.state === 'complete' && segment.text.trim()) && !selected.bookmarks.length} onClick={() => void run(() => generateConsultationNote(selected.id), '초안을 만들었습니다. 원문 근거와 분류를 검토해 주세요.')}>상담 일지 만들기</button></div>
+          <section className="consultation-panel"><div className="consultation-row"><div><span className="eyebrow">03 / REVIEW</span><h2>근거가 연결된 상담 일지</h2></div><button className="button secondary" disabled={!finished || busy || dirtySegments.size > 0 || !selected.segments.some(segment => segment.state === 'complete' && segment.text.trim()) && !selected.bookmarks.length} onClick={() => void run(() => generateConsultationNote(selected.id), '초안을 만들었습니다. 원문 근거와 분류를 검토해 주세요.')}>상담 일지 만들기</button></div>
             <p className="consultation-hint">원문에 있는 정확한 인용만 저장할 수 있습니다. 내용 수정은 받아쓰기 원문부터, 분류 수정은 아래 항목에서 진행하세요.</p>
             {note?.fallbackUsed && <p className="consultation-warning">일부 구간을 원문 인용으로 대체했습니다. 분류와 전체 원문을 검토해 주세요.</p>}{note?.warnings?.map((warning, index) => <p className="consultation-warning" key={index}>{warning}</p>)}
             {consultationSections.map(section => <section className="consultation-note-section" key={section}><h3>{labels[section]}</h3>{!note?.items.some(item => item.section === section) && <p className="consultation-missing">분류된 항목 없음 · 원문을 확인해 주세요</p>}
@@ -117,7 +120,7 @@ export default function ConsultationWorkspace({ ready, model, onBusyChange }: { 
               </article>)}
             </section>)}
             {note && <><div className="consultation-actions"><button className="button secondary" disabled={busy || !dirty} onClick={saveNote}>일지 수정 저장</button>{note.approvedAt && <strong className="consultation-approved">검토·확정됨</strong>}</div>
-              <label className="review-checkbox"><input type="checkbox" checked={reviewed} disabled={busy || dirty || !!note.approvedAt} onChange={event => setReviewed(event.target.checked)} />녹화·받아쓰기·모든 일지 항목의 원문 근거를 확인했습니다.</label><button className="button primary" disabled={busy || dirty || !reviewed || noteErrors.length > 0 || selected.state !== 'ready' || !!note.approvedAt} onClick={() => void run(() => approveConsultation(selected.id), '상담 일지를 검토·확정했습니다.')}>검토 후 확정</button>
+              <label className="review-checkbox"><input type="checkbox" checked={reviewed} disabled={busy || dirty || dirtySegments.size > 0 || !!note.approvedAt} onChange={event => setReviewed(event.target.checked)} />녹화·받아쓰기·모든 일지 항목의 원문 근거를 확인했습니다.</label><button className="button primary" disabled={busy || dirty || dirtySegments.size > 0 || !reviewed || noteErrors.length > 0 || selected.state !== 'ready' || !!note.approvedAt} onClick={() => void run(() => approveConsultation(selected.id), '상담 일지를 검토·확정했습니다.')}>검토 후 확정</button>
             </>}
           </section>
         </>}
