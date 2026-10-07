@@ -1,6 +1,7 @@
 import type { Draft, SourceKind } from './domain/notes';
 
 export type Session = {
+  liveConsultation?: { enabled: boolean; ready: boolean; model: string };
   features?: import('./domain/workspace-types').FeatureFlags;
   authenticated: boolean;
   requirePassword: boolean;

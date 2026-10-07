@@ -8,6 +8,9 @@ import rateLimit from 'express-rate-limit';
 import multer from 'multer';
 import { z } from 'zod';
 import type { Config } from './config.ts';
+import type { LiveSpeechService } from './live-speech.ts';
+import { createConsultationRouter } from './consultation-router.ts';
+import { ConsultationError } from './consultation-store.ts';
 import type { SourceKind } from '../src/domain/notes.ts';
 import { AudioValidationError, validateAudioDuration } from './audio.ts';
 import { OwnerInputSchema } from './owner-service.ts';
@@ -21,6 +24,7 @@ import type { ShelterDraft } from '../src/domain/workspace-types.ts';
 import { validateDraft, type Draft } from '../src/domain/notes.ts';
 
 type Services = {
+  liveSpeech?: LiveSpeechService;
   status?: () => Promise<{ configured: boolean; sttReady: boolean; statusMessage: string }>;
   generateOwner?: (input: OwnerInput, signal?: AbortSignal) => Promise<unknown>;
   generateBrief?: (input: BriefInput, signal?: AbortSignal) => Promise<unknown>;
@@ -98,6 +102,14 @@ export function createApp(config: Config, services: Services) {
   const aiLimit = rateLimit({ windowMs: 60_000, limit: 30, keyGenerator: () => 'ai', standardHeaders: 'draft-8', legacyHeaders: false,
     message: { error: '요청이 많습니다. 잠시 후 다시 시도해 주세요.', code: 'RATE_LIMIT' } });
   let day = ''; let calls = 0; let active = 0;
+  const consultation = createConsultationRouter({ enabled: config.liveConsultationEnabled && config.aiEnabled, directory: config.consultationDirectory, ffmpegPath: config.ffmpegPath, speech: services.liveSpeech, generate: services.generate, acquireAi: charge => {
+    const today = new Date().toISOString().slice(0, 10);
+    if (today !== day) { day = today; calls = 0; }
+    if (active >= 1 || (charge && calls >= config.dailyLimit)) throw new ConsultationError('AI_LIMIT', 'Local AI is busy or daily limit reached.', 429);
+    if (charge) calls++; active++;
+    let released = false; return () => { if (!released) { released = true; active--; } };
+  } });
+  app.use('/api/consultations', consultation.router);
   const featureRoutes = { '/api/owner-logs': 'ownerLog', '/api/briefs': 'brief', '/api/shelter-profiles': 'shelter' } as const;
   for (const [route, feature] of Object.entries(featureRoutes)) app.use(route, (_req, res, next) => {
     if (!config.features[feature]) { res.status(503).json({ error: '서버에서 이 기능을 활성화해 주세요.', code: 'FEATURE_DISABLED', requestId: res.locals.requestId }); return; }

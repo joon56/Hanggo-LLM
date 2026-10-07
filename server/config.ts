@@ -21,7 +21,16 @@ export function readConfig(env: NodeJS.ProcessEnv = process.env) {
     return n;
   };
   const ollamaTimeoutMs = number('OLLAMA_TIMEOUT_MS', 120000, 600000);
+  const liveSpeechModel = env.LIVE_SPEECH_MODEL || '';
+  if (!['', 'whisper-turbo', 'whisper-large', 'qwen-asr'].includes(liveSpeechModel)) throw new Error('Invalid LIVE_SPEECH_MODEL');
+  const liveConsultationEnabled = env.FEATURE_LIVE_CONSULTATION_ENABLED === 'true';
+  if (liveConsultationEnabled && !liveSpeechModel) throw new Error('Select LIVE_SPEECH_MODEL before enabling live consultation.');
   return { production, host, password, publicOrigin, provider: 'ollama' as const,
+    liveConsultationEnabled, liveSpeechModel: liveSpeechModel as '' | 'whisper-turbo' | 'whisper-large' | 'qwen-asr',
+    consultationDirectory: env.CONSULTATION_DIRECTORY || '.local-data/consultations',
+    liveModelDirectory: env.LIVE_MODEL_DIRECTORY || '.local-ai/candidates/models',
+    whisperServer: env.WHISPER_SERVER || '.local-ai/candidates/whisper-cuda/Release/whisper-server.exe',
+    llamaServer: env.LLAMA_SERVER || '.local-ai/candidates/llama-cuda/llama-server.exe',
     ollamaBaseUrl: ollamaUrl.origin, ollamaContextSize: number('OLLAMA_CONTEXT_SIZE', 8192, 32768),
     whisperExecutable: env.WHISPER_EXECUTABLE || '.local-ai/whisper/whisper-cli.exe',
     whisperModelPath: env.WHISPER_MODEL_PATH || '.local-ai/models/ggml-medium-q5_0.bin',
