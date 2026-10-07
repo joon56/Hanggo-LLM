@@ -248,3 +248,12 @@ it('deleting a failed finalization preserves the newer session GPU and AI reserv
   await request(app).post('/api/notes').set('Origin', origin).send({ text: 'Other AI', sourceKind: 'trainer_summary_text', consent: true }).expect(429);
   await post(`/${newer.id}/finish`, { durationMs: 0 }).expect(200); expect(liveSpeech.release).toHaveBeenCalledTimes(2);
 });
+it('application shutdown aborts capture transcription and retains recording in terminal session',async()=>{
+ let entered!:()=>void;const began=new Promise<void>(resolve=>entered=resolve);
+ const f=await make({},async(_wav,signal)=>{entered();await new Promise<void>((_,reject)=>{if(signal!.aborted){reject(new Error('aborted'));return;}signal!.addEventListener('abort',()=>reject(new Error('aborted')),{once:true});});throw new Error('unreachable');});
+ const session=(await f.start().expect(201)).body;const bytes=Buffer.from([0x1a,0x45,0xdf,0xa3,1]);
+ await request(f.app).put(`/api/consultations/${session.id}/media/0`).set('Origin',origin).set('Content-Type','video/webm').send(bytes).expect(200);
+ await f.upload(session.id).expect(202);await began;await f.app.shutdown();
+ const stored=await new ConsultationStore(f.directory).get(session.id);expect(stored.state).toBe('incomplete');expect(stored.errors.some(error=>error.code==='CAPTURE_INTERRUPTED')).toBe(true);
+ expect(await new ConsultationStore(f.directory).recording(session.id)).toEqual(bytes);expect(f.liveSpeech.release).toHaveBeenCalledOnce();
+});

@@ -46,6 +46,7 @@ function validateWav(bytes: Buffer, startMs: number, endMs: number) {
 
 export function createConsultationRouter(options: Options) {
   const router = express.Router(); const store = new ConsultationStore(options.directory);
+  let stopping = false; let shutdownTask: Promise<void> | undefined;
   let activeId: string | undefined; let preparing = false; let mutationTail: Promise<unknown> = Promise.resolve();
   type Capture = { controller: AbortController; tail: Promise<void>; pending: number; release: () => void; released?: boolean; timer?: NodeJS.Timeout; closing?: Promise<ConsultationSession>; finalization?: { durationMs: number; expired: boolean; captureError?: string }; storageErrors: { code: string; message: string; sequence?: number }[] };
   const work = new Map<string, Capture>();
@@ -89,12 +90,13 @@ export function createConsultationRouter(options: Options) {
       return { task: capture.closing };
     }); return task;
   }
-  router.use((_req, _res, next) => { if (!options.enabled) next(new ConsultationError('FEATURE_DISABLED', 'Live consultation is disabled.', 503)); else next(); });
+  router.use((req, _res, next) => { if (stopping && !['GET', 'HEAD'].includes(req.method)) next(new ConsultationError('SHUTTING_DOWN', 'Server is shutting down.', 503)); else if (!options.enabled) next(new ConsultationError('FEATURE_DISABLED', 'Live consultation is disabled.', 503)); else next(); });
   router.use('/:id', (req, _res, next) => { if (!['GET', 'HEAD'].includes(req.method) && deleting.has(req.params.id)) next(new ConsultationError('STATE', 'Session is being deleted.', 409)); else next(); });
   router.get('/', async (_req, res) => { res.json({ sessions: await store.list() }); });
   router.post('/', async (req, res) => {
     const input = parse(z.object({ metadata: metadataSchema, captureSource: z.enum(['camera', 'tab']).optional(), consent: z.literal(true) }).strict(), req.body);
     const session = await lock(async () => {
+      if (stopping) throw new ConsultationError('SHUTTING_DOWN', 'Server is shutting down.', 503);
       if (busy()) throw new ConsultationError('ACTIVE_SESSION', 'Another consultation is using local AI.', 409);
       if (!options.speech) throw new ConsultationError('SPEECH_UNAVAILABLE', 'Live speech service is unavailable.', 503);
       const release = options.acquireAi(false); preparing = true;
@@ -188,6 +190,7 @@ export function createConsultationRouter(options: Options) {
     parse(z.object({}).strict(), req.body);
     const result = await lock(async () => {
       const id = req.params.id; const session = await store.get(id);
+      if (stopping) throw new ConsultationError('SHUTTING_DOWN', 'Server is shutting down.', 503);
       if (busy() || ['recording','processing','preparing'].includes(session.state)) throw new ConsultationError('STATE', 'Finish local AI work before vision analysis.', 409);
       if (!options.vision) throw new ConsultationError('VISION_UNAVAILABLE', 'Local vision service unavailable.', 503);
       if (!session.durationMs) throw new ConsultationError('STATE', 'Recording has no duration.', 409);
@@ -195,10 +198,12 @@ export function createConsultationRouter(options: Options) {
       const release = options.acquireAi(true); const controller = new AbortController(); const revision = randomUUID();
       let initial: ConsultationSession;
       const visionDirectory = path.join(store.directory,id,'vision');
-      try { await safeDirectory(path.join(store.directory,id)); try { await safeDirectory(visionDirectory); await rm(visionDirectory,{recursive:true}); } catch(error) { if((error as NodeJS.ErrnoException).code!=='ENOENT') throw error; } initial = await store.update(id, current => { delete current.note; delete current.noteRevision; current.vision = { revision, state:'processing', model:options.vision!.model, intervalMs:VISION_INTERVAL_MS, scenes:times.map(atMs => ({id:randomUUID(),atMs,frameTimesMs:visionFrameTimes(atMs,session.durationMs),state:'pending',observations:[],originalObservations:[]})) }; }); }
+      try { await safeDirectory(path.join(store.directory,id)); initial = await store.update(id, current => { delete current.note; delete current.noteRevision; current.vision = { revision, state:'processing', model:options.vision!.model, intervalMs:VISION_INTERVAL_MS, scenes:times.map(atMs => ({id:randomUUID(),atMs,frameTimesMs:visionFrameTimes(atMs,session.durationMs),state:'pending',observations:[],originalObservations:[]})) }; }); }
       catch (error) { release(); throw error; }
       const task = (async () => {
         try {
+          controller.signal.throwIfAborted();
+          try { await safeDirectory(visionDirectory); await rm(visionDirectory,{recursive:true}); } catch(error) { if((error as NodeJS.ErrnoException).code!=='ENOENT') throw new Error(error instanceof Error ? error.message : 'Vision frame cleanup failed.'); }
           const files = await store.recordingFiles(id); let storedBytes = await store.storageBytes(id);
           for (const scene of initial.vision!.scenes) {
             controller.signal.throwIfAborted();
@@ -251,6 +256,7 @@ export function createConsultationRouter(options: Options) {
   });
   router.post('/:id/note', async (req, res) => {
     const id = req.params.id; const session = await store.get(id);
+    if (stopping) throw new ConsultationError('SHUTTING_DOWN', 'Server is shutting down.', 503);
     if (busy() || ['recording', 'processing', 'preparing'].includes(session.state)) throw new ConsultationError('STATE', 'Finish local AI work before generating notes.', 409);
     if (session.captureSource === 'camera' && session.vision?.state !== 'complete') throw new ConsultationError('VISION_REQUIRED', 'Complete camera analysis before generating notes.', 409);
     const release = options.acquireAi(true); const controller = new AbortController(); res.once('close', () => { if (!res.writableEnded) controller.abort(); });
@@ -279,5 +285,28 @@ export function createConsultationRouter(options: Options) {
     } finally { deleting.delete(id); }
   });
   router.use((error: unknown, _req: Request, res: Response, next: express.NextFunction) => { if (!(error instanceof ConsultationError)) { next(error); return; } res.status(error.status).json({ error: error.message, code: error.code, requestId: res.locals.requestId }); });
-  return { router, busy };
+  function shutdown(): Promise<void> {
+    if (shutdownTask) return shutdownTask;
+    stopping = true;
+    shutdownTask = (async () => {
+      const jobs = await lock(async () => {
+        const jobs = [...visionWork.values(), ...noteWork.values()];
+        jobs.forEach(job => job.controller.abort());
+        work.forEach(capture => { clearTimeout(capture.timer); capture.controller.abort(); });
+        return jobs;
+      });
+      const results = await Promise.allSettled(jobs.map(job => job.task));
+      const captures = await Promise.allSettled([...work].map(async ([id, capture]) => {
+        try {
+          await capture.tail;
+          const session = await store.get(id);
+          await closeCapture(id, Math.max(session.durationMs, ...session.segments.map(segment => segment.endMs), ...session.bookmarks.map(bookmark => bookmark.atMs)), false, 'Server stopped during capture.');
+        } finally { await releaseCapture(id, capture); }
+      }));
+      const failed = [...results, ...captures].find(result => result.status === 'rejected');
+      if (failed?.status === 'rejected') throw failed.reason;
+    })();
+    return shutdownTask;
+  }
+  return { router, busy, shutdown };
 }

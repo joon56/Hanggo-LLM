@@ -24,8 +24,17 @@ const server = app.listen(config.port, config.host, () => console.info(`Hanggo s
 server.requestTimeout = Math.max(90_000, config.timeoutMs * 2 + config.sttTimeoutMs + 10_000);
 server.headersTimeout = 15_000;
 server.on('error', () => { console.error('서버를 시작하지 못했습니다. 포트와 환경 설정을 확인해 주세요.'); process.exitCode = 1; });
+let shutdownTask: Promise<void> | undefined;
 for (const event of ['SIGINT', 'SIGTERM'] as const) process.on(event, () => {
-  void services.liveSpeech.release();
-  server.close(() => process.exit(0));
-  setTimeout(() => { server.closeAllConnections(); process.exit(1); }, 10_000).unref();
+  if (shutdownTask) return;
+  const fallback = setTimeout(() => { server.closeAllConnections(); process.exit(1); }, 10_000);
+  fallback.unref();
+  const closed = new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve()));
+  shutdownTask = (async () => {
+    await Promise.all([closed, (async () => {
+      try { await app.shutdown(); }
+      finally { await services.liveSpeech.release(); }
+    })()]);
+  })();
+  void shutdownTask.then(() => { clearTimeout(fallback); process.exit(0); }, () => { clearTimeout(fallback); server.closeAllConnections(); process.exit(1); });
 });

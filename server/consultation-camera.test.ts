@@ -6,6 +6,7 @@ import path from 'node:path';
 import express from 'express';
 import request from 'supertest';
 import { ConsultationStore } from './consultation-store.ts';
+import type { VisionService } from './consultation-vision.ts';
 import { createConsultationRouter } from './consultation-router.ts';
 import { generateConsultationNote } from './consultation-notes.ts';
 import { validateConsultationNote } from '../src/domain/consultation.ts';
@@ -13,15 +14,15 @@ import { createDraft } from '../src/domain/notes.ts';
 const dirs: string[] = [];
 const metadata = { petName: 'Choco', trainerName: 'Kim', sessionDate: '2026-10-07' };
 afterEach(async () => { await Promise.all(dirs.splice(0).map(dir => rm(dir, {recursive:true, force:true}))); });
-async function fixture(analyze: (frames: Buffer[], signal: AbortSignal) => Promise<string[]> = async () => ['Dog sits.']) {
+async function fixture(analyze: (frames: Buffer[], signal: AbortSignal) => Promise<string[]> = async () => ['Dog sits.'], extractFrames?: VisionService['extractFrames']) {
  const dir = await mkdtemp(path.join(os.tmpdir(), 'camera-')); dirs.push(dir);
  const store = new ConsultationStore(dir); const session = await store.create(metadata, 'camera');
  await store.update(session.id, s => { s.state='ready'; s.durationMs=5000; });
  const release = vi.fn(); const acquire = vi.fn(() => release);
- const routes = createConsultationRouter({enabled:true,directory:dir,generate:async text => ({draft:createDraft(text,'trainer_summary_voice')}),acquireAi:acquire,vision:{model:'test',extractFrames:async (_files,times) => ({frames:times.map(() => Buffer.from([0xff,0xd8,0xff,0xd9])),frameTimesMs:times}),analyze}});
+ const routes = createConsultationRouter({enabled:true,directory:dir,generate:async text => ({draft:createDraft(text,'trainer_summary_voice')}),acquireAi:acquire,vision:{model:'test',extractFrames:extractFrames ?? (async (_files,times) => ({frames:times.map(() => Buffer.from([0xff,0xd8,0xff,0xd9])),frameTimesMs:times})),analyze}});
  const app = express(); app.use(express.json()); const arrivals=new Map<string,()=>void>(); app.use((req,_res,next)=>{arrivals.get(req.path)?.();next();}); app.use(routes.router); const arrived=(route:string)=>new Promise<void>(resolve=>arrivals.set('/'+session.id+route,resolve));
  const post = (route: string, body = {}) => request(app).post(`/${session.id}${route}`).send(body);
- return {store,session,app,post,release,acquire,dir,arrived};
+ return {store,session,app,post,release,acquire,dir,arrived,routes};
 }
 it('persists camera source and rejects notes before complete vision',async () => {
  const f=await fixture(); expect((await new ConsultationStore(f.dir).get(f.session.id)).captureSource).toBe('camera');
@@ -158,4 +159,53 @@ it('handles failed terminal background persistence without unhandled rejection a
  const f=await fixture();const injection=await failTerminalVisionWrites(20);await f.post('/vision').expect(202);
  for(let attempt=0;attempt<100&&!f.release.mock.calls.length;attempt++)await request(f.app).get('/'+f.session.id);
  expect(f.release).toHaveBeenCalledOnce();expect(injection.failures()).toBe(2);const cancelled=await f.post('/vision/cancel');vi.restoreAllMocks();expect(cancelled.status).toBe(500);expect(cancelled.body.code).toBe('STORAGE');expect(injection.failures()).toBe(4);const repaired=await f.post('/vision/cancel').expect(200);expect(repaired.body.vision.state).toBe('cancelled');expect(repaired.body.vision.scenes[0].observations).toEqual(['Dog sits.']);
+});
+async function completedVision(f: Awaited<ReturnType<typeof fixture>>) {
+ await f.post('/vision').expect(202);
+ for(let i=0;i<100;i++){const current=(await request(f.app).get('/'+f.session.id)).body;if(current.vision.state!=='processing')return current;}
+ throw new Error('Vision did not settle');
+}
+it('preserves approved source images when replacement startup save fails',async()=>{
+ const f=await fixture();const current=await completedVision(f);
+ await f.post('/vision/review',{revision:current.vision.revision,reviewed:true}).expect(200);
+ const note=await f.post('/note').expect(200);await f.post('/approve',{reviewed:true,noteRevision:note.body.noteRevision}).expect(200);
+ const before=(await request(f.app).get('/'+f.session.id)).body;
+ await request(f.app).get(`/${f.session.id}/vision/scenes/${current.vision.scenes[0].id}/frames/0`).expect(200);
+ vi.spyOn(ConsultationStore.prototype,'update').mockRejectedValueOnce(Object.assign(new Error('Injected startup EIO'),{code:'EIO'}));
+ await f.post('/vision').expect(500);vi.restoreAllMocks();
+ expect((await request(f.app).get('/'+f.session.id)).body).toEqual(before);
+ await request(f.app).get(`/${f.session.id}/vision/scenes/${current.vision.scenes[0].id}/frames/0`).expect(200);
+ expect(f.release).toHaveBeenCalledTimes(3);
+});
+it('persists failed replacement when old frame cleanup fails and permits retry',async()=>{
+ const f=await fixture();await completedVision(f);await f.post('/note').expect(200);const {writeFile}=await import('node:fs/promises');
+ const folder=path.join(f.dir,f.session.id,'vision');await rm(folder,{recursive:true});await writeFile(folder,'blocked cleanup');
+ await f.post('/vision').expect(202);
+ for(let i=0;i<100&&f.release.mock.calls.length<3;i++)await request(f.app).get('/'+f.session.id);
+ const failed=(await request(f.app).get('/'+f.session.id)).body;
+ expect(failed.vision.state).toBe('failed');expect(failed.vision.error).toContain('Unsafe vision directory');expect(failed.note).toBeUndefined();expect(f.release).toHaveBeenCalledTimes(3);
+ await rm(folder);const recovered=await completedVision(f);expect(recovered.vision.state).toBe('complete');expect(f.release).toHaveBeenCalledTimes(4);
+});
+it('shutdown awaits aborted background vision, preserves media and releases once',async()=>{
+ const f=await waitingVisionFixture();const first=f.routes.shutdown();expect(f.routes.shutdown()).toBe(first);await first;
+ expect((await new ConsultationStore(f.dir).get(f.session.id)).vision?.state).toBe('cancelled');
+ expect(await f.store.recording(f.session.id)).toEqual(Buffer.from([0x1a,0x45,0xdf,0xa3,1]));expect(f.release).toHaveBeenCalledOnce();await f.post('/vision').expect(503);
+});
+it('shutdown racing startup awaits registration then cancels job',async()=>{
+ const f=await fixture(async(_frames,signal)=>{await new Promise<void>((_,reject)=>{if(signal.aborted){reject(new Error('aborted'));return;}signal.addEventListener('abort',()=>reject(new Error('aborted')),{once:true});});return [];});
+ const pause=await pauseVisionStartup();const startup=f.post('/vision').then(response=>response);await pause.entered;
+ let settled=false;const shutdown=f.routes.shutdown().then(()=>{settled=true;});await Promise.resolve();expect(settled).toBe(false);pause.unpause();await startup;await shutdown;vi.restoreAllMocks();
+ expect((await new ConsultationStore(f.dir).get(f.session.id)).vision?.state).toBe('cancelled');expect(f.release).toHaveBeenCalledOnce();
+});
+it('rejects note startup that resumes after shutdown has settled',async()=>{
+ const f=await fixture();await completedVision(f);const original=ConsultationStore.prototype.get;
+ let entered!:()=>void,resume!:()=>void;const began=new Promise<void>(resolve=>entered=resolve);const gate=new Promise<void>(resolve=>resume=resolve);
+ vi.spyOn(ConsultationStore.prototype,'get').mockImplementationOnce(async function(this:ConsultationStore,id){const session=await original.call(this,id);entered();await gate;return session;});
+ const note=f.post('/note').then(response=>response);await began;await f.routes.shutdown();resume();const response=await note;vi.restoreAllMocks();expect(response.status).toBe(503);expect(f.release).toHaveBeenCalledOnce();
+});
+it('shutdown waits extraction cancellation settlement before releasing AI',async()=>{
+ let entered!:()=>void,aborted!:()=>void,settle!:()=>void;const began=new Promise<void>(resolve=>entered=resolve);const cancellation=new Promise<void>(resolve=>aborted=resolve);const gate=new Promise<void>(resolve=>settle=resolve);
+ const f=await fixture(undefined,async(_files,_times,signal)=>{entered();await new Promise<void>(resolve=>{if(signal.aborted){resolve();return;}signal.addEventListener('abort',()=>resolve(),{once:true});});aborted();await gate;throw new Error('Extraction aborted');});
+ await f.post('/vision').expect(202);await began;let finished=false;const shutdown=f.routes.shutdown().then(()=>{finished=true;});await cancellation;expect(finished).toBe(false);expect(f.release).not.toHaveBeenCalled();
+ settle();await shutdown;expect(f.release).toHaveBeenCalledOnce();expect((await new ConsultationStore(f.dir).get(f.session.id)).vision?.state).toBe('cancelled');
 });

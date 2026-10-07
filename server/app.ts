@@ -41,6 +41,7 @@ const AudioInput = z.object({ duration: z.coerce.number().min(3).max(60), petNam
 
 export function createApp(config: Config, services: Services) {
   const app = express();
+  let stopping = false;
   const lessons = loadLessonCatalog(config.lessonCatalogPath);
   app.disable('x-powered-by');
   app.set('trust proxy', config.trustProxy);
@@ -88,6 +89,10 @@ export function createApp(config: Config, services: Services) {
   app.delete('/api/session', (req, res) => { sessions.delete(token(req)); res.clearCookie(cookieName, cookieOptions).json(sessionInfo(req)); });
   app.use('/api', (req, res, next) => {
     if (!authenticated(req)) { res.status(401).json({ error: '로그인이 필요합니다.', code: 'AUTH', requestId: res.locals.requestId }); return; }
+    next();
+  });
+  app.use('/api', (req, res, next) => {
+    if (stopping && !['GET', 'HEAD'].includes(req.method)) { res.status(503).json({ error: 'Server is shutting down.', code: 'SHUTTING_DOWN' }); return; }
     next();
   });
   app.get('/api/lessons', (_req, res) => res.json({ lessons }));
@@ -187,5 +192,5 @@ export function createApp(config: Config, services: Services) {
     res.status(large ? 413 : malformed ? 400 : 502).json({ error: large ? '파일은 10MB 이하, 텍스트는 8,000자 이하로 입력해 주세요.' : malformed ? '요청 형식을 확인해 주세요.' : 'AI 요청을 완료하지 못했습니다. 입력은 유지됩니다. 잠시 후 다시 시도해 주세요.', code: large ? 'TOO_LARGE' : malformed ? 'INPUT' : 'UPSTREAM', requestId: res.locals.requestId });
   };
   app.use(errors);
-  return app;
+  return Object.assign(app, { shutdown: () => { stopping = true; return consultation.shutdown(); } });
 }
