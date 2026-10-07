@@ -22,14 +22,14 @@
 
 ## Task 1: GPU comparison and reusable speech runtime — root
 
-Files: `scripts/setup-speech-candidates.ps1`, `scripts/compare-speech.mjs`, `server/live-speech.ts`, `server/live-speech.test.ts`, `server/config.ts`, `server/providers.ts`, `server/local-status.ts`.
+Files: `scripts/setup-speech-candidates.ps1`, `scripts/compare-speech.ts`, `server/live-speech.ts`, `server/live-speech.test.ts`, `server/config.ts`, `server/providers.ts`, `server/local-status.ts`.
 
 - [x] Pin official runtime/model URLs, file sizes, and SHA-256 values; download into `.local-ai/candidates`.
-- [ ] Verify actual CUDA loading and readiness; compare the same audio across models, including repeated requests.
-- [ ] Test invalid model/configuration, process start failure, cancellation, timeout, bounded response, and release.
-- [ ] Provide `LiveSpeechService` with `prepare(): Promise<void>`, `transcribe(wav: Buffer, signal?: AbortSignal): Promise<{text: string; model: string; latencyMs: number}>`, `release(): Promise<void>`.
-- [ ] Prepare unloads the configured Ollama text model before loading speech; release terminates only the process launched by this app. Bind helper to loopback only.
-- [ ] Persist comparison reports under ignored `.tmp`; publish synthetic timing results and user-selection status in documentation.
+- [x] Verify actual CUDA loading and readiness; compare the same audio across models, including repeated requests.
+- [x] Test invalid model/configuration, process start failure, cancellation, timeout, bounded response, and release.
+- [x] Provide `LiveSpeechService` with `prepare(): Promise<void>`, `transcribe(wav: Buffer, signal?: AbortSignal): Promise<{text: string; model: string; latencyMs: number}>`, `release(): Promise<void>`.
+- [x] Prepare unloads the configured Ollama text model before loading speech; release terminates only the process launched by this app. Bind helper to loopback only.
+- [x] Persist comparison reports under ignored `.tmp`; publish synthetic timing results and user-selection status in documentation.
 
 ## Task 2: Persisted consultation sessions and detailed notes — implementer
 
@@ -45,7 +45,7 @@ POST / {metadata, consent:true}    prepare speech and create session
 GET /:id                           snapshot, processing status
 PUT /:id/media/:sequence            WebM bytes, ordered and idempotent
 PUT /:id/audio/:sequence?startMs=N&endMs=N  standalone mono 16k WAV, queued, idempotent
-POST /:id/finish {durationMs}       finish capture; drain transcription; release speech
+POST /:id/finish {durationMs,captureError?}       finish capture; drain transcription; release speech
 POST /:id/bookmarks {atMs,text}     add manual observation
 PATCH /:id/segments/:segmentId {text} edit transcript, invalidate generated note
 POST /:id/note                     generate detailed draft from all transcript groups
@@ -56,11 +56,11 @@ GET /:id/export                    full JSON (metadata, transcripts, bookmarks, 
 DELETE /:id                       delete confirmed session, after stopping its own work
 ```
 
-- [ ] RED: persistence recovery, idempotent duplicate versus conflicting content, invalid sequence/path/duration, queue failure, deletion during work, invalid evidence, full-transcript coverage, edits invalidate approval.
-- [ ] GREEN: implement store with atomic metadata writes and bounded recording/audio storage. Sessions left recording after restart become interrupted.
-- [ ] GREEN: router with feature gate, existing authentication/Origin protection, separate bounded upload budget, one active session, serialized audio queue and truthful incomplete state.
-- [ ] GREEN: notes process every transcript group within 8,000 characters using existing `generate`, remap existing categories to seven approved sections with original quotes/times. Add exact manual bookmarks as observation/moments evidence. No unsupported claim that video was analyzed. Show missing sections explicitly. Purpose can retain exact source statements instead of speculative synthesis.
-- [ ] Test through Supertest temporary storage and fake speech/LLM services. Run focused tests and typecheck. Write handoff report with precise final interfaces.
+- [x] RED: persistence recovery, idempotent duplicate versus conflicting content, invalid sequence/path/duration, queue failure, deletion during work, invalid evidence, full-transcript coverage, edits invalidate approval.
+- [x] GREEN: implement store with atomic metadata writes and bounded recording/audio storage. Sessions left recording after restart become interrupted.
+- [x] GREEN: router with feature gate, existing authentication/Origin protection, separate bounded upload budget, one active session, serialized audio queue and truthful incomplete state.
+- [x] GREEN: notes process every transcript group within 8,000 characters using existing `generate`, remap existing categories to seven approved sections with original quotes/times. Add exact manual bookmarks as observation/moments evidence. No unsupported claim that video was analyzed. Show missing sections explicitly. Purpose can retain exact source statements instead of speculative synthesis.
+- [x] Test through Supertest temporary storage and fake speech/LLM services. Run focused tests and typecheck. Write handoff report with precise final interfaces.
 
 ## Task 3: Browser capture and review — fresh implementer after Task 2 review
 

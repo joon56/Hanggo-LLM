@@ -11,7 +11,7 @@
 ![React](https://img.shields.io/badge/React-19-405438?style=flat-square)
 ![Local AI](https://img.shields.io/badge/Ollama_%2B_Whisper-Local_AI-405438?style=flat-square)
 
-[공개 체험판](https://joon56.github.io/Hanggo-LLM/) · [빠른 시작](#빠른-시작) · [15분 시연 대본](docs/testing/beta-test-script.md) · [테스트 가이드](docs/testing/manual-testing.md)
+[공개 체험판](https://joon56.github.io/Hanggo-LLM/) · [빠른 시작](#빠른-시작) · [실시간 상담 시연](docs/testing/live-consultation.md) · [기존 기능 시연](docs/testing/beta-test-script.md)
 
 </div>
 
@@ -19,16 +19,25 @@
 
 ## 무엇을 할 수 있나요?
 
-행고는 이 PC에서 Ollama `qwen3.5:9b`로 기록 초안을 만들고 Whisper medium으로 한국어 음성을 받아씁니다. 초안은 원문 근거와 함께 사람이 검토합니다. 승인한 기록은 접속한 브라우저의 `localStorage`에 저장합니다.
+행고는 이 PC에서 Ollama `qwen3.5:9b`로 기록 초안을 만듭니다. 실시간 상담은 **Whisper large-v3-turbo GPU**로 한국어를 전사하고, 화면·음성·중요 장면을 같은 시간축에 기록합니다. 초안은 원문 근거와 함께 사람이 검토합니다.
 
 | 기능 | 흐름 |
 |---|---|
+| 실시간 상담 · 로컬 | Chrome/Edge 탭 화면·음성 + 선택한 마이크 → 최대 60분 전사·녹화 → 중요 장면 표시 → 7개 항목 상세 일지·근거 시간·승인 |
 | 상담일지 | 3~60초 음성 또는 8,000자 이하 텍스트 → 원문·분류·숫자 확인 → 승인·저장 |
 | 보호자 일상 기록 | 반려동물 등록 → 음성 또는 텍스트 → 사건별 반려동물·시각·근거 확인 → 저장 |
 | 상담 전 브리핑 | 같은 브라우저에 저장된 보호자 기록 → 최근 14일 사실표·근거·자료 부족 표시 |
 | 보호소 프로필 | 날짜·작성자 역할이 있는 관찰 메모 → 긍정·주의 관찰 확인 → 담당자 확정 |
 
-실제 레슨 카탈로그가 연결된 경우에만 레슨 후보가 표시됩니다. 빈 카탈로그에서 추천을 만들어 내지 않습니다. 브리핑도 기록이 부족하면 변화 판단을 생략합니다. 사용자별 계정·권한, 공유 저장소, 보호자 자동 전송, 상담 전체 녹취는 제공하지 않습니다.
+실시간 상담 자료는 서버 PC의 `.local-data/consultations`에 저장합니다. 기존 짧은 상담일지·보호자 기록 등은 브라우저 `localStorage`를 사용합니다. 실제 레슨 카탈로그가 연결된 경우에만 레슨 후보가 표시됩니다. 사용자별 계정·권한, 팀 공유 저장소, 보호자 자동 전송은 제공하지 않습니다.
+
+### 실시간 상담의 흐름
+
+**탭 공유 → 전사·녹화 → 중요 장면 표시 → 전사 수정 → 상세 일지 → 검토·내보내기**
+
+상담 목적·고민 / 보호자 보고 / 상담 중 관찰 / 훈련사 안내 / 합의한 과제 / 후속 확인 / 중요 장면으로 정리합니다. 각 항목은 전사나 수동 메모의 인용문·시간으로 연결합니다. 영상 AI 분석과 자동 화자 식별은 이번 범위에 포함하지 않습니다.
+
+[60분 상담 시연 대본](docs/testing/live-consultation.md) · [무료 음성 모델 비교 결과](docs/llm/speech-comparison.md)
 
 <details>
 <summary><strong>모바일 검토 화면 보기</strong></summary>
@@ -61,6 +70,16 @@ npm.cmd run beta:check -- --warmup
 
 첫 명령은 준비 상태만 확인합니다. `--warmup`은 가상 상담 문장으로 로컬 HTTP 요청 1회를 보내 모델을 준비시키며 일일 요청 한도 1회를 사용합니다. 브라우저 기록은 저장하지 않습니다. [로컬 설치·설정](docs/testing/local-ai.md) · [음성 실행기](docs/testing/local-speech.md) · [15분 시연](docs/testing/beta-test-script.md)
 
+**실시간 상담 추가 설치**
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/setup-speech-candidates.ps1
+```
+
+이 스크립트는 비교 후보 3개와 GPU 실행기를 약 10.8GB 다운로드하고 해시를 검증합니다.
+`.env`에 `FEATURE_LIVE_CONSULTATION_ENABLED=true`, `LIVE_SPEECH_MODEL=whisper-turbo`를 설정한 뒤
+서버를 다시 시작합니다. 상담 시작 시 GPU 음성 모델을 준비하고, 전사 종료 후 텍스트 모델로 일지를 만듭니다.
+
 ## 사용 흐름과 확인
 
 1. 가상 반려동물·훈련사 이름을 사용합니다. 회의 화면 공유에 입력 내용이 보일 수 있습니다.
@@ -87,7 +106,7 @@ npm.cmd run llm:eval:workspace -- --feature owner --case bark-delivery --live
 
 ## 실행 범위
 
-로컬 실행은 Ollama와 Whisper만 사용합니다. 설정에는 `AI_ENABLED`, 기능별 `FEATURE_*_ENABLED`, `OLLAMA_*`, `WHISPER_*`가 있습니다. 기본 텍스트 모델은 `qwen3.5:9b`, 음성 모델은 Whisper medium Q5_0입니다. 모델을 바꾸면 실제 평가를 다시 수행하세요. `LESSON_CATALOG_PATH`가 비어 있으면 레슨 후보가 없습니다.
+로컬 실행에는 API 크레딧이 필요하지 않습니다. 텍스트 모델은 `qwen3.5:9b`, 새 실시간 상담의 선택 모델은 `Whisper large-v3-turbo`입니다. 기존 짧은 녹음 입력은 `WHISPER_EXECUTABLE`·`WHISPER_MODEL_PATH` 설정을 사용합니다. `LIVE_SPEECH_MODEL`은 실시간 상담 모델을 선택합니다. `LESSON_CATALOG_PATH`가 비어 있으면 레슨 후보가 없습니다.
 
 공개 GitHub Pages는 AI 없는 정적 체험판으로 유지됩니다. 로컬 빌드 확인은 `npm.cmd run build` 뒤 `npm.cmd start`로 할 수 있습니다. 외부 호스팅은 현재 로컬 Ollama·Whisper 실행 경로가 아니므로 회의 AI 시연에 사용하지 않습니다. [실행·배포 범위](docs/testing/deployment.md) · [기능별 테스트](docs/testing/workspace-testing.md)
 
