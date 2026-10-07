@@ -11,7 +11,7 @@
 ![React](https://img.shields.io/badge/React-19-405438?style=flat-square)
 ![Local AI](https://img.shields.io/badge/Ollama_%2B_Whisper-Local_AI-405438?style=flat-square)
 
-[공개 체험판](https://joon56.github.io/Hanggo-LLM/) · [빠른 시작](#빠른-시작) · [카메라 상담 시연](docs/testing/camera-consultation.md) · [기존 기능 시연](docs/testing/beta-test-script.md)
+[공개 체험판](https://joon56.github.io/Hanggo-LLM/) · [빠른 시작](#빠른-시작) · [브리핑 시연](docs/testing/consultation-brief.md) · [카메라 상담 시연](docs/testing/camera-consultation.md) · [기존 기능 시연](docs/testing/beta-test-script.md)
 
 </div>
 
@@ -27,10 +27,16 @@
 | 탭 녹화 · 로컬 | Chrome/Edge 탭 화면·음성 + 선택한 마이크 → 전사·녹화 → 원문 검토·일지 |
 | 상담일지 | 3~60초 음성 또는 8,000자 이하 텍스트 → 원문·분류·숫자 확인 → 승인·저장 |
 | 보호자 일상 기록 | 반려동물 등록 → 음성 또는 텍스트 → 사건별 반려동물·시각·근거 확인 → 저장 |
-| 상담 전 브리핑 | 같은 브라우저에 저장된 보호자 기록 → 최근 14일 사실표·근거·자료 부족 표시 |
+| 상담 전 브리핑 | 보호자 기록 + 직접 선택한 확정 상담일지 → 핵심 3줄·구체적인 확인 질문·날짜와 원문 근거·자료 부족 표시 |
 | 보호소 프로필 | 날짜·작성자 역할이 있는 관찰 메모 → 긍정·주의 관찰 확인 → 담당자 확정 |
 
 실시간 상담 자료는 서버 PC의 `.local-data/consultations`에 저장합니다. 기존 짧은 상담일지·보호자 기록 등은 브라우저 `localStorage`를 사용합니다. 실제 레슨 카탈로그가 연결된 경우에만 레슨 후보가 표시됩니다. 사용자별 계정·권한, 팀 공유 저장소, 보호자 자동 전송은 제공하지 않습니다.
+
+### 상담 전 브리핑
+
+**핵심 상황 / 변화·주의점 / 이번 상담에서 확인할 일**을 3줄로 읽고, 상세 근거에서 기록 날짜·원문·상담 시간을 확인합니다. 보호자 기록의 발생 상황·대응·이후 반응과 선택한 확정 상담일지를 질문으로 연결합니다. 기록 건수와 실제 행동 횟수를 구분하며, 자료가 없는 부분과 과제 수행 여부를 추정하지 않습니다.
+
+카메라 없이도 텍스트 기록과 확정 상담일지로 시연할 수 있습니다. [브리핑 시연 대본](docs/testing/consultation-brief.md)
 
 ### 실시간 상담의 흐름
 
