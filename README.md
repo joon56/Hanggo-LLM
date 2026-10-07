@@ -102,7 +102,9 @@ npm.cmd run llm:eval:workspace -- --feature owner --case bark-delivery --live
 
 `verify`는 단위·빌드·모의 브라우저 테스트와 자료 형식 평가를 실행합니다. `llm:eval:local`과 `--live`는 로컬 모델 평가입니다. 전체 평가는 오래 걸릴 수 있습니다. 음성 평가는 `--audio-dir test-audio`와 사례 ID에 맞는 WAV/WebM/MP4/MP3 파일이 필요합니다. 결과 JSON에는 가상 원문을 사용하세요.
 
-이번 로컬 전환에서는 단위 테스트 259개, 모의 브라우저 테스트 10개, 빌드·타입 검사와 82개 테스트 자료 검사가 통과했습니다. 이전 실모델 측정에서 `qwen3.5:9b` 전체 사례는 74/82개 자동 조건을 통과했습니다. 같은 16개 사례 비교에서는 이전 모델 6/16개, 현재 모델 15/16개였습니다. 실모델 수치는 당시 환경의 측정값이며 모든 입력에 대한 품질 보장은 아닙니다. [이번 베타 검증 기록](docs/llm/beta-verification.md) · [이전 로컬 모델 검증](docs/llm/local-verification.md) · [과거 외부 AI 실험](docs/llm/openai-verification.md)
+실시간 상담 추가 후 단위 테스트 354개, Chrome 테스트 13개, 빌드·타입 검사와 82개 테스트 자료 검사가 통과했습니다. 실제 GPU를 연결한 합성 음성 브라우저 시험과 60분 자료 가속 시험도 확인했습니다. 물리 마이크·실제 상담의 인식 품질과 60분 연속 브라우저 녹화는 추가 확인 대상입니다. [실시간 상담 검증](docs/llm/live-consultation-verification.md)
+
+이전 실모델 측정에서 `qwen3.5:9b` 전체 사례는 74/82개 자동 조건을 통과했습니다. 같은 16개 사례 비교에서는 이전 모델 6/16개, 현재 모델 15/16개였습니다. 실모델 수치는 당시 환경의 측정값이며 모든 입력에 대한 품질 보장은 아닙니다. [이전 베타 검증](docs/llm/beta-verification.md) · [이전 로컬 모델 검증](docs/llm/local-verification.md) · [과거 외부 AI 실험](docs/llm/openai-verification.md)
 
 ## 실행 범위
 

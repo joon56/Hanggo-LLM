@@ -50,7 +50,7 @@ POST /:id/bookmarks {atMs,text}     add manual observation
 PATCH /:id/segments/:segmentId {text} edit transcript, invalidate generated note
 POST /:id/note                     generate detailed draft from all transcript groups
 PATCH /:id/note {note}             save validated edits
-POST /:id/approve {reviewed:true}  approve complete, evidence-valid note
+POST /:id/approve {reviewed:true,noteRevision}  approve complete, evidence-valid note
 GET /:id/recording                 concatenate ordered WebM chunks for replay/export
 GET /:id/export                    full JSON (metadata, transcripts, bookmarks, note)
 DELETE /:id                       delete confirmed session, after stopping its own work
@@ -66,19 +66,19 @@ DELETE /:id                       delete confirmed session, after stopping its o
 
 Files: `src/consultation-api.ts`, `src/hooks/useConsultationRecorder.ts`, `public/consultation-audio-worklet.js`, `src/components/ConsultationWorkspace.tsx`, `src/consultation.css`, `src/App.tsx`, targeted tests / browser spec.
 
-- [ ] RED: permissions rejected, no tab audio, microphone toggle, stop/track ended, 60-minute cutoff, ordered uploads, failed upload retained for retry, recover/list/delete confirmation.
-- [ ] GREEN: show a local-only consultation workspace using existing navigation pattern and new feature metadata.
-- [ ] GREEN: `getDisplayMedia({video:true,audio:true})`, require browser display surface and audio track; optional microphone, AudioContext mix; MediaRecorder WebM timeslice uploads with bounded queued bytes. Stop with explicit error rather than unbounded buffering.
-- [ ] GREEN: AudioWorklet supplies PCM; sample-rate convert to 16k, encode independent WAV windows with source-relative times. Stop handles the final short tail. Show actual transcription delay and failed segments.
-- [ ] GREEN: session replay/export, editable transcript, bookmarks with time seek, seven note sections and evidence links, review approval, confirmation before delete.
-- [ ] Browser checks use simulated capture plus actual local API where possible. Never claim physical microphone test from mocked capture.
+- [x] RED: permissions rejected, no tab audio, microphone toggle, stop/track ended, 60-minute cutoff, ordered uploads, failed upload retained for retry, recover/list/delete confirmation.
+- [x] GREEN: show a local-only consultation workspace using existing navigation pattern and new feature metadata.
+- [x] GREEN: `getDisplayMedia({video:true,audio:true})`, require browser display surface and audio track; optional microphone, AudioContext mix; MediaRecorder WebM timeslice uploads with bounded queued bytes. Stop with explicit error rather than unbounded buffering.
+- [x] GREEN: AudioWorklet supplies PCM; sample-rate convert to 16k, encode independent WAV windows with source-relative times. Stop handles the final short tail. Show actual transcription delay and failed segments.
+- [x] GREEN: session replay/export, editable transcript, bookmarks with time seek, seven note sections and evidence links, review approval, confirmation before delete.
+- [x] Browser checks use simulated capture plus actual local API where possible. Never claim physical microphone test from mocked capture.
 
 ## Task 4: Integration, long-session validation, and demo documentation — root + final reviewer
 
 Files: `docs/testing/live-consultation.md`, `docs/llm/live-consultation-verification.md`, README, `.env.example`, setup/check scripts where directly relevant.
 
-- [ ] Run all unit tests, typecheck/build, existing browser tests and new consultation workflow.
-- [ ] Drive a 60-minute synthetic input through recording/segment storage; verify start/middle/end coverage and replay duration. Distinguish accelerated storage testing from wall-clock capture testing.
-- [ ] Run a real GPU transcription and note-generation demo with available synthetic audio; ask user to validate their microphone quality using recorded fixed phrases.
-- [ ] Ask user to select speech default after presenting results; retain separate candidate setup until selected.
+- [x] Run all unit tests, typecheck/build, existing browser tests and new consultation workflow.
+- [x] Drive a 60-minute synthetic input through recording/segment storage; verify start/middle/end coverage and replay duration. Distinguish accelerated storage testing from wall-clock capture testing.
+- [x] Run a real GPU transcription and note-generation demo with available synthetic audio; ask user to validate their microphone quality using recorded fixed phrases.
+- [x] Ask user to select speech default after presenting results; retain separate candidate setup until selected.
 - [ ] Final code review, fixes, and documented remaining limitations. Integrate reviewed branch into local main; publish only source/docs when authorized, never captures/models.
