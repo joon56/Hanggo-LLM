@@ -49,7 +49,7 @@ export function createConsultationRouter(options: Options) {
   const busy = () => preparing || !!activeId || noteWork.size > 0;
   const lock = <T>(operation: () => Promise<T>): Promise<T> => { const result = mutationTail.then(operation); mutationTail = result.catch(() => {}); return result; };
   const currentCapture = async (id: string) => { const session = await store.get(id); if (deleting.has(id) || activeId !== id || session.state !== 'recording') throw new ConsultationError('STATE', 'Session is not capturing.', 409); return session; };
-  async function closeCapture(id: string, durationMs: number, expired = false): Promise<ConsultationSession> {
+  async function closeCapture(id: string, durationMs: number, expired = false, captureError?: string): Promise<ConsultationSession> {
     const capture = work.get(id); if (!capture) return store.get(id);
     const { task } = await lock(async () => {
       if (capture.closing) return { task: capture.closing };
@@ -60,6 +60,7 @@ export function createConsultationRouter(options: Options) {
       finally { try { await options.speech!.release(); } finally { capture.release(); if (activeId === id) activeId = undefined; work.delete(id); } }
       return store.update(id, session => {
         session.errors.push(...capture.storageErrors);
+        if (captureError) session.errors.push({ code: 'CAPTURE_INTERRUPTED', message: captureError });
         session.segments.forEach(segment => { if (segment.state === 'queued' || segment.state === 'processing') { segment.state = 'failed'; session.errors.push({ code: 'STORAGE', message: 'Accepted transcript window could not be completed.', sequence: segment.sequence }); } });
         let end = 0; let gap = false;
         for (const segment of session.segments) { if (segment.startMs > end + 2) gap = true; end = Math.max(end, segment.endMs); }
@@ -136,10 +137,10 @@ export function createConsultationRouter(options: Options) {
     }); res.status(202).json(result);
   });
   router.post('/:id/finish', async (req, res) => {
-    const { durationMs } = parse(z.object({ durationMs: integerTime }).strict(), req.body); const session = await store.get(req.params.id);
+    const { durationMs, captureError } = parse(z.object({ durationMs: integerTime, captureError: z.string().trim().min(1).max(500).optional() }).strict(), req.body); const session = await store.get(req.params.id);
     if (durationMs < Math.max(0, ...session.segments.map(segment => segment.endMs))) throw new ConsultationError('INPUT', 'Capture duration is shorter than uploaded audio.');
     if (['recording', 'processing'].includes(session.state) && !work.has(session.id)) throw new ConsultationError('STATE', 'Session capture is unavailable.', 409);
-    res.json(await closeCapture(session.id, durationMs));
+    res.json(await closeCapture(session.id, durationMs, false, captureError));
   });
   router.post('/:id/bookmarks', async (req, res) => {
     const input = parse(z.object({ atMs: integerTime, text: z.string().trim().min(1).max(2000) }).strict(), req.body);

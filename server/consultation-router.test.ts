@@ -55,6 +55,17 @@ it('captures ordered chunks, drains speech, persists evidence notes and invalida
   expect((await new ConsultationStore(directory).recording(id)).length).toBeGreaterThan(0);
 });
 
+it('keeps a browser-reported capture failure incomplete even when uploaded chunks are complete', async () => {
+  const { app, start, upload, post } = await make(); const { body: { id } } = await start().expect(201);
+  await request(app).put(`/api/consultations/${id}/media/0`).set('Origin', origin).set('Content-Type', 'video/webm').send(Buffer.from([0x1a, 0x45, 0xdf, 0xa3, 1])).expect(200);
+  await upload(id).expect(202);
+  const finished = await post(`/${id}/finish`, { durationMs: 5000, captureError: '  Audio worklet stopped unexpectedly.  ' }).expect(200);
+  expect(finished.body.state).toBe('incomplete');
+  expect(finished.body.errors).toContainEqual({ code: 'CAPTURE_INTERRUPTED', message: 'Audio worklet stopped unexpectedly.' });
+  await post(`/${id}/note`).expect(200);
+  await post(`/${id}/approve`, { reviewed: true }).expect(409);
+});
+
 it('checks byte-derived PCM duration, allows short tail and rejects conflicting retry times', async () => {
   const { start, upload, post } = await make(); const { body: { id } } = await start().expect(201);
   await upload(id, 1).expect(400); await upload(id, 0, 0, 4000).expect(400);
