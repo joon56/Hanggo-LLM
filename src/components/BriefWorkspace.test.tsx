@@ -6,7 +6,7 @@ import type { BriefDraft, SavedOwnerLog } from '../domain/workspace-types';
 import { ApiError } from '../api';
 import { createDraft } from '../domain/notes';
 
-const api = vi.hoisted(() => ({ generate: vi.fn(), choices: vi.fn(), context: vi.fn(), notes: [] as unknown[] }));
+const api = vi.hoisted(() => ({ generate: vi.fn(), choices: vi.fn(), context: vi.fn(), compute: vi.fn(), notesError: null as Error | null, notes: [] as unknown[] }));
 vi.mock('../feature-api', () => ({ generateBrief: api.generate }));
 vi.mock('../consultation-api', () => ({ listBriefConsultations: api.choices, getBriefConsultation: api.context }));
 
@@ -20,10 +20,10 @@ const records: SavedOwnerLog[] = [{
 const draft: BriefDraft = { id: 'brief-1', petId: 'pet-1', period: { from: '2026-09-17', to: '2026-09-30', daysWithRecords: 1 }, facts: [{ id: 'count:walk', label: '산책 횟수', value: 1, unit: '건', previousValue: null, refs: ['event-1'] }], summary: [{ text: '산책 횟수: 1건.', refs: ['count:walk'] }], changes: [], questionsForOwner: [], previousTasks: [], cautions: [], dataGaps: [], safetyFlags: [], mode: 'manual' };
 
 vi.mock('../domain/owner-storage', () => ({ listPets: () => [{ id: 'pet-1', name: '초코', nicknames: [] }, { id: 'pet-2', name: '보리', nicknames: [] }], listOwnerLogs: () => records }));
-vi.mock('../domain/storage', () => ({ listNotes: () => api.notes }));
-vi.mock('../domain/brief', () => ({ computeBrief: () => draft }));
+vi.mock('../domain/storage', () => ({ listNotes: () => { if (api.notesError) throw api.notesError; return api.notes; } }));
+vi.mock('../domain/brief', () => ({ computeBrief: api.compute }));
 
-beforeEach(() => { vi.clearAllMocks(); api.notes = []; api.choices.mockResolvedValue({ consultations: [] }); });
+beforeEach(() => { vi.clearAllMocks(); api.notes = []; api.notesError = null; api.compute.mockImplementation(() => draft); api.choices.mockResolvedValue({ consultations: [] }); });
 
 test('summary fact reference opens original owner event quote', async () => {
   render(<BriefWorkspace aiReady={false} />);
@@ -92,4 +92,45 @@ test('does not generate from consultation context arriving after selection cance
   await userEvent.selectOptions(screen.getByLabelText('확정 상담일지 (선택 사항)'), '');
   await act(async () => { complete({ id: 'server', revision: 'r1', petName: '초코', items: [] }); });
   expect(api.generate).not.toHaveBeenCalled();
+});
+
+for (const mutation of ['deleted', 'replaced', 'unreadable'] as const) {
+  for (const outcome of ['success', 'rejection'] as const) test(`invalidates ${mutation} legacy approval during ${outcome} instead of stale result or fallback`, async () => {
+    const note = { id: 'legacy', metadata: { petName: '초코', trainerName: '김', sessionDate: '2026-09-25' }, draft: createDraft('초인종 때 짖었다.', 'trainer_summary_text'), approvedAt: '2026-09-25T00:00:00Z' };
+    api.notes = [note];
+    let complete!: (value: unknown) => void, reject!: (error: Error) => void;
+    api.generate.mockImplementation(() => new Promise((resolve, fail) => { complete = resolve; reject = fail; }));
+    render(<BriefWorkspace aiReady />);
+    await userEvent.selectOptions(screen.getByLabelText('확정 상담일지 (선택 사항)'), 'legacy:legacy');
+    await userEvent.click(screen.getByRole('checkbox'));
+    await userEvent.click(screen.getByRole('button', { name: 'AI 브리핑 만들기' }));
+    if (mutation === 'deleted') api.notes = [];
+    if (mutation === 'replaced') api.notes = [{ ...note, approvedAt: '2026-09-26T00:00:00Z' }];
+    if (mutation === 'unreadable') api.notesError = new Error('저장된 기록이 손상되어 읽을 수 없습니다.');
+    api.compute.mockClear();
+    await act(async () => {
+      if (outcome === 'success') complete({ draft: { ...draft, summary: [{ text: '오래된 상담 응답', refs: [] }] }, fallbackUsed: false, warnings: [] });
+      else reject(new Error('offline'));
+    });
+    expect(screen.getByLabelText('확정 상담일지 (선택 사항)')).toHaveValue('');
+    expect(await screen.findByRole('alert')).toHaveTextContent('다시 선택');
+    expect(screen.queryByText('오래된 상담 응답')).not.toBeInTheDocument();
+    expect(screen.queryByText(/코드 기반 대체 브리핑입니다/)).not.toBeInTheDocument();
+    expect(api.compute.mock.calls.some(([input]) => input.previousSession)).toBe(false);
+  });
+}
+
+test('invalidates unreadable legacy storage before generation instead of old-input fallback', async () => {
+  api.notes = [{ id: 'legacy', metadata: { petName: '초코', trainerName: '김', sessionDate: '2026-09-25' }, draft: createDraft('초인종 때 짖었다.', 'trainer_summary_text'), approvedAt: '2026-09-25T00:00:00Z' }];
+  render(<BriefWorkspace aiReady />);
+  await userEvent.selectOptions(screen.getByLabelText('확정 상담일지 (선택 사항)'), 'legacy:legacy');
+  await userEvent.click(screen.getByRole('checkbox'));
+  api.notesError = new Error('저장된 기록을 읽을 수 없습니다.');
+  api.compute.mockClear();
+  await userEvent.click(screen.getByRole('button', { name: 'AI 브리핑 만들기' }));
+  expect(await screen.findByRole('alert')).toHaveTextContent('다시 선택');
+  expect(screen.getByLabelText('확정 상담일지 (선택 사항)')).toHaveValue('');
+  expect(api.generate).not.toHaveBeenCalled();
+  expect(screen.queryByText(/코드 기반 대체 브리핑입니다/)).not.toBeInTheDocument();
+  expect(api.compute.mock.calls.some(([input]) => input.previousSession)).toBe(false);
 });

@@ -20,3 +20,18 @@ it('keeps situation in core and diverse consultation/owner questions despite mod
 });
 it('rejects duplicate event IDs and malformed source shape',()=>{const i=briefInput();i.records[0].draft.events.push(i.records[0].draft.events[0]);expect(BriefInputSchema.safeParse(i).success).toBe(false);const j=briefInput();j.records[0].draft.events[0].details=null as never;expect(BriefInputSchema.safeParse(j).success).toBe(false);});
 it('propagates cancellation and masks prior task context',async()=>{const input=briefInput();input.previousSession={date:'2026-09-01',items:[{id:'task',category:'task',text:'연락처 test@example.com 확인'}]};const c=new AbortController();let seen='';await expect(createBriefService({model:'test',extract:async(masked)=>{seen=JSON.stringify(masked);c.abort();return {};}}).generate(input,c.signal)).rejects.toThrow();expect(seen).not.toContain('test@example.com');});
+
+for (const failed of [false, true]) it(`keeps observation-only consultation in all three summary roles with AI ${failed ? 'fallback' : 'selection'}`, async () => {
+  const input = briefInput(); input.records = [];
+  input.previousSession = { date: '2026-09-25', items: [{ id: 'situation', category: 'owner_report', text: '초인종 때 짖었다.' }] };
+  const result = await createBriefService({ model: 'test', extract: async () => {
+    if (failed) throw new Error('offline');
+    return { summary: ['record-days'], changes: [], questionsForOwner: ['record-days'] };
+  } }).generate(input);
+  expect(result.fallbackUsed).toBe(failed);
+  expect(result.draft.summary[0].text).toContain('2026-09-25');
+  expect(result.draft.summary[0].text).toContain('초인종 때 짖었다.');
+  expect(result.draft.summary[0].refs).toEqual(['session:0']);
+  expect(result.draft.summary[2].text).toContain('상담 기록 상황');
+  expect(result.draft.summary[2].refs).toContain('session:0');
+});

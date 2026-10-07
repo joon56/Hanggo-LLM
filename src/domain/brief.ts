@@ -43,15 +43,16 @@ export function selectBriefSummary(draft: BriefDraft, priorities: string[] = [])
   const coverage = draft.facts.find(f => f.id === 'record-days')!;
   const contexts = draft.facts.filter(f => f.id.startsWith('context:'));
   const purposes = draft.facts.filter(f => draft.sources?.some(source => f.refs.includes(source.id) && source.category === 'purpose'));
-  const candidates = contexts.length ? contexts : purposes.length ? purposes : draft.facts.filter(f => f.id.startsWith('count:') && Number(f.value) > 0);
+  const situations = draft.facts.filter(f => draft.sources?.some(source => f.refs.includes(source.id) && (source.category === 'owner_report' || source.category === 'observation')));
+  const candidates = contexts.length ? contexts : purposes.length ? purposes : situations.length ? situations : draft.facts.filter(f => f.id.startsWith('count:') && Number(f.value) > 0);
   const first = priorities.map(id => candidates.find(f => f.id === id)).find(Boolean) ?? candidates[0];
   const mainSource = draft.sources?.find(source => first?.refs.includes(source.id));
   const caution = draft.cautions[0], change = draft.changes[0];
   const questionRefs = [...new Set(draft.questionsForOwner.flatMap(question => question.refs))];
   const questionSources = questionRefs.flatMap(id => { const fact = draft.facts.find(f => f.id === id); return draft.sources?.filter(source => fact?.refs.includes(source.id)) ?? []; });
-  const checkItems = [questionSources.some(source => source.category === 'task') ? '이전 과제 시도 여부' : '', questionSources.some(source => source.category === 'follow_up') ? '상담 후속 확인' : '', questionSources.some(source => source.kind === 'owner') ? '기록된 상황의 대응·반응' : ''].filter(Boolean);
+  const checkItems = [questionSources.some(source => source.category === 'task') ? '이전 과제 시도 여부' : '', questionSources.some(source => source.category === 'follow_up') ? '상담 후속 확인' : '', questionSources.some(source => source.kind === 'owner') ? '기록된 상황의 대응·반응' : '', questionSources.some(source => source.category === 'owner_report' || source.category === 'observation') ? '상담 기록 상황·반응' : ''].filter(Boolean);
   return [
-    { text: `핵심 상황: ${mainSource ? `${mainSource.date} · “${clip(mainSource.sourceQuote, 140)}”` : first ? `${first.label} · ${first.value}${first.unit}` : '최근 상황 자료 부족 · 미확인'}.`, refs: [first?.id ?? coverage.id] },
+    { text: `핵심 상황: ${mainSource ? `${mainSource.date}${mainSource.kind !== 'owner' ? ' · 상담 기록' + (mainSource.scope !== 'current' ? ' · 과거 자료 · 현재 상태 미확인' : '') : ''} · “${clip(mainSource.sourceQuote, 140)}”` : first ? `${first.label} · ${first.value}${first.unit}` : '최근 상황 자료 부족 · 미확인'}.`, refs: [first?.id ?? coverage.id] },
     { text: `변화·주의점: ${caution?.text ?? change?.text ?? '두 기간의 기록으로 확인할 변화 자료 부족.'} 최근 ${coverage.value}일 / 직전 ${coverage.previousValue}일 기록. 기록 건수는 실제 행동 횟수와 다릅니다.`, refs: [...new Set([...(caution?.refs ?? change?.refs ?? []), coverage.id])] },
     { text: `이번 상담에서 확인할 일: ${checkItems.length ? checkItems.join(' · ') + ' 확인.' : '상황·대응·반응 자료 부족 · 기록 누락 확인.'}`, refs: questionRefs.length ? questionRefs : [coverage.id] },
   ];
@@ -142,7 +143,7 @@ export function computeBrief(input: BriefInput, consultation?: BriefConsultation
       const sourceId = `${consultation ? 'consultation' : 'legacy'}:${JSON.stringify([consultation?.id ?? session.date, item.id])}`;
       const evidence = 'evidence' in item ? item.evidence : undefined;
       const quote = 'sourceQuote' in item && item.sourceQuote ? item.sourceQuote : item.text;
-      sources.push({ id: sourceId, kind: consultation ? 'consultation' : 'legacy_consultation', date: session.date, sourceQuote: clip(quote), text: clip(item.text), category: item.category, ...(evidence ? { evidence } : {}), truncated: item.text.length > BRIEF_QUOTE_LIMIT || ('truncated' in item && item.truncated === true) });
+      sources.push({ id: sourceId, kind: consultation ? 'consultation' : 'legacy_consultation', date: session.date, sourceQuote: clip(quote), text: clip(item.text), category: item.category, scope: scope(session.date), ...(evidence ? { evidence } : {}), truncated: item.text.length > BRIEF_QUOTE_LIMIT || quote.length > BRIEF_QUOTE_LIMIT || ('truncated' in item && item.truncated === true) });
       const fact: Fact = { id: item.category === 'task' ? `task:${index}` : `session:${index}`, label: item.category === 'task' ? '이전 상담 과제 원문 (수행 여부 미확인)' : '선택한 상담 원문', value: `${session.date} · ${clip(item.text, 200)}`, unit: '', previousValue: null, refs: [sourceId] };
       facts.push(fact); if (item.category === 'task') previousTasks.push(renderBriefFact(fact));
     }

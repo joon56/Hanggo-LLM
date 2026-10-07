@@ -50,16 +50,22 @@ export default function BriefWorkspace({ aiReady }: Props) {
     const current = version.current, controller = new AbortController(); abort.current = controller; setPending(true);
     const stillCurrent = () => current === version.current && !controller.signal.aborted;
     const readContext = () => consultation ? getBriefConsultation(consultation.id, input.pet.name, consultation.revision, controller.signal) : Promise.resolve(undefined);
+    const validateLegacy = () => {
+      if (!note) return;
+      let stored: ApprovedNote | undefined;
+      try { stored = listNotes().find(stored => stored.id === note.id); }
+      catch (caught) { throw new ApiError(message(caught), 'BRIEF_CONSULTATION_INVALID'); }
+      if (!stored || JSON.stringify(stored) !== JSON.stringify(note)) throw new ApiError('선택한 요약 상담일지가 변경되었습니다.', 'BRIEF_CONSULTATION_INVALID');
+    };
     let context: BriefConsultationContext | undefined;
     try {
       if (selection && !note && !consultation) throw new ApiError('선택한 상담일지가 목록에 없습니다.', 'BRIEF_CONSULTATION_INVALID');
-      if (note) {
-        const stored = listNotes().find(stored => stored.id === note.id);
-        if (!stored || JSON.stringify(stored) !== JSON.stringify(note)) throw new ApiError('선택한 요약 상담일지가 변경되었습니다.', 'BRIEF_CONSULTATION_INVALID');
-      }
+      validateLegacy();
       context = await readContext(); if (!stillCurrent()) return;
+      validateLegacy();
       if (!aiReady) { setDraft(computeBrief(input, context)); setNotice('저장된 근거로 코드 브리핑을 만들었습니다.'); return; }
       const result = await generateBrief(input, controller.signal); if (!stillCurrent()) return;
+      validateLegacy();
       setDraft(result.draft); setNotice(result.fallbackUsed ? 'AI 선택 실패 · 코드 기반 대체 브리핑입니다. 상세 근거와 질문을 확인해 주세요.' : '로컬 AI가 근거 우선순위를 선택한 브리핑입니다.');
       if (result.warnings.length) setError(result.warnings.join(' '));
     } catch (caught) {
@@ -67,7 +73,9 @@ export default function BriefWorkspace({ aiReady }: Props) {
       if (caught instanceof ApiError && caught.code === 'BRIEF_CONSULTATION_INVALID') { invalidate(caught); return; }
       // Re-read selected approved context before a fallback after transport errors.
       try {
+        validateLegacy();
         context = await readContext(); if (!stillCurrent()) return;
+        validateLegacy();
         setDraft(computeBrief(input, context)); setNotice('AI 선택 실패 · 코드 기반 대체 브리핑입니다.');
         setError(message(caught) + ' 근거와 확인 질문을 코드로 구성했습니다.');
       } catch (validationError) { if (stillCurrent()) invalidate(validationError); }

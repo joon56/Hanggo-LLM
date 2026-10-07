@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { computeBrief } from './brief.ts';
-import type { BriefInput, OwnerEvent, SavedOwnerLog } from './workspace-types.ts';
+import type { BriefInput, BriefConsultationContext, OwnerEvent, SavedOwnerLog } from './workspace-types.ts';
 import fixtures from '../../fixtures/briefs.json';
 
 export function briefInput(): BriefInput {
@@ -83,4 +83,45 @@ describe('brief deterministic facts', () => {
     expect(computeBrief(input).facts.find(f=>f.id==='count:walk')?.value).toBe(2);
   });
   it('does not select sparse or small differences as changes',()=>{const i=briefInput();expect(computeBrief(i).changes).toEqual([]);const events=i.records[0].draft.events;events.push({...events[0],id:'old2',occurredAt:'2026-09-11T01:00:00Z'},{...events[0],id:'old3',occurredAt:'2026-09-12T01:00:00Z'});expect(computeBrief(i).changes).toEqual([]);events.push({...events[0],id:'new4',occurredAt:'2026-09-26T01:00:00Z'});expect(computeBrief(i).changes).toHaveLength(1);});
+});
+
+for (const kind of ['legacy', 'detailed'] as const) {
+  for (const category of ['observation', 'owner_report'] as const) {
+    for (const date of ['2026-09-25', '2026-08-01']) it(`uses ${kind} ${category}-only consultation in core summary dated ${date}`, () => {
+      const input = briefInput(); input.records = [];
+      const text = '초인종 때 짖고 문에서 떨어진 뒤 줄어들었다.';
+      const items = [{ id: 'situation', category, text, sourceQuote: text }];
+      let context: BriefConsultationContext | undefined;
+      if (kind === 'legacy') input.previousSession = { date, items };
+      else {
+        input.consultation = { id: 'selected', revision: 'r1' };
+        context = { id: 'selected', revision: 'r1', date, petName: input.pet.name, trainerName: '김', approvedAt: `${date}T00:00:00Z`, items: items.map(item => ({ ...item, evidence: [] })), omittedItems: 0 };
+      }
+      const draft = computeBrief(input, context);
+      expect(draft.summary[0].text).toContain(date);
+      expect(draft.summary[0].text).toContain('상담');
+      expect(draft.summary[0].text).toContain(text);
+      expect(draft.summary[0].text).not.toContain('최근 상황 자료 부족');
+      expect(draft.summary[0].refs).toEqual(['session:0']);
+      expect(draft.summary[2].text).toContain('상담 기록 상황');
+      expect(draft.summary[2].text).not.toContain('상황·대응·반응 자료 부족');
+      expect(draft.summary[2].refs).toContain('session:0');
+      expect(draft.questionsForOwner[0].text).toContain(date);
+      if (date === '2026-08-01') {
+        expect(draft.summary[0].text).toContain('과거 자료');
+        expect(draft.summary[0].text).toContain('현재 상태 미확인');
+        expect(draft.sources?.[0].scope).toBe('historical');
+      }
+      expect(draft.period.daysWithRecords).toBe(0);
+    });
+  }
+}
+
+it('discloses clipping when legacy original quote exceeds limit despite short edited text', () => {
+  const input = briefInput(); input.records = [];
+  input.previousSession = { date: '2026-09-25', items: [{ id: 'edited', category: 'observation', text: '초인종 때 짖었다.', sourceQuote: '긴 원문 '.repeat(100) }] };
+  const draft = computeBrief(input);
+  expect(draft.sources?.[0].sourceQuote).toHaveLength(400);
+  expect(draft.sources?.[0].truncated).toBe(true);
+  expect(draft.dataGaps.join(' ')).toContain('긴 원문은 최대 400자 발췌');
 });
