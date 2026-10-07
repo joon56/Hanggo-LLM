@@ -123,3 +123,39 @@ it('cancellation racing startup waits for registered job and cancels it',async()
  const arrival=f.arrived('/vision/cancel');const cancellation=f.post('/vision/cancel').then(response=>response);await arrival;pause.unpause();await startup;
  const cancelled=await cancellation;await f.post('/vision/cancel');vi.restoreAllMocks();expect(cancelled.body.vision?.state).toBe('cancelled');expect(f.release).toHaveBeenCalledOnce();
 });
+async function failTerminalVisionWrites(count: number) {
+ const originalUpdate=ConsultationStore.prototype.update;const originalGet=ConsultationStore.prototype.get;let failures=0;
+ vi.spyOn(ConsultationStore.prototype,'update').mockImplementation(async function(this:ConsultationStore,id,change){const current=await originalGet.call(this,id);const changed=structuredClone(current);change(changed);
+  if(current.vision?.state==='processing'&&changed.vision?.state!=='processing'&&failures<count){failures++;throw Object.assign(new Error('Injected terminal EIO'),{code:'EIO'});}
+  return originalUpdate.call(this,id,change);
+ });return {failures:()=>failures};
+}
+async function waitingVisionFixture() {
+ let began!:()=>void;const entered=new Promise<void>(resolve=>began=resolve);
+ let analyzed=0;const f=await fixture(async(_frames,signal)=>{if(++analyzed===1)return ['Completed visible scene.'];began();await new Promise<void>((_,reject)=>{if(signal.aborted){reject(new Error('aborted'));return;}signal.addEventListener('abort',()=>reject(new Error('aborted')),{once:true});});return [];});
+ await f.store.update(f.session.id,s=>{s.bookmarks.push({id:'preserved-moment',atMs:2000,text:'Preserved bookmark'});});await f.store.putChunk(f.session.id,'media',0,Buffer.from([0x1a,0x45,0xdf,0xa3,1]));
+ await f.post('/vision').expect(202);await entered;return f;
+}
+it('retries one transient terminal EIO on cancellation and releases GPU once',async()=>{
+ const f=await waitingVisionFixture();const injection=await failTerminalVisionWrites(1);
+ const cancelled=await f.post('/vision/cancel').expect(200);vi.restoreAllMocks();expect(cancelled.body.vision.state).toBe('cancelled');expect(cancelled.body.vision.scenes[0].observations).toEqual(['Completed visible scene.']);expect(cancelled.body.recordingChunkCount).toBe(1);expect(await f.store.recording(f.session.id)).toEqual(Buffer.from([0x1a,0x45,0xdf,0xa3,1]));expect(injection.failures()).toBe(1);expect(f.release).toHaveBeenCalledOnce();
+ await f.post('/vision').expect(202);await f.post('/vision/cancel').expect(200);expect(f.release).toHaveBeenCalledTimes(2);
+});
+it('reports repeated terminal save failures then repairs orphan processing on later cancellation',async()=>{
+ const f=await waitingVisionFixture();const injection=await failTerminalVisionWrites(20);
+ const failed=await f.post('/vision/cancel');const orphan=(await request(f.app).get(`/${f.session.id}`)).body;vi.restoreAllMocks();
+ const repaired=await f.post('/vision/cancel').expect(200);expect(failed.status).toBe(500);expect(failed.body.code).toBe('STORAGE');expect(orphan.vision.state).toBe('processing');expect(injection.failures()).toBe(2);expect(repaired.body.vision.state).toBe('cancelled');expect(repaired.body.vision.scenes[0].observations).toEqual(['Completed visible scene.']);expect(repaired.body.recordingChunkCount).toBe(1);expect(repaired.body.vision.error).toContain('interrupted');expect(f.release).toHaveBeenCalledOnce();
+});
+it('orphan cancellation never overwrites a newer analysis revision',async()=>{
+ const f=await waitingVisionFixture();await failTerminalVisionWrites(20);await f.post('/vision/cancel');vi.restoreAllMocks();
+ const originalUpdate=ConsultationStore.prototype.update;const originalGet=ConsultationStore.prototype.get;let swapped=false;
+ vi.spyOn(ConsultationStore.prototype,'update').mockImplementation(async function(this:ConsultationStore,id,change){const current=await originalGet.call(this,id);if(!swapped&&current.vision?.state==='processing'){swapped=true;await originalUpdate.call(this,id,s=>{s.vision!.revision='00000000-0000-4000-8000-000000000001';});}return originalUpdate.call(this,id,change);});
+ const cancelled=await f.post('/vision/cancel');vi.restoreAllMocks();const current=(await request(f.app).get(`/${f.session.id}`)).body;
+ expect(swapped).toBe(true);expect(cancelled.status).toBe(409);expect(current.vision.revision).toBe('00000000-0000-4000-8000-000000000001');expect(current.vision.state).toBe('processing');await f.post('/vision/cancel').expect(200);
+});
+
+it('handles failed terminal background persistence without unhandled rejection and exposes recoverable storage error',async()=>{
+ const f=await fixture();const injection=await failTerminalVisionWrites(20);await f.post('/vision').expect(202);
+ for(let attempt=0;attempt<100&&!f.release.mock.calls.length;attempt++)await request(f.app).get('/'+f.session.id);
+ expect(f.release).toHaveBeenCalledOnce();expect(injection.failures()).toBe(2);const cancelled=await f.post('/vision/cancel');vi.restoreAllMocks();expect(cancelled.status).toBe(500);expect(cancelled.body.code).toBe('STORAGE');expect(injection.failures()).toBe(4);const repaired=await f.post('/vision/cancel').expect(200);expect(repaired.body.vision.state).toBe('cancelled');expect(repaired.body.vision.scenes[0].observations).toEqual(['Dog sits.']);
+});

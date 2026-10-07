@@ -167,6 +167,22 @@ export function createConsultationRouter(options: Options) {
     res.json(await store.update(req.params.id, session => { const segment = session.segments.find(segment => segment.id === req.params.segmentId); if (!segment || segment.state !== 'complete') throw new ConsultationError('STATE', 'Transcript segment is not editable.', 409); segment.text = input.text; delete session.note; delete session.noteRevision; }));
   });
   const framePath = (id: string, revision: string, sceneId: string, index: number) => path.join(store.directory, id, 'vision', revision, sceneId, String(index) + '.jpg');
+  async function finishVision(id: string, revision: string, state: 'complete' | 'failed' | 'cancelled', error?: string) {
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        return await store.update(id, current => {
+          if (current.vision?.revision !== revision || current.vision.state !== 'processing') throw new ConsultationError('VISION_CHANGED', 'Vision changed during terminal recovery.', 409);
+          const vision = current.vision;
+          vision.state = state === 'complete' && vision.scenes.some(scene => scene.state === 'failed') ? 'failed' : state;
+          if (error) vision.error = error;
+          else if (vision.state === 'failed') vision.error = 'Some sampled scenes could not be analyzed.';
+        });
+      } catch (failure) {
+        if (failure instanceof ConsultationError && ['VISION_CHANGED', 'NOT_FOUND'].includes(failure.code)) throw failure;
+        if (attempt === 1) throw new ConsultationError('STORAGE', 'Vision status could not be saved. Retry cancellation to recover interrupted analysis.', 500);
+      }
+    }
+  }
   async function safeDirectory(directory: string) { const info=await lstat(directory); if(!info.isDirectory()||info.isSymbolicLink()) throw new ConsultationError('STORAGE','Unsafe vision directory.',500); }
   router.post('/:id/vision', async (req, res) => {
     parse(z.object({}).strict(), req.body);
@@ -200,15 +216,20 @@ export function createConsultationRouter(options: Options) {
               await store.update(id, current => { const target = current.vision!.scenes.find(s => s.id===scene.id)!; target.state='failed'; target.error=error instanceof Error?error.message.slice(0,500):'Vision scene failed.'; });
             }
           }
-          await store.update(id, current => { current.vision!.state=current.vision!.scenes.some(scene=>scene.state==='failed')?'failed':'complete'; if(current.vision!.state==='failed') current.vision!.error='Some sampled scenes could not be analyzed.'; });
-        } catch(error) { await store.update(id,current => { current.vision!.state=controller.signal.aborted?'cancelled':'failed'; current.vision!.error=controller.signal.aborted?'Vision analysis cancelled.':error instanceof Error?error.message.slice(0,500):'Vision analysis failed.'; }).catch(()=>{}); }
+          await finishVision(id, revision, 'complete');
+        } catch(error) {
+          if (error instanceof ConsultationError && ['STORAGE', 'VISION_CHANGED', 'NOT_FOUND'].includes(error.code)) throw error;
+          await finishVision(id, revision, controller.signal.aborted ? 'cancelled' : 'failed', controller.signal.aborted ? 'Vision analysis cancelled.' : error instanceof Error ? error.message.slice(0,500) : 'Vision analysis failed.');
+        }
         finally { release(); visionWork.delete(id); }
-      })(); visionWork.set(id,{controller,task}); return initial;
+      })(); visionWork.set(id,{controller,task}); void task.catch(() => {}); return initial;
     }); res.status(202).json(result);
   });
   router.post('/:id/vision/cancel', async (req,res) => {
     parse(z.object({}).strict(),req.body); const id=req.params.id;
-    const { job } = await lock(async () => { await store.get(id); const job=visionWork.get(id); job?.controller.abort(); return { job }; });
+    const { job } = await lock(async () => { const session=await store.get(id); const job=visionWork.get(id); job?.controller.abort();
+      if (!job && session.vision?.state === 'processing') await finishVision(id, session.vision.revision, 'cancelled', 'Vision analysis interrupted before status could be saved.');
+      return { job }; });
     await job?.task; res.json(await store.get(id));
   });
   router.patch('/:id/vision/scenes/:sceneId', async(req,res) => {
@@ -251,7 +272,7 @@ export function createConsultationRouter(options: Options) {
   router.delete('/:id', async (req, res) => {
     const id = req.params.id; await store.get(id); await lock(async () => { if (deleting.has(id)) throw new ConsultationError('STATE', 'Session is being deleted.', 409); deleting.add(id); });
     try {
-      const vision = visionWork.get(id); vision?.controller.abort(); await vision?.task;
+      const vision = visionWork.get(id); vision?.controller.abort(); await vision?.task.catch(() => {});
       const note = noteWork.get(id); note?.controller.abort(); await note?.task.catch(() => {}); const capture = work.get(id);
       if (capture) { clearTimeout(capture.timer); capture.controller.abort(); await capture.tail.catch(() => {}); if (capture.closing) await capture.closing.catch(() => {}); await releaseCapture(id, capture); work.delete(id); }
       await lock(() => store.delete(id)); res.status(204).end();
