@@ -160,7 +160,7 @@ export function createConsultationRouter(options: Options) {
   });
   router.post('/:id/bookmarks', async (req, res) => {
     const input = parse(z.object({ atMs: integerTime, text: z.string().trim().min(1).max(2000) }).strict(), req.body);
-    res.json(await store.update(req.params.id, session => { if (visionWork.has(session.id)) throw new ConsultationError('STATE', 'Wait for vision analysis before changing bookmarks.', 409); delete session.vision; if (session.bookmarks.length >= 1000 || (session.state !== 'recording' && input.atMs > session.durationMs)) throw new ConsultationError('INPUT', 'Bookmark exceeds session bounds.'); session.bookmarks.push({ id: randomUUID(), ...input }); delete session.note; delete session.noteRevision; }));
+    res.json(await lock(() => store.update(req.params.id, session => { if (visionWork.has(session.id)) throw new ConsultationError('STATE', 'Wait for vision analysis before changing bookmarks.', 409); delete session.vision; if (session.bookmarks.length >= 1000 || (session.state !== 'recording' && input.atMs > session.durationMs)) throw new ConsultationError('INPUT', 'Bookmark exceeds session bounds.'); session.bookmarks.push({ id: randomUUID(), ...input }); delete session.note; delete session.noteRevision; })));
   });
   router.patch('/:id/segments/:segmentId', async (req, res) => {
     const input = parse(z.object({ text: z.string().max(16000) }).strict(), req.body);
@@ -207,7 +207,9 @@ export function createConsultationRouter(options: Options) {
     }); res.status(202).json(result);
   });
   router.post('/:id/vision/cancel', async (req,res) => {
-    parse(z.object({}).strict(),req.body); const id=req.params.id; await store.get(id); const work=visionWork.get(id); work?.controller.abort(); await work?.task; res.json(await store.get(id));
+    parse(z.object({}).strict(),req.body); const id=req.params.id;
+    const { job } = await lock(async () => { await store.get(id); const job=visionWork.get(id); job?.controller.abort(); return { job }; });
+    await job?.task; res.json(await store.get(id));
   });
   router.patch('/:id/vision/scenes/:sceneId', async(req,res) => {
     const input=parse(z.object({revision:z.uuid(),observations:visionObservationsSchema}).strict(),req.body);
@@ -242,7 +244,7 @@ export function createConsultationRouter(options: Options) {
   });
   router.post('/:id/approve', async (req, res) => {
     const input = parse(z.object({ reviewed: z.literal(true), noteRevision: z.string().min(1).max(100) }).strict(), req.body);
-    res.json(await store.update(req.params.id, session => { if (input.noteRevision !== consultationNoteRevision(session)) throw new ConsultationError('NOTE_CHANGED', 'Note changed after review. Reload and review current sources.', 409); if (session.captureSource === 'camera' && (session.vision?.state !== 'complete' || !session.vision.reviewedAt)) throw new ConsultationError('VISION_REVIEW_REQUIRED', 'Review complete camera analysis before approval.', 409); if (session.state !== 'ready' || !session.note || validateConsultationNote(session.note, session).length) throw new ConsultationError('STATE', 'Only complete evidence-valid notes can be approved.', 409); session.note.approvedAt = new Date().toISOString(); }));
+    res.json(await store.update(req.params.id, session => { if (input.noteRevision !== consultationNoteRevision(session)) throw new ConsultationError('NOTE_CHANGED', 'Note changed after review. Reload and review current sources.', 409); if ((session.captureSource === 'camera' || session.note?.items.some(item => item.evidence.some(evidence => evidence.kind === 'vision'))) && (session.vision?.state !== 'complete' || !session.vision.reviewedAt)) throw new ConsultationError('VISION_REVIEW_REQUIRED', 'Review complete visual analysis before approval.', 409); if (session.state !== 'ready' || !session.note || validateConsultationNote(session.note, session).length) throw new ConsultationError('STATE', 'Only complete evidence-valid notes can be approved.', 409); session.note.approvedAt = new Date().toISOString(); }));
   });
   router.get('/:id/export', async (req, res) => { res.set('Content-Disposition', 'attachment; filename="consultation.json"').json(await store.get(req.params.id)); });
   router.get('/:id/recording', recordingHandler(store, options.ffmpegPath ?? 'ffmpeg'));

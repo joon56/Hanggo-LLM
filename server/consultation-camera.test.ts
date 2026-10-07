@@ -19,9 +19,9 @@ async function fixture(analyze: (frames: Buffer[], signal: AbortSignal) => Promi
  await store.update(session.id, s => { s.state='ready'; s.durationMs=5000; });
  const release = vi.fn(); const acquire = vi.fn(() => release);
  const routes = createConsultationRouter({enabled:true,directory:dir,generate:async text => ({draft:createDraft(text,'trainer_summary_voice')}),acquireAi:acquire,vision:{model:'test',extractFrames:async (_files,times) => ({frames:times.map(() => Buffer.from([0xff,0xd8,0xff,0xd9])),frameTimesMs:times}),analyze}});
- const app = express(); app.use(express.json()); app.use(routes.router);
+ const app = express(); app.use(express.json()); const arrivals=new Map<string,()=>void>(); app.use((req,_res,next)=>{arrivals.get(req.path)?.();next();}); app.use(routes.router); const arrived=(route:string)=>new Promise<void>(resolve=>arrivals.set('/'+session.id+route,resolve));
  const post = (route: string, body = {}) => request(app).post(`/${session.id}${route}`).send(body);
- return {store,session,app,post,release,acquire,dir};
+ return {store,session,app,post,release,acquire,dir,arrived};
 }
 it('persists camera source and rejects notes before complete vision',async () => {
  const f=await fixture(); expect((await new ConsultationStore(f.dir).get(f.session.id)).captureSource).toBe('camera');
@@ -87,4 +87,39 @@ it('rejects JPEG storage when recording chunks exhaust existing session byte bud
  const f=await fixture();const {readFile,writeFile}=await import('node:fs/promises');const file=path.join(f.dir,f.session.id,'session.json');const persisted=JSON.parse(await readFile(file,'utf8'));persisted.chunks.media=Array.from({length:128},()=>({hash:'0'.repeat(64),size:16*1024**2}));persisted.recordingChunkCount=128;await writeFile(file,JSON.stringify(persisted));
  await f.post('/vision').expect(202);let result;for(let i=0;i<100;i++){result=(await request(f.app).get(`/${f.session.id}`)).body;if(result.vision.state!=='processing')break;}
  expect(result.vision.state).toBe('failed');expect(result.vision.scenes[0].error).toContain('Session storage budget exceeded');expect(result.recordingChunkCount).toBe(128);
+});
+async function pauseVisionStartup() {
+ const originalUpdate=ConsultationStore.prototype.update;
+ const originalGet=ConsultationStore.prototype.get;
+ let entered!:()=>void,unpause!:()=>void,paused=false;
+ const enteredPromise=new Promise<void>(resolve=>entered=resolve);
+ const gate=new Promise<void>(resolve=>unpause=resolve);
+ vi.spyOn(ConsultationStore.prototype,'update').mockImplementation(async function(this: ConsultationStore,id,change){
+  const probe=await originalGet.call(this,id);change(probe);
+  if(!paused&&probe.vision?.state==='processing'){paused=true;entered();await gate;}
+  return originalUpdate.call(this,id,change);
+ });
+ return {entered:enteredPromise,unpause};
+}
+it('requires review of visual evidence in tab notes while leaving legacy tab notes usable',async()=>{
+ const f=await fixture();await f.store.update(f.session.id,s=>{s.captureSource='tab';});await f.post('/vision').expect(202);
+ let result;for(let i=0;i<100;i++){result=(await request(f.app).get(`/${f.session.id}`)).body;if(result.vision.state!=='processing')break;}
+ const generated=await f.post('/note').expect(200);await f.post('/approve',{reviewed:true,noteRevision:generated.body.noteRevision}).expect(409);
+ await f.post('/vision/review',{revision:result.vision.revision,reviewed:true}).expect(200);await f.post('/approve',{reviewed:true,noteRevision:generated.body.noteRevision}).expect(200);
+});
+it('serializes bookmark mutation against vision startup snapshot',async()=>{
+ let finish!:()=>void;const analyzeGate=new Promise<void>(resolve=>finish=resolve);
+ const f=await fixture(async()=>{await analyzeGate;return [];});const pause=await pauseVisionStartup();
+ const startup=f.post('/vision').then(response=>response);await pause.entered;
+ const arrival=f.arrived('/bookmarks');const bookmark=f.post('/bookmarks',{atMs:2000,text:'Racing bookmark'}).then(response=>response);
+ // Ensure the competing HTTP request reaches router while startup is paused.
+ await arrival;pause.unpause();await startup;
+ const edited=await bookmark;finish();await f.post('/vision/cancel');vi.restoreAllMocks();
+ expect(edited.status).toBe(409);expect(edited.body.code).toBe('STATE');
+});
+it('cancellation racing startup waits for registered job and cancels it',async()=>{
+ const f=await fixture(async(_frames,signal)=>{await new Promise<void>((_,reject)=>{if(signal.aborted){reject(new Error('aborted'));return;}signal.addEventListener('abort',()=>reject(new Error('aborted')),{once:true});});return [];});
+ const pause=await pauseVisionStartup();const startup=f.post('/vision').then(response=>response);await pause.entered;
+ const arrival=f.arrived('/vision/cancel');const cancellation=f.post('/vision/cancel').then(response=>response);await arrival;pause.unpause();await startup;
+ const cancelled=await cancellation;await f.post('/vision/cancel');vi.restoreAllMocks();expect(cancelled.body.vision?.state).toBe('cancelled');expect(f.release).toHaveBeenCalledOnce();
 });

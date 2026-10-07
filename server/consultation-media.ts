@@ -34,7 +34,18 @@ export async function ensureSeekableRecording(files: MediaFile[], ffmpeg: string
   const target = join(directory, `recording-${files.length}-${files.reduce((n, file) => n + file.size, 0)}.webm`);
   try { const info = await lstat(target); if (!info.isSymbolicLink() && info.isFile() && info.size > 0) return target; throw new Error('잘못된 녹화 파일입니다.'); }
   catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error; }
-  if (pending.has(target)) return pending.get(target)!;
+  if (pending.has(target)) {
+    const shared = pending.get(target)!;
+    if (!signal) return shared;
+    signal.throwIfAborted();
+    // Joining a playback-owned conversion must not transfer ownership. This
+    // caller can stop waiting while the independent conversion keeps running.
+    return new Promise<string>((done, reject) => {
+      const abort = () => { signal.removeEventListener('abort', abort); reject(signal.reason); };
+      signal.addEventListener('abort', abort, { once: true });
+      shared.then(value => { signal.removeEventListener('abort', abort); done(value); }, error => { signal.removeEventListener('abort', abort); reject(error); });
+    });
+  }
   const task = (async () => {
     const temporary = join(directory, `recording-${randomUUID()}.tmp`);
     const child = spawn(ffmpeg, ['-v', 'error', '-nostdin', '-y', '-protocol_whitelist', 'pipe', '-format_whitelist', 'matroska,webm',
