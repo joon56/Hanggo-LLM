@@ -48,7 +48,7 @@ export function buildNoteRequest(petName: string, lines: NoteLine[], problems: N
       followUps: claims, safetyFlags: { type: 'array', items: { enum: SAFETY_LABELS } }, methodReview: { type: 'boolean' },
     } };
   const transcript = lines.map(line => `[${line.alias} ${formatTime(line.evidence.startMs)} ${label(line)}] ${line.evidence.quote}`).join('\n');
-  const repair = problems.length ? `\n\n이전 결과에서 아래 문장이 규칙을 어겼다. 이 문장들만 규칙에 맞게 고쳐서 원래 항목에 담고, 나머지 항목은 모두 빈 배열로 둔다. 고칠 수 없는 문장은 뺀다.\n${problems.map(item => `- ${item.section}: "${item.text}" (${item.reasons.join(' ')})`).join('\n')}` : '';
+  const repair = problems.length ? `\n\n이전 결과에서 아래 문장이 규칙을 어겼다. 이 문장들만 규칙에 맞게 고쳐서 원래 항목에 담고, 나머지 항목은 모두 빈 배열로 둔다. 숫자나 낱말이 다른 발화에 있으면 그 발화도 evidence에 함께 단다. 고칠 수 없는 문장은 뺀다.\n${problems.map(item => `- ${item.section}: "${item.text}" (${item.reasons.join(' ')})`).join('\n')}` : '';
   return { jsonSchema, system: NOTE_INSTRUCTIONS, user: `반려동물: ${petName}\n\n전사:\n${transcript}${repair}`, maxTokens: problems.length ? REPAIR_MAX_TOKENS : 4096 };
 }
 

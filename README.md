@@ -11,7 +11,7 @@
 ![React](https://img.shields.io/badge/React-19-405438?style=flat-square)
 ![Local AI](https://img.shields.io/badge/llama.cpp_%2B_Qwen3--ASR-Local_AI-405438?style=flat-square)
 
-[자동 시연 영상](https://joon56.github.io/Hanggo-LLM/demo/) · [공개 체험판](https://joon56.github.io/Hanggo-LLM/) · [빠른 시작](#빠른-시작) · [브리핑 시연](docs/testing/consultation-brief.md) · [화상 코칭 시연](docs/testing/two-way-coaching.md) · [기존 기능 시연](docs/testing/beta-test-script.md)
+[실제 모델 시연](https://joon56.github.io/Hanggo-LLM/demo/real/) · [자동 시연 영상](https://joon56.github.io/Hanggo-LLM/demo/) · [공개 체험판](https://joon56.github.io/Hanggo-LLM/) · [빠른 시작](#빠른-시작) · [브리핑 시연](docs/testing/consultation-brief.md) · [화상 코칭 시연](docs/testing/two-way-coaching.md) · [기존 기능 시연](docs/testing/beta-test-script.md)
 
 </div>
 
@@ -100,7 +100,7 @@ AI 요청 실패·검증 실패 때 원문을 유지하고 수동 검토 초안�
 
 ## 검증
 
-2026-11-03 쌍방향 통화는 단위 테스트 685개, 브라우저 테스트 25개를 통과했습니다. 서로 다른 Chrome 2개가 실제 WebRTC로 합성 영상과 소리를 주고받는 테스트가 GitHub Actions에서도 돕니다. 터널, 실제 휴대폰, 중계 서버는 사람 시연으로 확인해야 합니다. [검증 상세](docs/llm/two-way-step-1.md)
+2026-11-04 쌍방향 코칭은 단위 테스트 UNIT_COUNT개, 브라우저 테스트 BROWSER_COUNT개를 통과했습니다. 서로 다른 Chrome 2개가 실제 WebRTC로 합성 영상과 소리를 주고받는 테스트가 GitHub Actions에서도 돕니다. 터널, 실제 휴대폰, 중계 서버는 사람 시연으로 확인해야 합니다. [검증 상세](docs/llm/two-way-step-1.md)
 
 2026-10-07 브리핑 개선은 단위 테스트 450개(`--maxWorkers=2`), 관련 Chrome 테스트 5개, 브리핑 자료 평가 12개와 빌드를 통과했습니다. 실제 로컬 모델의 가상 사례 1건은 약 12.2초 걸렸습니다. 전체 Chrome 검증에서는 녹화 2건이 실패했고, 변경 전 코드에서도 같은 WebM 오류가 재현됐습니다. 카메라·녹화 문제는 별도 보류 중입니다. [이번 브리핑 검증 상세](docs/llm/consultation-brief-verification.md)
 
