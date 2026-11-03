@@ -3,6 +3,7 @@ import { CopyIcon, PawPrintIcon } from '@phosphor-icons/react';
 import { login } from '../api';
 import { createCase, getCase, getMe, listCases, reissueInvite, startConsultation } from '../coaching-api';
 import type { CaseDetail } from '../coaching-api';
+import { CaseBrief } from './CaseBrief';
 import { apiMessage, STATE_LABEL } from './copy';
 import './call.css';
 import './review.css';
@@ -39,6 +40,7 @@ export function TrainerHome({ navigate, hostname = location.hostname }: { naviga
   const [form, setForm] = useState({ petName: '', guardianName: '', trainerName: '' });
   const [invite, setInvite] = useState<{ caseId: string; token: string; reissued: boolean } | null>(null);
   const [error, setError] = useState(''); const [pending, setPending] = useState(false);
+  const [briefCase, setBriefCase] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -93,10 +95,12 @@ export function TrainerHome({ navigate, hostname = location.hostname }: { naviga
         return <article className="coach-card" key={item.id}>
           <div className="coach-row"><div><h2>{item.petName}</h2><p className="coach-hint">{item.guardianName} · {item.trainerName} · 상담 {item.consultations.length}회</p></div>
             <div className="coach-actions">
+              <button className="button secondary" aria-expanded={briefCase === item.id} aria-label={`${item.petName} 브리핑`} onClick={() => setBriefCase(current => current === item.id ? null : item.id)}>브리핑</button>
               <button className="button secondary" disabled={pending} onClick={() => void act(async () => { setInvite({ caseId: item.id, token: (await reissueInvite(item.id)).inviteToken, reissued: true }); })}>초대 링크 다시 만들기</button>
               {live ? <button className="button primary" aria-label={`${item.petName} 상담 다시 입장`} onClick={() => navigate(`/room/${live.id}`)}>다시 입장</button>
                 : <button className="button primary" aria-label={`${item.petName} 상담 시작`} disabled={pending} onClick={() => void act(async () => navigate(`/room/${(await startConsultation(item.id)).id}`))}>상담 시작</button>}
             </div></div>
+          {briefCase === item.id && <CaseBrief caseId={item.id} />}
           {invite?.caseId === item.id && <Invite token={invite.token} hostname={hostname} reissued={invite.reissued} />}
           {item.consultations.some(consultation => consultation.state !== 'live') && <ul className="coach-history" aria-label={`${item.petName} 지난 상담`}>
             {item.consultations.filter(consultation => consultation.state !== 'live').map(consultation => <li key={consultation.id}>

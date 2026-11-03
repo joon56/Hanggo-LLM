@@ -11,7 +11,7 @@ import IssueReport from './IssueReport';
 
 type Props = { aiReady: boolean };
 const time = (ms: number) => Math.floor(ms / 60000).toString().padStart(2, '0') + ':' + (Math.floor(ms / 1000) % 60).toString().padStart(2, '0');
-const sourceKind = { owner: '보호자 기록', legacy_consultation: '확정 요약 상담', consultation: '확정 상세 상담' };
+const sourceKind = { owner: '보호자 기록', legacy_consultation: '확정 요약 상담', consultation: '확정 상세 상담', task_log: '과제 수행 기록' };
 export default function BriefWorkspace({ aiReady }: Props) {
   const [pets, setPets] = useState<Pet[]>([]), [records, setRecords] = useState<SavedOwnerLog[]>([]);
   const [notes, setNotes] = useState<ApprovedNote[]>([]);

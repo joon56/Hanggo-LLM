@@ -11,7 +11,7 @@ import './call.css';
 
 const canShareScreen = () => typeof navigator.mediaDevices?.getDisplayMedia === 'function';
 const isPhone = () => /Android|iPhone|iPad|Mobile/i.test(navigator.userAgent);
-type Room = { role: Speaker; petName: string; ice: IceConfig; home: string };
+type Room = { role: Speaker; caseId: string; petName: string; ice: IceConfig; home: string };
 
 function LiveCall({ consultationId, room, choice, forceRelay, navigate }: { consultationId: string; room: Room; choice: JoinChoice; forceRelay: boolean; navigate: (path: string) => void }) {
   const [notice, setNotice] = useState('');
@@ -51,7 +51,7 @@ export function CallRoom({ consultationId, navigate, forceRelay = new URLSearchP
         const home = me.role === 'guardian' ? '/guardian' : '/coaching';
         if (consultation.state !== 'live') { navigate(home); return; }
         const [detail, ice] = await Promise.all([getCase(consultation.caseId), getIce(consultationId)]);
-        setRoom({ role: me.role, petName: detail.petName, ice, home });
+        setRoom({ role: me.role, caseId: consultation.caseId, petName: detail.petName, ice, home });
       } catch (cause) { setError(apiMessage(cause, '상담 정보를 불러오지 못했습니다.')); }
     })();
   }, [consultationId, navigate]);
@@ -59,6 +59,6 @@ export function CallRoom({ consultationId, navigate, forceRelay = new URLSearchP
   const openPreview = useCallback((preference: DevicePreference) => openDevices({ ...preference, facingMode: preference.facingMode ?? (room?.role === 'guardian' && isPhone() ? 'environment' : undefined) }), [room?.role]);
   if (error) return <main className="coach-page"><section className="coach-card coach-narrow"><p role="alert" className="coach-error">{error}</p></section></main>;
   if (!room) return <main className="coach-page"><p role="status">상담 정보를 불러오는 중입니다.</p></main>;
-  if (!choice) return <PreJoin petName={room.petName} role={room.role} relayAvailable={room.ice.relayAvailable} openPreview={openPreview} onJoin={setChoice} />;
+  if (!choice) return <PreJoin petName={room.petName} role={room.role} caseId={room.caseId} relayAvailable={room.ice.relayAvailable} openPreview={openPreview} onJoin={setChoice} />;
   return <LiveCall consultationId={consultationId} room={room} choice={choice} forceRelay={forceRelay} navigate={navigate} />;
 }

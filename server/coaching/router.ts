@@ -4,7 +4,10 @@ import type { ErrorRequestHandler, Request, Response } from 'express';
 import rateLimit from 'express-rate-limit';
 import { z } from 'zod';
 import { setConsent, transition, TransitionError } from '../../src/domain/coaching.ts';
-import { approvalProblems, deliveryOf, normalizeEditedNote, reviewedObservationClaims } from '../../src/domain/coaching-note.ts';
+import { computeBrief } from '../../src/domain/brief.ts';
+import { approvalProblems, briefContextOf, deliveryOf, normalizeEditedNote, reviewedObservationClaims } from '../../src/domain/coaching-note.ts';
+import { createManualOwnerDraft, validateOwnerDraft } from '../../src/domain/owner-log.ts';
+import type { OwnerDraft, OwnerInput } from '../../src/domain/workspace-types.ts';
 import type { CoachingCase, Consultation, Moment, Speaker } from '../../src/domain/coaching.ts';
 import { can } from '../../src/domain/permissions.ts';
 import type { Action, Actor } from '../../src/domain/permissions.ts';
@@ -28,6 +31,8 @@ export type CoachingDeps = {
   /** Tells connected participants that consultation state changed. */
   notify?: (consultation: Consultation) => void;
   broadcast?: (consultationId: string, message: unknown) => void;
+  /** Organizes a guardian's words into events. Without it the guardian still saves the plain text. */
+  generateOwner?: (input: OwnerInput, signal?: AbortSignal) => Promise<{ draft: OwnerDraft }>;
   now?: () => number;
 };
 
@@ -45,6 +50,11 @@ const AudioParams = z.object({ startMs: time, endMs: time }).strict();
 const FrameParams = z.object({ frameId: z.uuid(), atMs: time, source: z.enum(['camera', 'screen']), moment: z.uuid().optional() }).strict();
 const MemoInput = z.object({ text: z.string().trim().max(500) }).strict();
 const SegmentEdit = z.object({ text: z.string().trim().min(1).max(8000).optional(), echoSuspect: z.boolean().optional() }).strict();
+const TaskLogInput = z.object({ consultationId: z.uuid(), taskId: z.string().min(1).max(100), status: z.enum(['done', 'partial', 'skipped']), text: z.string().trim().max(2000).optional() }).strict();
+const GuardianText = z.object({ text: z.string().trim().min(1).max(8000), sourceKind: z.enum(['nl_log_text', 'nl_log_voice']).default('nl_log_text') }).strict();
+const GuardianLogInput = z.object({ draft: z.custom<OwnerDraft>(value => typeof value === 'object' && value !== null) }).strict();
+const TIME_ZONE = 'Asia/Seoul';
+const OWNER_DRAFT_TIMEOUT_MS = 80_000;
 const ObservationEdit = z.object({ text: z.string().trim().min(1).max(1000).optional(), reviewed: z.boolean().optional() }).strict();
 const isJpeg = (bytes: unknown) => Buffer.isBuffer(bytes) && bytes.length > 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff;
 
@@ -76,7 +86,7 @@ export function createActorResolver({ store, sessions, isTrainer }: Pick<Coachin
 }
 
 export function createCoachingRouter(deps: CoachingDeps) {
-  const { store, sessions, notify, transcription, postProcess, graceMs, broadcast, now = Date.now } = deps;
+  const { store, sessions, notify, transcription, postProcess, graceMs, broadcast, generateOwner, now = Date.now } = deps;
   const router = express.Router();
   const resolveActor = createActorResolver(deps);
   const joinLimit = rateLimit({ windowMs: 60_000, limit: 10, keyGenerator: () => 'join', standardHeaders: 'draft-8', legacyHeaders: false,
@@ -130,6 +140,61 @@ export function createCoachingRouter(deps: CoachingDeps) {
     const id = param(req, 'id');
     if (!allowed(req, res, 'consultation:start', id)) return;
     res.status(201).json(await store.startConsultation(id));
+  });
+
+  router.post('/cases/:id/task-logs', async (req, res) => {
+    const caseId = param(req, 'id');
+    if (!allowed(req, res, 'task-log:write', caseId)) return;
+    const { consultationId, taskId, status, text } = TaskLogInput.parse(req.body);
+    const consultation = await store.getConsultation(consultationId);
+    if (consultation.caseId !== caseId || consultation.state !== 'approved' || !consultation.note?.tasks.some(task => task.id === taskId)) throw new StoreError('NOT_FOUND', '이 과제를 찾을 수 없습니다.', 404);
+    res.status(201).json(await store.addTaskLog(caseId, { id: randomUUID(), caseId, consultationId, taskId, at: new Date(now()).toISOString(), status, ...(text ? { text } : {}) }));
+  });
+  router.get('/cases/:id/task-logs', async (req, res) => {
+    const caseId = param(req, 'id');
+    if (allowed(req, res, 'task-log:read', caseId)) res.json({ logs: await store.listTaskLogs(caseId) });
+  });
+  /** One GPU cannot organize a note and hold a speech model at once, so a guardian's log waits for neither. */
+  const gpuFree = () => !postProcess.busy() && !['preparing', 'ready'].includes(transcription.status());
+  router.post('/cases/:id/guardian-logs/draft', async (req, res) => {
+    const caseId = param(req, 'id');
+    if (!allowed(req, res, 'guardian-log:write', caseId)) return;
+    const { text, sourceKind } = GuardianText.parse(req.body);
+    const { petName } = await store.getCase(caseId);
+    const input: OwnerInput = { text, sourceKind, pets: [{ id: caseId, name: petName, nicknames: [] }], now: new Date(now()).toISOString(), timeZone: TIME_ZONE };
+    const organized = generateOwner && gpuFree() ? await generateOwner(input, AbortSignal.timeout(OWNER_DRAFT_TIMEOUT_MS)).then(result => result.draft, () => null) : null;
+    res.json(organized ?? createManualOwnerDraft(input));
+  });
+  router.post('/cases/:id/guardian-logs', async (req, res) => {
+    const caseId = param(req, 'id');
+    if (!allowed(req, res, 'guardian-log:write', caseId)) return;
+    const { draft } = GuardianLogInput.parse(req.body);
+    const problems = validateOwnerDraft(draft);
+    if (draft.pets?.length !== 1 || draft.pets[0].id !== caseId) problems.push('이 사례의 반려동물 기록이 아닙니다.');
+    if (problems.length) throw new StoreError('INPUT', problems.join(' '));
+    res.status(201).json(await store.addGuardianLog(caseId, { id: randomUUID(), draft, savedAt: new Date(now()).toISOString() }));
+  });
+  router.get('/cases/:id/guardian-logs', async (req, res) => {
+    const caseId = param(req, 'id');
+    if (allowed(req, res, 'guardian-log:read', caseId)) res.json({ logs: await store.listGuardianLogs(caseId) });
+  });
+  router.put('/cases/:id/voice', express.raw({ type: 'audio/wav', limit: '600kb' }), async (req, res) => {
+    const caseId = param(req, 'id');
+    if (!allowed(req, res, 'guardian-log:write', caseId)) return;
+    const durationMs = Buffer.isBuffer(req.body) ? Math.round((req.body.length - 44) / 32) : 0;
+    if (isSilentWav(req.body, 0, durationMs)) { res.json({ text: '' }); return; }
+    if (postProcess.busy()) throw new StoreError('GPU_BUSY', '상담을 정리하는 중이라 지금은 받아쓸 수 없습니다. 글로 적어 주세요.', 409);
+    res.json({ text: await transcription.dictate(req.body) });
+  });
+  router.get('/cases/:id/brief', async (req, res) => {
+    const caseId = param(req, 'id');
+    if (!allowed(req, res, 'brief:read', caseId)) return;
+    const [info, consultations, taskLogs, guardianLogs] = await Promise.all([store.getCase(caseId), store.listConsultations(caseId), store.listTaskLogs(caseId), store.listGuardianLogs(caseId)]);
+    // Newest first, so this is the session that just ended, not one chosen by matching a name.
+    const latest = consultations.find(item => item.state === 'approved' && item.note);
+    const brief = computeBrief({ pet: { id: caseId, name: info.petName, nicknames: [] }, records: guardianLogs, now: new Date(now()).toISOString(), timeZone: TIME_ZONE },
+      latest && briefContextOf(latest, info, TIME_ZONE), taskLogs.filter(log => log.consultationId === latest?.id));
+    res.json({ brief, consultationId: latest?.id ?? null });
   });
 
   async function consultationFor(req: Request, res: Response, action: Action) {

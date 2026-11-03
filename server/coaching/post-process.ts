@@ -46,6 +46,8 @@ export function createPostProcess({ store, transcription, llm, notify, now = Dat
   }
 
   return {
+    /** Loading the speech model now would push the LLM off the GPU in the middle of its work. */
+    busy: () => running.size > 0,
     finish(id: string) {
       return track((async () => {
         await transcription.settle(id);

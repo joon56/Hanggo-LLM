@@ -42,6 +42,15 @@
 .delivery-task { display: grid; gap: 4px; border: 1px solid var(--line); border-radius: 10px; padding: 10px; font-size: 14px; }
 .delivery-task dl { display: grid; grid-template-columns: max-content 1fr; gap: 2px 8px; font-size: 13px; }
 .delivery-task dt { color: var(--muted); }
+.delivery-memo { display: grid; gap: 4px; font-size: 13px; }
+.delivery-memo textarea, .delivery-memo input, .delivery-input { width: 100%; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; background: #fff; font: inherit; font-size: 14px; }
+.delivery-logs { color: var(--muted); font-size: 13px; }
+.voice-note { display: inline-flex; align-items: center; gap: 4px; }
+.case-brief { border-top: 1px solid var(--line); padding-top: 12px; }
+.case-brief li { font-size: 14px; line-height: 1.5; }
+.coach-link-inline { margin-left: 6px; color: var(--muted); }
+.brief-source { display: grid; gap: 2px; margin: 6px 0; padding: 8px 10px; background: #f6f7f1; border-radius: 8px; }
+.brief-source blockquote { margin: 0; font-size: 13px; }
 
 @media (max-width: 860px) {
   .review-grid { grid-template-columns: minmax(0, 1fr); }

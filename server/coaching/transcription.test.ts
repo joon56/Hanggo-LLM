@@ -224,3 +224,50 @@ describe('finish', () => {
     expect(consultation.segments[0].state).toBe('failed');
   });
 });
+
+describe('dictation', () => {
+  it('returns the text and shares the one-at-a-time queue with calls', async () => {
+    const { speech, calls } = controlledSpeech(); const { transcription } = build(speech);
+    await accept(transcription, 'guardian', 0); await settle();
+    const spoken = transcription.dictate(Buffer.from([7, 7]));
+    await settle();
+    expect(calls).toHaveLength(1);
+    calls[0].resolve('상담 구간'); await settle();
+    expect(calls).toHaveLength(2);
+    calls[1].resolve('  오늘 산책을 했어요  ');
+    await expect(spoken).resolves.toBe('오늘 산책을 했어요');
+  });
+  it('wipes the audio afterwards', async () => {
+    const { speech, calls } = controlledSpeech(); const { transcription } = build(speech);
+    const bytes = Buffer.from([7, 7]);
+    const spoken = transcription.dictate(bytes);
+    await settle(); calls[0].resolve('기록'); await spoken;
+    expect([...bytes]).toEqual([0, 0]);
+  });
+  it('refuses when no speech model exists', async () => {
+    const { transcription } = build(undefined);
+    await expect(transcription.dictate(wav())).rejects.toMatchObject({ code: 'SPEECH_OFF', status: 503 });
+  });
+  it('reports a failure to the person who asked', async () => {
+    const { speech, calls } = controlledSpeech(); const { transcription } = build(speech);
+    const spoken = transcription.dictate(wav());
+    await settle(); calls[0].reject(new Error('model died'));
+    await expect(spoken).rejects.toMatchObject({ code: 'SPEECH_FAILED' });
+  });
+  it('lets the model go after a quiet minute, but not during a call', async () => {
+    const { speech, calls } = controlledSpeech();
+    let idle: (() => void) | undefined;
+    const transcription = createTranscription({ store, speech, broadcast: vi.fn(), graceMs: 1, scheduleIdle: run => { idle = run; return () => { idle = undefined; }; } });
+    const spoken = transcription.dictate(wav());
+    await settle(); calls[0].resolve('기록'); await spoken; await settle();
+    expect(idle).toBeDefined();
+    idle!(); await settle();
+    expect(speech.release).toHaveBeenCalledTimes(1);
+    expect(transcription.status()).toBe('idle');
+    const again = transcription.dictate(wav());
+    await settle(); calls[1].resolve('기록'); await again; await settle();
+    expect(idle).toBeDefined();
+    transcription.start(consultationId);
+    expect(idle).toBeUndefined();
+  });
+});

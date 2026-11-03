@@ -158,3 +158,24 @@ it('refuses a new consultation while the last one is still being organized', asy
   await store.updateConsultation(id, current => ({ ...current, state: 'review' }));
   await expect(store.startConsultation(created.id)).resolves.toMatchObject({ state: 'live' });
 });
+it('keeps task records and guardian logs per case', async () => {
+  const root = directory(); const store = createFileStore(root);
+  const { case: first } = await store.createCase(input);
+  const { case: second } = await store.createCase(input);
+  const log = { id: '00000000-0000-4000-8000-000000000001', caseId: first.id, consultationId: '00000000-0000-4000-8000-000000000002', taskId: 't1', at: '2026-11-04T00:00:00.000Z', status: 'done' as const, text: '했어요' };
+  await store.addTaskLog(first.id, log);
+  await expect(store.listTaskLogs(first.id)).resolves.toEqual([log]);
+  await expect(store.listTaskLogs(second.id)).resolves.toEqual([]);
+  const saved = { id: 'saved-1', savedAt: 'now', draft: { id: 'd' } } as never;
+  await store.addGuardianLog(first.id, saved);
+  await expect(store.listGuardianLogs(first.id)).resolves.toEqual([saved]);
+  await expect(store.listTaskLogs(first.id)).resolves.toEqual([log]);
+  await expect(store.addTaskLog('../outside', log)).rejects.toBeInstanceOf(StoreError);
+});
+it('limits how many records a case can hold', async () => {
+  const store = createFileStore(directory());
+  const { case: created } = await store.createCase(input);
+  const log = (index: number) => ({ id: `00000000-0000-4000-8000-${String(index).padStart(12, '0')}`, caseId: created.id, consultationId: '00000000-0000-4000-8000-000000000000', taskId: 't', at: 'now', status: 'done' as const });
+  for (let index = 0; index < 3; index++) await store.addTaskLog(created.id, log(index), 3);
+  await expect(store.addTaskLog(created.id, log(4), 3)).rejects.toMatchObject({ code: 'RECORD_LIMIT', status: 429 });
+});

@@ -3,6 +3,7 @@ import { WarningIcon } from '@phosphor-icons/react';
 import { frameUrl, getDelivery, type Delivery } from '../coaching-api';
 import type { Claim } from '../domain/coaching-note';
 import { apiMessage, clockLabel } from './copy';
+import { GuardianTasks } from './GuardianTasks';
 import './review.css';
 
 function Claims({ title, claims }: { title: string; claims: Claim[] }) {
@@ -11,7 +12,7 @@ function Claims({ title, claims }: { title: string; claims: Claim[] }) {
 }
 
 /** Only what the trainer confirmed. The server has already removed drafts, memos, and method concerns. */
-export function GuardianDelivery({ consultationId }: { consultationId: string }) {
+export function GuardianDelivery({ caseId, consultationId }: { caseId: string; consultationId: string }) {
   const [delivery, setDelivery] = useState<Delivery | null>(null); const [error, setError] = useState('');
   useEffect(() => {
     let stopped = false;
@@ -32,11 +33,7 @@ export function GuardianDelivery({ consultationId }: { consultationId: string })
     <Claims title="훈련사 안내" claims={note.guidance} />
     <div>
       <h3>과제</h3>
-      {!note.tasks.length && <p className="coach-hint">정한 과제가 없습니다.</p>}
-      <div className="delivery">{note.tasks.map(task => <div className="delivery-task" key={task.id}>
-        <p>{task.text}</p>
-        <dl><dt>담당</dt><dd>{task.who ?? '미확인'}</dd><dt>횟수</dt><dd>{task.frequency ?? '미확인'}</dd><dt>기한</dt><dd>{task.until ?? '미확인'}</dd><dt>성공 기준</dt><dd>{task.successCriteria ?? '미확인'}</dd></dl>
-      </div>)}</div>
+      <GuardianTasks caseId={caseId} consultationId={consultationId} tasks={note.tasks} />
     </div>
     <Claims title="다음에 확인할 것" claims={note.followUps} />
     {note.aiObservations.length > 0 && <div>

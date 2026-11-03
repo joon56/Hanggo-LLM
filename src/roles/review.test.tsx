@@ -7,7 +7,7 @@ import type { CoachingNote, Evidence } from '../domain/coaching-note';
 import { GuardianDelivery } from './GuardianDelivery';
 import { ReviewRoom } from './ReviewRoom';
 
-const api = vi.hoisted(() => ({ getMe: vi.fn(), getConsultation: vi.fn(), getCase: vi.fn(), saveNote: vi.fn(), approveConsultation: vi.fn(), regenerateNote: vi.fn(), setSegment: vi.fn(), setObservation: vi.fn(), getDelivery: vi.fn(), frameUrl: (consultation: string, frame: string) => `/frames/${consultation}/${frame}` }));
+const api = vi.hoisted(() => ({ getMe: vi.fn(), getConsultation: vi.fn(), getCase: vi.fn(), saveNote: vi.fn(), approveConsultation: vi.fn(), regenerateNote: vi.fn(), setSegment: vi.fn(), setObservation: vi.fn(), getDelivery: vi.fn(), listTaskLogs: vi.fn(), addTaskLog: vi.fn(), transcribeVoice: vi.fn(), frameUrl: (consultation: string, frame: string) => `/frames/${consultation}/${frame}` }));
 vi.mock('../coaching-api', () => api);
 
 const said: Evidence = { kind: 'segment', id: 'a', quote: '초인종에 짖어요', startMs: 12000, endMs: 15000, speaker: 'guardian' };
@@ -22,6 +22,7 @@ beforeEach(() => {
   api.getMe.mockResolvedValue({ role: 'trainer' });
   api.getCase.mockResolvedValue({ petName: '초코' });
   api.getConsultation.mockResolvedValue(consultation());
+  api.listTaskLogs.mockResolvedValue({ logs: [] });
   vi.spyOn(window, 'confirm').mockReturnValue(true);
 });
 afterEach(() => { cleanup(); vi.restoreAllMocks(); });
@@ -215,7 +216,7 @@ describe('GuardianDelivery', () => {
   const delivery = (change: Partial<CoachingNote> = {}, scenes: { id: string; atMs: number; frameIds: string[] }[] = []) => ({ note: { ...note({ approvedAt: 'x', ...change }), uncitedSegmentIds: undefined }, scenes });
   it('shows the confirmed note with missing task details as unknown', async () => {
     api.getDelivery.mockResolvedValue(delivery());
-    render(<GuardianDelivery consultationId="c" />);
+    render(<GuardianDelivery caseId="k" consultationId="c" />);
     const article = await screen.findByRole('article', { name: '확정된 상담일지' });
     expect(within(article).getByText('초인종에 짖는다')).toBeInTheDocument();
     expect(within(article).getByText('매트 연습')).toBeInTheDocument();
@@ -224,7 +225,7 @@ describe('GuardianDelivery', () => {
   });
   it('puts the vet notice ahead of the tasks when there is a safety flag', async () => {
     api.getDelivery.mockResolvedValue(delivery({ safetyFlags: ['구토'] }));
-    render(<GuardianDelivery consultationId="c" />);
+    render(<GuardianDelivery caseId="k" consultationId="c" />);
     const notice = await screen.findByRole('alert');
     expect(notice).toHaveTextContent('동물병원');
     const task = screen.getByText('매트 연습');
@@ -232,18 +233,39 @@ describe('GuardianDelivery', () => {
   });
   it('says so when no task was agreed', async () => {
     api.getDelivery.mockResolvedValue(delivery({ tasks: [] }));
-    render(<GuardianDelivery consultationId="c" />);
+    render(<GuardianDelivery caseId="k" consultationId="c" />);
     expect(await screen.findByText('정한 과제가 없습니다.')).toBeInTheDocument();
   });
   it('shows only the photos the confirmed note cites', async () => {
     const observation = { id: 'o1', text: '개가 매트에 앉아 있다', evidence: [{ kind: 'scene' as const, id: 's1', quote: '개가 매트에 앉아 있다', startMs: 3000, endMs: 3000 }] };
     api.getDelivery.mockResolvedValue(delivery({ aiObservations: [observation] }, [{ id: 's1', atMs: 3000, frameIds: ['f1'] }]));
-    render(<GuardianDelivery consultationId="c" />);
+    render(<GuardianDelivery caseId="k" consultationId="c" />);
     expect(await screen.findByRole('img', { name: '상담 00:03 장면' })).toHaveAttribute('src', '/frames/c/f1');
+  });
+  it('records how a task went, with a note, and shows the history', async () => {
+    api.getDelivery.mockResolvedValue(delivery());
+    const saved = { id: 'l1', caseId: 'k', consultationId: 'c', taskId: 't1', at: '2026-11-04T01:00:00.000Z', status: 'partial', text: '소리를 줄였어요' };
+    api.addTaskLog.mockResolvedValue(saved);
+    render(<GuardianDelivery caseId="k" consultationId="c" />);
+    await userEvent.type(await screen.findByLabelText('매트 연습 메모'), '소리를 줄였어요');
+    api.listTaskLogs.mockResolvedValue({ logs: [saved] });
+    await userEvent.click(screen.getByRole('button', { name: '일부만 했어요' }));
+    expect(api.addTaskLog).toHaveBeenCalledWith('k', { consultationId: 'c', taskId: 't1', status: 'partial', text: '소리를 줄였어요' });
+    expect(await screen.findByRole('list', { name: '매트 연습 수행 기록' })).toHaveTextContent('일부 · 소리를 줄였어요');
+    expect(screen.getByLabelText('매트 연습 메모')).toHaveValue('');
+  });
+  it('keeps the note when a record cannot be saved', async () => {
+    api.getDelivery.mockResolvedValue(delivery());
+    api.addTaskLog.mockRejectedValue(new ApiError('기록할 수 없습니다.', 'NOT_FOUND'));
+    render(<GuardianDelivery caseId="k" consultationId="c" />);
+    await userEvent.type(await screen.findByLabelText('매트 연습 메모'), '메모');
+    await userEvent.click(screen.getByRole('button', { name: '했어요' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('기록할 수 없습니다.');
+    expect(screen.getByLabelText('매트 연습 메모')).toHaveValue('메모');
   });
   it('reports a failed load', async () => {
     api.getDelivery.mockRejectedValue(new ApiError('상담일지를 볼 수 없습니다.', 'NOT_FOUND'));
-    render(<GuardianDelivery consultationId="c" />);
+    render(<GuardianDelivery caseId="k" consultationId="c" />);
     expect(await screen.findByRole('alert')).toHaveTextContent('상담일지를 볼 수 없습니다.');
   });
 });

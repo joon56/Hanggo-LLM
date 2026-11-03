@@ -1,17 +1,18 @@
 import { useEffect, useRef, useState } from 'react';
 import type { DevicePreference, MissingDevice } from '../call/devices';
 import type { Speaker } from '../domain/coaching';
+import { CaseBrief } from './CaseBrief';
 import { deviceAdvice } from './copy';
 
 export type JoinChoice = { stream: MediaStream; missing: MissingDevice[]; consent: boolean; preference: DevicePreference };
 type Props = {
-  petName: string; role: Speaker; relayAvailable: boolean;
+  petName: string; role: Speaker; relayAvailable: boolean; caseId?: string;
   openPreview: (preference: DevicePreference) => Promise<{ stream: MediaStream; missing: MissingDevice[] }>;
   onJoin: (choice: JoinChoice) => void;
 };
 const stop = (stream: MediaStream) => stream.getTracks().forEach(track => track.stop());
 
-export function PreJoin({ petName, role, relayAvailable, openPreview, onJoin }: Props) {
+export function PreJoin({ petName, role, relayAvailable, caseId, openPreview, onJoin }: Props) {
   const [preview, setPreview] = useState<{ stream: MediaStream; missing: MissingDevice[] } | null>(null);
   const [preference, setPreference] = useState<DevicePreference>({});
   const [devices, setDevices] = useState<MediaDeviceInfo[]>([]);
@@ -46,5 +47,7 @@ export function PreJoin({ petName, role, relayAvailable, openPreview, onJoin }: 
       <label className="coach-check"><input type="checkbox" checked={consent} onChange={event => setConsent(event.target.checked)} />AI 받아쓰기와 장면 저장에 동의합니다. 양쪽이 모두 동의해야 기록이 시작되며, 동의하지 않아도 통화할 수 있습니다.</label>
       <button className="button primary" onClick={() => { handedOver.current = true; onJoin({ ...preview, consent, preference }); }}>입장</button>
     </>}
-  </section></main>;
+  </section>
+  {role === 'trainer' && caseId && <section className="coach-card coach-narrow"><CaseBrief caseId={caseId} /></section>}
+  </main>;
 }

@@ -4,13 +4,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { CallSnapshot } from '../call/call-session';
 import { ApiError } from '../api';
 import { CallStage } from './CallStage';
+import { CaseBrief } from './CaseBrief';
 import { GuardianHome } from './GuardianHome';
 import { GuardianJoin } from './GuardianJoin';
 import { PreJoin } from './PreJoin';
 import { TrainerHome } from './TrainerHome';
 import { deviceAdvice, isInAppBrowser } from './copy';
 
-const api = vi.hoisted(() => ({ getMe: vi.fn(), listCases: vi.fn(), getCase: vi.fn(), createCase: vi.fn(), reissueInvite: vi.fn(), joinWithInvite: vi.fn(), startConsultation: vi.fn(), setConsent: vi.fn(), getDelivery: vi.fn(), frameUrl: vi.fn() }));
+const api = vi.hoisted(() => ({ getMe: vi.fn(), listCases: vi.fn(), getCase: vi.fn(), createCase: vi.fn(), reissueInvite: vi.fn(), joinWithInvite: vi.fn(), startConsultation: vi.fn(), setConsent: vi.fn(), getDelivery: vi.fn(), frameUrl: vi.fn(), listTaskLogs: vi.fn(), addTaskLog: vi.fn(), draftGuardianLog: vi.fn(), saveGuardianLog: vi.fn(), transcribeVoice: vi.fn(), getCaseBrief: vi.fn() }));
 vi.mock('../coaching-api', () => api);
 const login = vi.hoisted(() => vi.fn());
 vi.mock('../api', async original => ({ ...await original<typeof import('../api')>(), login }));
@@ -70,6 +71,28 @@ describe('TrainerHome', () => {
     render(<TrainerHome navigate={vi.fn()} />);
     await userEvent.click(await screen.findByRole('button', { name: '초코 상담 시작' }));
     expect(await screen.findByRole('alert')).toHaveTextContent('진행 중이거나 정리 중인 상담');
+  });
+});
+
+describe('CaseBrief', () => {
+  const brief = { facts: [{ id: 'task:0', label: '과제', value: 'x', unit: '', previousValue: null, refs: ['consultation-source', 'task-log:l1'] }], summary: [{ text: '핵심 상황: 초인종', refs: ['task:0'] }], changes: [], cautions: [], questionsForOwner: [{ text: '기록에 없는 상황이 있나요?', refs: ['task:0'] }],
+    previousTasks: [{ text: '이전 상담 과제와 수행 기록: 매트 연습 · 완료 1회', refs: ['task:0'] }], dataGaps: ['최근 기간 중 13일은 기록이 없습니다.'], safetyFlags: ['구토'],
+    sources: [{ id: 'consultation-source', kind: 'consultation', date: '2026-11-01', sourceQuote: '매트 연습을 해 주세요', text: '매트 연습', evidence: [{ kind: 'segment', quote: '매트 연습을 해 주세요', startMs: 61000, endMs: 64000 }] }, { id: 'task-log:l1', kind: 'task_log', date: '2026-11-02', sourceQuote: '소리를 줄이니 갔어요', text: '완료' }] };
+  it('shows last tasks with records, and opens their evidence with speech time', async () => {
+    api.getCaseBrief.mockResolvedValue({ brief, consultationId: 'c1' });
+    render(<CaseBrief caseId="case-1" />);
+    const section = await screen.findByRole('region', { name: '상담 전 브리핑' });
+    expect(section).toHaveTextContent('매트 연습 · 완료 1회');
+    expect(section).toHaveTextContent('안전 신호: 구토');
+    expect(screen.queryByText('소리를 줄이니 갔어요')).toBeNull();
+    await userEvent.click(screen.getAllByRole('button', { name: '근거 2건' })[1]);
+    expect(screen.getByText('소리를 줄이니 갔어요')).toBeInTheDocument();
+    expect(screen.getByText(/상담 01:01 · “매트 연습을 해 주세요”/)).toBeInTheDocument();
+  });
+  it('reports a refused or failed load', async () => {
+    api.getCaseBrief.mockRejectedValue(new ApiError('권한이 없습니다.', 'FORBIDDEN'));
+    render(<CaseBrief caseId="case-1" />);
+    expect(await screen.findByRole('alert')).toHaveTextContent('권한이 없습니다.');
   });
 });
 
@@ -150,11 +173,61 @@ describe('GuardianHome', () => {
     await screen.findByText(/훈련사가 상담을 시작하면/);
     expect(api.getDelivery).not.toHaveBeenCalled();
     unmount();
+    api.listTaskLogs.mockResolvedValue({ logs: [] });
     api.getDelivery.mockResolvedValue({ note: { summary: [], concerns: [], behaviors: [], guardianReports: [], trainerObservations: [], aiObservations: [], guidance: [], tasks: [], followUps: [], safetyFlags: [], approvedAt: 'x' }, scenes: [] });
     api.getCase.mockResolvedValue({ ...aCase, consultations: [{ ...liveConsultation, id: 'new', state: 'approved' }, { ...liveConsultation, id: 'old', state: 'approved' }] });
     render(<GuardianHome navigate={vi.fn()} />);
     expect(await screen.findByRole('article', { name: '확정된 상담일지' })).toBeInTheDocument();
     expect(api.getDelivery).toHaveBeenCalledWith('new');
+  });
+});
+
+describe('GuardianHome daily log', () => {
+  const draft = { id: 'd', sourceText: '오늘 초인종에 짖었어요', sourceKind: 'nl_log_text', pets: [{ id: 'case-1', name: '초코', nicknames: [] }], now: '2026-11-04T01:00:00.000Z', timeZone: 'Asia/Seoul', safetyFlags: [], clarification: null, mode: 'manual',
+    events: [{ id: 'e1', petId: 'case-1', type: 'bark', occurredAt: null, timeHint: null, durationMin: null, trigger: null, intervention: null, outcome: null, details: { amountText: null, isTreat: null, excretionKinds: [], placeText: null }, sourceQuote: '오늘 초인종에 짖었어요', edited: false }] };
+  beforeEach(() => {
+    api.getMe.mockResolvedValue({ role: 'guardian', caseId: 'case-1' });
+    api.getCase.mockResolvedValue({ ...aCase, consultations: [] });
+    api.draftGuardianLog.mockResolvedValue(draft);
+  });
+  const writeLog = async () => {
+    render(<GuardianHome navigate={vi.fn()} />);
+    await userEvent.type(await screen.findByLabelText('일상 기록 내용'), '오늘 초인종에 짖었어요');
+    await userEvent.click(screen.getByRole('button', { name: '내용 확인' }));
+  };
+  it('shows what was understood before saving, and saves only after the guardian agrees', async () => {
+    api.saveGuardianLog.mockResolvedValue({ id: 's' });
+    await writeLog();
+    expect(api.draftGuardianLog).toHaveBeenCalledWith('case-1', '오늘 초인종에 짖었어요');
+    expect(await screen.findByText('짖음')).toBeInTheDocument();
+    expect(api.saveGuardianLog).not.toHaveBeenCalled();
+    await userEvent.click(screen.getByRole('button', { name: '저장' }));
+    expect(api.saveGuardianLog).toHaveBeenCalledWith('case-1', draft);
+    expect(await screen.findByText(/저장했습니다/)).toBeInTheDocument();
+    expect(screen.getByLabelText('일상 기록 내용')).toHaveValue('');
+  });
+  it('lets the guardian say which day it happened, so the brief can count it', async () => {
+    api.saveGuardianLog.mockResolvedValue({ id: 's' });
+    await writeLog();
+    fireEvent.change(await screen.findByLabelText('언제였나요'), { target: { value: '2026-11-02' } });
+    await userEvent.click(screen.getByRole('button', { name: '저장' }));
+    const saved = api.saveGuardianLog.mock.calls[0][1];
+    expect(new Date(saved.events[0].occurredAt).toISOString()).toBe(new Date('2026-11-02T12:00:00').toISOString());
+    expect(saved.events[0].edited).toBe(true);
+  });
+  it('goes back to the words on request, and warns about health mentions', async () => {
+    api.draftGuardianLog.mockResolvedValue({ ...draft, safetyFlags: ['vomiting'] });
+    await writeLog();
+    expect(await screen.findByRole('alert')).toHaveTextContent('동물병원');
+    await userEvent.click(screen.getByRole('button', { name: '다시 쓰기' }));
+    expect(screen.getByLabelText('일상 기록 내용')).toHaveValue('오늘 초인종에 짖었어요');
+  });
+  it('keeps the words when saving fails', async () => {
+    api.saveGuardianLog.mockRejectedValue(new ApiError('저장할 수 없습니다.', 'INPUT'));
+    await writeLog();
+    await userEvent.click(await screen.findByRole('button', { name: '저장' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('저장할 수 없습니다.');
+    expect(screen.getByRole('button', { name: '저장' })).toBeInTheDocument();
   });
 });
 

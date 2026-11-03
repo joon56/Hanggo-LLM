@@ -31,6 +31,8 @@ export type Consultation = {
   noteGenerating?: boolean;
 };
 export const captionOf = ({ id, speaker, startMs, endMs, text, state, echoSuspect }: Segment): Caption => ({ id, speaker, startMs, endMs, text, state, echoSuspect });
+export type TaskLogStatus = 'done' | 'partial' | 'skipped';
+export type TaskLog = { id: string; caseId: string; consultationId: string; taskId: string; at: string; status: TaskLogStatus; text?: string };
 export type ConsultationEvent = 'start' | 'end' | 'processed' | 'approve' | 'interrupt';
 
 export class TransitionError extends Error {}

@@ -4,6 +4,7 @@ import { getCase, getMe } from '../coaching-api';
 import type { CaseDetail } from '../coaching-api';
 import { apiMessage } from './copy';
 import { GuardianDelivery } from './GuardianDelivery';
+import { GuardianLogForm } from './GuardianLogForm';
 import './call.css';
 
 const POLL_MS = 3000;
@@ -37,6 +38,7 @@ export function GuardianHome({ navigate }: { navigate: (path: string) => void })
     {live ? <button className="button primary" onClick={() => navigate(`/room/${live.id}`)}>상담 입장</button>
       : detail && <p role="status" className="coach-hint">훈련사가 상담을 시작하면 이 화면에서 입장할 수 있습니다.</p>}
   </section>
-  {approved && <section className="coach-card coach-narrow"><GuardianDelivery key={approved.id} consultationId={approved.id} /></section>}
+  {approved && <section className="coach-card coach-narrow"><GuardianDelivery key={approved.id} caseId={approved.caseId} consultationId={approved.id} /></section>}
+  {detail && <section className="coach-card coach-narrow"><GuardianLogForm caseId={detail.id} /></section>}
   </main>;
 }

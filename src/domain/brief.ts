@@ -1,8 +1,9 @@
-import type { BriefInput, BriefDraft, BriefSource, BriefConsultationContext, Fact, ReferencedText } from './workspace-types.ts';
+import type { BriefInput, BriefDraft, BriefSource, BriefConsultationContext, BriefTaskLog, Fact, ReferencedText } from './workspace-types.ts';
 import { ownerRiskFlags, resolveOwnerPet } from './owner-log.ts';
 
 const labels: Record<string, string> = { bark: '짖음', feeding: '급식', walk: '산책', excretion: '배변', rest: '휴식', activity: '활동', training: '훈련', other_behavior: '기타 행동', health_observation: '건강 관찰', other: '기타' };
 const triggers: Record<string, string> = { doorbell: '초인종', delivery: '배달', visitor: '방문객', stranger: '낯선 사람', other_dog: '다른 개', other_animal: '다른 동물', noise: '소음', left_alone: '혼자 있음', owner_return: '보호자 귀가', food: '음식', unknown: '상황 미확인', other: '기타 상황' };
+const taskStatus: Record<BriefTaskLog['status'], string> = { done: '완료', partial: '일부', skipped: '못 함' };
 const outcomes: Record<string, string> = { stopped: '멈춤', reduced: '줄어듦', continued: '계속됨', escalated: '더 심해짐', unknown: '반응 미확인' };
 export const BRIEF_OWNER_SOURCE_LIMIT = 24;
 export const BRIEF_CONSULTATION_ITEM_LIMIT = 12;
@@ -33,7 +34,9 @@ export function questionForBriefFact(draft: BriefDraft, fact: Fact): ReferencedT
       ? `${source.date} ${context} 기록의 대응 “${clip(source.intervention, 100)}” 뒤 반응은 ${response}으로 기록됐습니다. 반응까지 걸린 시간과 같은 상황의 다른 기록이 있나요?`
       : `${source.date} 기록 “${clip(source.sourceQuote, 100)}”에서 ${context}입니다. 당시 발생 상황, 보호자의 대응과 그 뒤 반응을 확인할 수 있나요?`;
   } else if (source) {
-    text = source.category === 'task'
+    const recorded = fact.refs.some(ref => ref.startsWith('task-log:'));
+    text = source.category === 'task' && recorded ? `${source.date} 상담 과제 “${clip(source.text, 120)}”의 수행 기록이 있습니다. 기록에 없는 상황과 그때의 반응을 확인할 수 있나요?`
+      : source.category === 'task'
       ? `${source.date} 상담 과제 “${clip(source.text, 120)}”의 시도 여부를 확인할 수 있나요? 시도했다면 상황과 반응 기록이 있나요? 수행 여부는 미확인입니다.`
       : `${source.date} 상담 기록 “${clip(source.text, 120)}”과 관련해 이번 상담에서 추가로 확인할 상황이나 반응 기록이 있나요?`;
   } else text = '최근 기록이 빠진 날의 발생 상황과 대응·반응을 확인할 자료가 있나요? 기록 없음은 행동 없음으로 판단할 수 없습니다.';
@@ -74,7 +77,7 @@ export function selectBriefQuestions(draft: BriefDraft, priorities: string[] = [
   }
   return (picked.length ? picked : [draft.facts[0]]).slice(0, 3).map(fact => questionForBriefFact(draft, fact));
 }
-export function computeBrief(input: BriefInput, consultation?: BriefConsultationContext): BriefDraft {
+export function computeBrief(input: BriefInput, consultation?: BriefConsultationContext, taskLogs: BriefTaskLog[] = []): BriefDraft {
   if (input.consultation && (!consultation || consultation.id !== input.consultation.id || consultation.revision !== input.consultation.revision || consultation.petName.trim() !== input.pet.name.trim())) throw new Error('선택한 확정 상담을 다시 확인해 주세요.');
   if (input.consultation && input.previousSession) throw new Error('상담은 한 건만 선택해 주세요.');
   const to = localDate(input.now, input.timeZone), from = shift(to, -13), priorFrom = shift(to, -27);
@@ -144,7 +147,13 @@ export function computeBrief(input: BriefInput, consultation?: BriefConsultation
       const evidence = 'evidence' in item ? item.evidence : undefined;
       const quote = 'sourceQuote' in item && item.sourceQuote ? item.sourceQuote : item.text;
       sources.push({ id: sourceId, kind: consultation ? 'consultation' : 'legacy_consultation', date: session.date, sourceQuote: clip(quote), text: clip(item.text), category: item.category, scope: scope(session.date), ...(evidence ? { evidence } : {}), truncated: item.text.length > BRIEF_QUOTE_LIMIT || quote.length > BRIEF_QUOTE_LIMIT || ('truncated' in item && item.truncated === true) });
-      const fact: Fact = { id: item.category === 'task' ? `task:${index}` : `session:${index}`, label: item.category === 'task' ? '이전 상담 과제 원문 (수행 여부 미확인)' : '선택한 상담 원문', value: `${session.date} · ${clip(item.text, 200)}`, unit: '', previousValue: null, refs: [sourceId] };
+      const logs = item.category === 'task' ? taskLogs.filter(log => log.taskId === item.id).sort((a, b) => a.at.localeCompare(b.at)) : [];
+      for (const log of logs) {
+        const date = localDate(log.at, input.timeZone);
+        sources.push({ id: `task-log:${log.id}`, kind: 'task_log', date, sourceQuote: clip(log.text ?? taskStatus[log.status]), text: `${taskStatus[log.status]}${log.text ? ` · ${clip(log.text, 200)}` : ''}`, category: 'task_log', scope: scope(date) });
+      }
+      const counted = logs.length ? ` · ${(['done', 'partial', 'skipped'] as const).map(status => `${taskStatus[status]} ${logs.filter(log => log.status === status).length}회`).join(', ')} · 마지막 기록 ${localDate(logs.at(-1)!.at, input.timeZone)}` : '';
+      const fact: Fact = { id: item.category === 'task' ? `task:${index}` : `session:${index}`, label: item.category !== 'task' ? '선택한 상담 원문' : logs.length ? '이전 상담 과제와 수행 기록' : '이전 상담 과제 원문 (수행 여부 미확인)', value: `${session.date} · ${clip(item.text, 200)}${counted}`, unit: '', previousValue: null, refs: [sourceId, ...logs.map(log => `task-log:${log.id}`)] };
       facts.push(fact); if (item.category === 'task') previousTasks.push(renderBriefFact(fact));
     }
     const omitted = session.items.length - items.length + (consultation?.omittedItems ?? 0);

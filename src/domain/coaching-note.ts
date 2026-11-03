@@ -1,6 +1,7 @@
 import type { Consultation, Speaker } from './coaching.ts';
 import { numbersSupported } from './korean-numbers.ts';
 import { flagsFromSource, methodPattern, SAFETY_LABELS } from './notes.ts';
+import type { BriefConsultationContext } from './workspace-types.ts';
 
 export type Evidence = { kind: 'segment' | 'moment' | 'scene'; id: string; quote: string; startMs: number; endMs: number; speaker?: Speaker };
 export type Claim = { id: string; text: string; evidence: Evidence[]; edited?: boolean };
@@ -206,4 +207,23 @@ export function deliveryOf(note: CoachingNote): NoteDelivery {
   const behaviors = note.behaviors.map(item => ({ ...item, context: claims(item.context), behavior: claims(item.behavior), response: claims(item.response) })).filter(item => !methodPattern.test(item.title) && (item.context.length || item.behavior.length || item.response.length));
   const tasks = note.tasks.filter(item => !methodPattern.test(item.text)).map(item => ({ ...item, evidence: evidence(item.evidence) }));
   return { summary: claims(note.summary), concerns: claims(note.concerns), behaviors, guardianReports: claims(note.guardianReports), trainerObservations: claims(note.trainerObservations), aiObservations: claims(note.aiObservations), guidance: claims(note.guidance), tasks, followUps: claims(note.followUps), safetyFlags: note.safetyFlags, approvedAt: note.approvedAt! };
+}
+
+const taskDescription = (task: CoachingTask) => {
+  const fields = ([['담당', task.who], ['횟수', task.frequency], ['기한', task.until], ['성공 기준', task.successCriteria]] as const).filter(([, value]) => value).map(([label, value]) => `${label} ${value}`);
+  return fields.length ? `${task.text} (${fields.join(', ')})` : task.text;
+};
+
+/** What the next brief reads from a confirmed note. The case ties sessions together, so nothing is matched by name. */
+export function briefContextOf(consultation: Consultation, info: CaseInfo, timeZone: string): BriefConsultationContext {
+  const note = consultation.note!;
+  const evidence = (items: Evidence[]) => items.map(item => ({ kind: item.kind === 'moment' ? 'bookmark' as const : item.kind === 'scene' ? 'vision' as const : 'segment' as const, quote: item.quote, startMs: item.startMs, endMs: item.endMs }));
+  const claims = (items: Claim[], category: string) => items.map(item => ({ id: item.id, text: item.text, category, evidence: evidence(item.evidence) }));
+  const parts = new Intl.DateTimeFormat('en-US', { timeZone, year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(new Date(consultation.createdAt));
+  const date = ['year', 'month', 'day'].map(type => parts.find(part => part.type === type)!.value).join('-');
+  return { id: consultation.id, date, petName: info.petName, trainerName: info.trainerName, revision: note.approvedAt!, approvedAt: note.approvedAt!, omittedItems: 0, items: [
+    ...note.tasks.map(task => ({ id: task.id, text: taskDescription(task), category: 'task', evidence: evidence(task.evidence) })),
+    ...claims(note.summary, 'purpose'), ...claims(note.concerns, 'purpose'), ...claims(note.followUps, 'follow_up'), ...claims(note.guardianReports, 'owner_report'),
+    ...claims(note.trainerObservations, 'observation'), ...claims(note.aiObservations, 'observation'), ...claims(note.guidance, 'guidance'),
+  ] };
 }

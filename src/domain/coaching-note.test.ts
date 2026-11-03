@@ -2,7 +2,7 @@
 import { describe, expect, it } from 'vitest';
 import type { Consultation, Segment } from './coaching.ts';
 import { newConsultation } from './coaching.ts';
-import { approvalProblems, assembleNote, buildNoteSource, deliveryOf, emptyNote, normalizeEditedNote, reviewedObservationClaims, type RawNote } from './coaching-note.ts';
+import { approvalProblems, assembleNote, briefContextOf, buildNoteSource, deliveryOf, emptyNote, normalizeEditedNote, reviewedObservationClaims, type RawNote } from './coaching-note.ts';
 
 const segment = (id: string, speaker: Segment['speaker'], startMs: number, text: string, change: Partial<Segment> = {}): Segment => ({ id, speaker, startMs, endMs: startMs + 3000, text, originalText: text, state: 'complete', ...change });
 const segments = [
@@ -267,5 +267,33 @@ describe('rule signals in ordinary speech', () => {
     expect(flagged('갑자기 으르렁거려요').safetyFlags).toContain('갑작스러운 공격성');
     expect(flagged('낯선 개를 보면 으르렁거려요').safetyFlags).not.toContain('갑작스러운 공격성');
     expect(flagged('사료를 평소의 절반만 먹어요').safetyFlags).toContain('식욕 저하');
+  });
+});
+
+describe('briefContextOf', () => {
+  const approved = () => {
+    const note = assemble({ summary: [claim('초인종에 짖는다', 's01')], guardianReports: [claim('초인종을 누르면 현관으로 뛰어가 짖는다', 's01')], guidance: [claim('매트로 가는 연습을 안내함', 's02')], tasks: [task()], followUps: [claim('연습을 다음 상담까지 해 달라고 함', 's02')] }).note;
+    return consultation({ state: 'approved', note: { ...note, approvedAt: '2026-11-04T03:00:00.000Z' } });
+  };
+  it('turns a confirmed note into what the brief reads, with tasks described by their known fields', () => {
+    const context = briefContextOf(approved(), info, 'Asia/Seoul');
+    expect(context).toMatchObject({ id: 'c1', date: '2026-11-04', petName: '초코', trainerName: '이바다', revision: '2026-11-04T03:00:00.000Z' });
+    const planned = context.items.find(item => item.category === 'task')!;
+    expect(planned.text).toContain('매트로 가는 연습');
+    expect(planned.text).toContain('담당 보호자');
+    expect(planned.text).toContain('횟수 하루 두 번');
+    expect(planned.evidence[0]).toMatchObject({ kind: 'segment', quote: segments[1].text, startMs: 4000 });
+    expect(context.items.map(item => item.category)).toEqual(expect.arrayContaining(['purpose', 'owner_report', 'guidance', 'follow_up']));
+  });
+  it('keeps task ids so records can find their task', () => {
+    const consultationRecord = approved();
+    expect(briefContextOf(consultationRecord, info, 'Asia/Seoul').items.find(item => item.category === 'task')?.id).toBe(consultationRecord.note!.tasks[0].id);
+  });
+  it('names memos and scenes in the terms the brief knows', () => {
+    const consultationRecord = approved();
+    consultationRecord.note!.aiObservations = [{ id: 'o', text: '개가 매트에 앉아 있다', evidence: [{ kind: 'scene', id: 's', quote: '개가 매트에 앉아 있다', startMs: 1, endMs: 1 }] }];
+    consultationRecord.note!.trainerObservations = [{ id: 'm', text: '귀가 먼저 움직임', evidence: [{ kind: 'moment', id: 'x', quote: '귀가 먼저 움직임', startMs: 2, endMs: 2, speaker: 'trainer' }] }];
+    const kinds = briefContextOf(consultationRecord, info, 'Asia/Seoul').items.flatMap(item => item.evidence.map(entry => entry.kind));
+    expect(kinds).toEqual(expect.arrayContaining(['vision', 'bookmark']));
   });
 });

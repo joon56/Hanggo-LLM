@@ -12,7 +12,7 @@ import type { Config } from './config.ts';
 import type { LlmProvider } from './ai/llm/types.ts';
 import type { SpeechProvider } from './ai/speech/types.ts';
 import { createGuardianSessions } from './coaching/guardian-session.ts';
-import { createActorResolver, createCoachingRouter } from './coaching/router.ts';
+import { createActorResolver, createCoachingRouter, type CoachingDeps } from './coaching/router.ts';
 import { attachSignal } from './coaching/signal.ts';
 import { createPostProcess } from './coaching/post-process.ts';
 import { createFileStore } from './coaching/store.ts';
@@ -102,7 +102,8 @@ export function createApp(config: Config, services: Services) {
   const broadcast = (consultationId: string, message: unknown) => signal?.broadcast(consultationId, message);
   const transcription = createTranscription({ store: coachingStore, speech: config.aiEnabled ? services.liveSpeech : undefined, broadcast, graceMs: config.coachingGraceMs });
   const postProcess = createPostProcess({ store: coachingStore, transcription, llm: config.aiEnabled ? services.llm : undefined, notify: notifyCoaching });
-  app.use('/api/coaching', createCoachingRouter({ ...coachingAccess, turn: config.turn, secureCookies: config.production, transcription, postProcess, graceMs: config.coachingGraceMs, notify: notifyCoaching, broadcast }));
+  app.use('/api/coaching', createCoachingRouter({ ...coachingAccess, turn: config.turn, secureCookies: config.production, transcription, postProcess, graceMs: config.coachingGraceMs, notify: notifyCoaching, broadcast,
+    generateOwner: config.aiEnabled && services.generateOwner ? (services.generateOwner as NonNullable<CoachingDeps['generateOwner']>) : undefined }));
   app.use('/api', (req, res, next) => {
     if (!authenticated(req)) { res.status(401).json({ error: '로그인이 필요합니다.', code: 'AUTH', requestId: res.locals.requestId }); return; }
     next();

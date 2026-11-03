@@ -1,6 +1,7 @@
 import { request } from './api';
-import type { CoachingCase, Consultation, Moment } from './domain/coaching';
+import type { CoachingCase, Consultation, Moment, TaskLog, TaskLogStatus } from './domain/coaching';
 import type { CoachingNote, NoteDelivery } from './domain/coaching-note';
+import type { BriefDraft, OwnerDraft, SavedOwnerLog } from './domain/workspace-types';
 
 export type CaseView = Pick<CoachingCase, 'id' | 'petName' | 'guardianName' | 'trainerName' | 'createdAt'>;
 export type CaseDetail = CaseView & { consultations: Consultation[] };
@@ -14,6 +15,7 @@ const base = '/api/coaching';
 export type Delivery = { note: NoteDelivery; scenes: { id: string; atMs: number; frameIds: string[] }[] };
 const send = <T>(method: string, path: string, body: unknown) => request<T>(path, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
 
+export type CaseBriefResponse = { brief: BriefDraft; consultationId: string | null };
 export const getMe = () => request<Me>(`${base}/me`);
 export const listCases = () => request<{ cases: CaseView[] }>(`${base}/cases`);
 export const getCase = (id: string) => request<CaseDetail>(`${base}/cases/${id}`);
@@ -32,6 +34,12 @@ export const saveNote = (id: string, note: CoachingNote) => send<Consultation>('
 export const regenerateNote = (id: string) => post<Consultation>(`${base}/consultations/${id}/note`);
 export const approveConsultation = (id: string) => post<Consultation>(`${base}/consultations/${id}/approve`);
 export const getDelivery = (id: string) => request<Delivery>(`${base}/consultations/${id}/delivery`);
+export const listTaskLogs = (caseId: string) => request<{ logs: TaskLog[] }>(`${base}/cases/${caseId}/task-logs`);
+export const addTaskLog = (caseId: string, input: { consultationId: string; taskId: string; status: TaskLogStatus; text?: string }) => post<TaskLog>(`${base}/cases/${caseId}/task-logs`, input);
+export const draftGuardianLog = (caseId: string, text: string) => post<OwnerDraft>(`${base}/cases/${caseId}/guardian-logs/draft`, { text });
+export const saveGuardianLog = (caseId: string, draft: OwnerDraft) => post<SavedOwnerLog>(`${base}/cases/${caseId}/guardian-logs`, { draft });
+export const transcribeVoice = (caseId: string, bytes: Blob) => request<{ text: string }>(`${base}/cases/${caseId}/voice`, { method: 'PUT', headers: { 'Content-Type': 'audio/wav' }, body: bytes });
+export const getCaseBrief = (caseId: string) => request<CaseBriefResponse>(`${base}/cases/${caseId}/brief`);
 export const createMoment = (id: string) => post<Moment>(`${base}/consultations/${id}/moments`);
 export const setMomentMemo = (id: string, momentId: string, text: string) => request<Moment>(`${base}/consultations/${id}/moments/${momentId}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text }) });
 export const uploadAudio = (id: string, { bytes, startMs, endMs }: { bytes: Blob; startMs: number; endMs: number }) => request(`${base}/consultations/${id}/audio/${startMs}?endMs=${endMs}`, { method: 'PUT', headers: { 'Content-Type': 'audio/wav' }, body: bytes });
