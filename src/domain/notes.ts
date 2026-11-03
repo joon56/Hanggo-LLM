@@ -11,19 +11,26 @@ export type ApprovedNote = { id: string; metadata: Metadata; draft: Draft; appro
 const categories: Category[] = ['owner_report', 'observation', 'guidance', 'task', 'follow_up'];
 const sourceKinds: SourceKind[] = ['trainer_summary_text', 'trainer_summary_voice'];
 const safetyPatterns: [string, RegExp][] = [
-  ['통증', /통증|아프(?!리카)|아파(?!트)|아픈|pain/i],
-  ['구토', /구토|토했|토함|토해|vomit/i],
-  ['출혈', /출혈|피가\s*나|bleed/i],
-  ['절뚝거림', /절뚝|다리를\s*절|limp/i],
+  ['통증', /통증|아프(?!리카)|아파(?!트)|아픈|아팠|pain/i],
+  // Only at the start of a word, because 검토했어요 ends the same way.
+  ['구토', /구토|(?<![가-힣])토[했함해하]|vomit/i],
+  ['출혈', /출혈|피가\s*(?:나|났)|bleed/i],
+  ['절뚝거림', /절뚝|다리를\s*(?:절|저[는어])|limp/i],
   ['갑작스러운 공격성', /갑자기\s*(?:공격|물었|물려|으르렁)|갑작스러운\s*공격|원래[^.?!\n]*으르렁|sudden aggression/i],
   ['호흡 곤란', /호흡\s*곤란|숨(?:을)?\s*(?:못\s*쉬|가쁘)|breath(?:ing)?\s*(?:difficulty|problem)/i],
   ['발작', /발작|경련|seizure/i],
   ['설사', /설사|diarrh(?:ea|ea)/i],
   ['식욕 저하', /안\s*먹|먹지\s*않|식욕\s*(?:저하|없)|절반만\s*먹|not\s*eat/i],
   // 물었 also means asked, so it only counts when nothing says a person was being asked.
-  ['물림', /물렸|물린|깨물|(?<!제가\s)(?<!께\s)(?<!에게\s)(?<!한테\s)(?<!고\s)물었|bite|bitten/i],
+  ['물림', /물렸|물린|깨물|(?<!제가\s)(?<!께\s)(?<!에게\s)(?<!한테\s)(?<![라냐다자]고\s)물었|(?:손|발|팔|다리|사람|아이|개|강아지|고양이)[을를]\s*물(?:어|고|려|면)|bite|bitten/i],
 ];
-export const methodPattern = /강압|체벌|때(?:리|렸|린|려)(?!지\s*(?:는|도)?\s*(?:말|않|마))|혼(?:내|냈)(?!지\s*(?:는|도)?\s*(?:말|않|마))|(?:목)?줄을?\s*(?:강하게|세게|확)\s*(?:당[기겨겼긴]|잡아채)|억지로|coercive|aversive/i;
+const FORCEFUL = /강압|체벌|때(?:리|렸|린|려|릴)|혼(?:내|냈|낸|낼|나)|(?:목)?줄을?\s*(?:강하게|세게|확)\s*(?:당[기겨겼긴길]|잡아채)|억지로|coercive|aversive/gi;
+// Later in the same clause, these turn a mention of force into advice against it.
+const ADVICE_AGAINST = /^(?:(?!는데|지만|,|[.?!\n]).)*?(?:(?:지|는|면|은)\s*(?:도\s*)?(?:마|말|않|안\s*(?:돼|된|됩))|금지|삼가|피하|중단)/;
+/** Force someone used or suggests. "Please do not pull the leash" is the opposite, and a guardian needs to hear it. */
+export function mentionsForcefulMethod(text: string) {
+  return [...text.matchAll(FORCEFUL)].some(match => !ADVICE_AGAINST.test(text.slice(match.index + match[0].length)));
+}
 export const SAFETY_LABELS = safetyPatterns.map(([label]) => label);
 const bannedClaim = /확진|진단(?:입니다|이다|됨|됐)|반드시\s*(?:낫|완치)|100\s*%\s*(?:치료|완치|해결)|완치됩니다/i;
 const isObject = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -37,7 +44,7 @@ export function getReviewSignals(draft: Draft): { safetyFlags: string[]; methodR
   const text = [draft.sourceText, ...draft.items.map(item => item.text)].join('\n');
   return {
     safetyFlags: [...new Set([...draft.safetyFlags, ...flagsFromSource(text)])],
-    methodReview: draft.methodReview || methodPattern.test(text),
+    methodReview: draft.methodReview || mentionsForcefulMethod(text),
   };
 }
 
@@ -59,7 +66,7 @@ export function splitNoteSentences(source: string): string[] {
 }
 
 function classify(sentence: string): Category {
-  if (flagsFromSource(sentence).length || methodPattern.test(sentence) || bannedClaim.test(sentence)) return 'follow_up';
+  if (flagsFromSource(sentence).length || mentionsForcefulMethod(sentence) || bannedClaim.test(sentence)) return 'follow_up';
   if (/보호자(?:가|는|께서)?|견주(?:가|는)?|말씀하|전했|보고했/i.test(sentence)) return 'owner_report';
   if (/다음\s*(?:시간|수업)|추후|확인(?:하|해)|지켜보|follow.?up/i.test(sentence)) return 'follow_up';
   if (/과제|숙제/i.test(sentence)) {
@@ -76,7 +83,7 @@ export function createDraft(text: string, sourceKind: SourceKind): Draft {
   if (typeof text !== 'string' || !text.trim() || text.length > 8000) throw new Error('원문은 1~8000자로 입력하세요.');
   if (!sourceKinds.includes(sourceKind)) throw new Error('지원하지 않는 원문 종류입니다.');
   const safetyFlags = flagsFromSource(text);
-  const methodReview = methodPattern.test(text);
+  const methodReview = mentionsForcefulMethod(text);
   return {
     id: newId(), sourceKind, sourceText: text,
     items: splitNoteSentences(text).map(sourceQuote => {
@@ -120,7 +127,7 @@ export function validateDraft(draft: Draft): string[] {
   const source = typeof draft.sourceText === 'string' ? draft.sourceText : '';
   const expectedFlags = flagsFromSource(source);
   if (!Array.isArray(draft.safetyFlags) || expectedFlags.some(flag => !draft.safetyFlags.includes(flag))) errors.push('원문 안전 신호를 삭제할 수 없습니다.');
-  if (methodPattern.test(source) && draft.methodReview !== true) errors.push('원문 훈련 방법 검토 표시를 삭제할 수 없습니다.');
+  if (mentionsForcefulMethod(source) && draft.methodReview !== true) errors.push('원문 훈련 방법 검토 표시를 삭제할 수 없습니다.');
   const effectiveRisk = Array.isArray(draft.safetyFlags) && draft.safetyFlags.every(flag => typeof flag === 'string') &&
     draft.items.every(item => isObject(item) && typeof item.text === 'string') ? getReviewSignals(draft) : null;
   const ids = new Set<string>();

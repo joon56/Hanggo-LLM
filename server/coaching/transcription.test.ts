@@ -105,8 +105,14 @@ describe('queue', () => {
   });
   it('refuses new windows when too many are waiting, so a stuck model cannot fill memory', async () => {
     const { speech } = controlledSpeech(); const { transcription } = build(speech);
-    for (let index = 0; index < 65; index++) await accept(transcription, 'guardian', index * 4000);
+    for (let index = 0; index < 33; index++) await accept(transcription, 'guardian', index * 4000);
     await expect(accept(transcription, 'guardian', 400000)).rejects.toMatchObject({ code: 'BUSY', status: 429 });
+  });
+  it('keeps room for the other person, so one browser flooding the queue cannot silence them', async () => {
+    const { speech } = controlledSpeech(); const { transcription } = build(speech);
+    for (let index = 0; index < 33; index++) await accept(transcription, 'guardian', index * 4000);
+    await expect(accept(transcription, 'guardian', 400000)).rejects.toMatchObject({ code: 'BUSY' });
+    await expect(accept(transcription, 'trainer', 0)).resolves.toMatchObject({ speaker: 'trainer' });
   });
 });
 

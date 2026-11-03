@@ -47,13 +47,13 @@ function speechRows(file: string, condition: string): Row[] {
 function noteRows(home: string): Row[] {
   const folder = path.join(home, 'cache', 'eval');
   if (!existsSync(folder)) return [];
-  return readdirSync(folder).filter(name => /^note-eval-[^.]+\.json$/.test(name) && !name.endsWith('-first.json')).flatMap((name): Row[] => {
+  return readdirSync(folder).filter(name => /^note-eval-[^.]+\.json$/.test(name) && !/-(?:first|second)\.json$/.test(name)).flatMap((name): Row[] => {
     const report = readJson(path.join(folder, name));
     const { summary, model } = report;
     const condition = `${model}, 합성 대화 ${summary.dialogues}건, 전사 오류 없음`;
     if (name.endsWith('-long.json')) {
       const [run] = report.runs;
-      return [['일지', '30분 이상 상담 처리 시간', `${Math.round(run.latencyMs / 60000)}분`, `${model}, 합성 대화를 이어 붙임`], ['일지', '긴 상담 사실 재현율', percent(summary.factRecall), `${model}, 합성 대화를 이어 붙임`]];
+      return [['일지', '30분 이상 상담 처리 시간', `${Math.round(run.latencyMs / 60000)}분`, `${model}, 합성 대화를 이어 붙임`], ['일지', '긴 상담 사실 재현율', percent(summary.factRecall), `${model}, 합성 대화를 이어 붙임`], ['일지', '긴 상담 과제 재현율', percent(summary.taskRecall), `${model}, 합성 대화를 이어 붙임`]];
     }
     return [
       ['일지', '핵심 사실 재현율', percent(summary.factRecall), condition],

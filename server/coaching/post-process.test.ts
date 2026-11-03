@@ -34,6 +34,14 @@ function build(llm?: LlmProvider) {
 const failing = (change: Partial<LlmProvider>): LlmProvider => ({ ...createStubLlm(), ...change });
 
 describe('finish', () => {
+  it('records how far it has got, so a long wait shows progress, and clears that when done', async () => {
+    const seen: unknown[] = [];
+    const stub = createStubLlm();
+    const llm: LlmProvider = { ...stub, structured: async request => { seen.push((await store.getConsultation(id)).organizing); return stub.structured(request); } };
+    await build(llm).process.finish(id);
+    expect(seen).toEqual([{ stage: 'scenes', done: 0, total: 1 }, { stage: 'note', done: 0, total: 1 }]);
+    expect((await store.getConsultation(id)).organizing).toBeUndefined();
+  });
   it('moves through speech, scenes, and the note in order, then opens the review', async () => {
     const order: string[] = [];
     const stub = createStubLlm();
@@ -127,6 +135,36 @@ describe('regenerate', () => {
     const done = await store.getConsultation(id);
     expect(done.note).toEqual(before);
     expect(done.errors).toEqual([expect.objectContaining({ code: 'NOTE_REGENERATE' })]);
+  });
+});
+
+describe('regenerating', () => {
+  it('keeps the earlier draft when the new answer has nothing in it', async () => {
+    const stub = createStubLlm();
+    let empty = false;
+    const nothing = { summary: [], concerns: [], behaviors: [], guardianReports: [], trainerObservations: [], guidance: [], tasks: [], followUps: [], safetyFlags: [], methodReview: false };
+    const llm = failing({ structured: async request => empty && !request.images ? { json: nothing, finished: true } : stub.structured(request) });
+    const { process } = build(llm);
+    await process.finish(id);
+    const before = (await store.getConsultation(id)).note;
+    empty = true;
+    await process.regenerate(id);
+    await expect.poll(async () => (await store.getConsultation(id)).noteGenerating).toBeUndefined();
+    expect((await store.getConsultation(id)).note).toEqual(before);
+  });
+});
+
+describe('when recording a failure fails too', () => {
+  it('still opens the review, because a consultation left in processing blocks every new call', async () => {
+    let broken = false;
+    const flaky: CoachingStore = { ...store,
+      getCase: async () => { broken = true; throw new Error('disk'); },
+      updateConsultation: (consultationId, change) => {
+        if (broken) { broken = false; return Promise.reject(new Error('disk full')); }
+        return store.updateConsultation(consultationId, change);
+      } };
+    await createPostProcess({ store: flaky, transcription: { settle: async () => {}, close: async () => {} }, llm: createStubLlm(), retryDelayMs: 1 }).finish(id);
+    expect((await store.getConsultation(id)).state).toBe('review');
   });
 });
 

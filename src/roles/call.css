@@ -22,6 +22,9 @@
 .coach-history li { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 .call-link.coach-link { color: var(--ink); margin-left: auto; }
 .call-link.coach-delete { color: var(--muted); justify-self: end; font-size: 12px; }
+.prejoin-level { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 12px; }
+.prejoin-level i { flex: 1; height: 6px; overflow: hidden; border-radius: 3px; background: var(--line); }
+.prejoin-level b { display: block; height: 100%; background: var(--green); transition: width .1s linear; }
 .prejoin-preview { width: 100%; aspect-ratio: 16 / 9; object-fit: cover; background: #1c1f1c; border-radius: 10px; }
 
 .call-room { position: fixed; inset: 0; display: flex; flex-direction: column; background: #171a17; color: #f3f4f0; }

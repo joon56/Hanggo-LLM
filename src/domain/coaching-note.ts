@@ -1,6 +1,6 @@
-import type { Consultation, Speaker } from './coaching.ts';
-import { numbersSupported } from './korean-numbers.ts';
-import { flagsFromSource, methodPattern, SAFETY_LABELS } from './notes.ts';
+import { similarity, type Consultation, type Speaker } from './coaching.ts';
+import { extractNumbers, numbersSupported } from './korean-numbers.ts';
+import { flagsFromSource, mentionsForcefulMethod, SAFETY_LABELS } from './notes.ts';
 import type { BriefConsultationContext } from './workspace-types.ts';
 
 export type Evidence = { kind: 'segment' | 'moment' | 'scene'; id: string; quote: string; startMs: number; endMs: number; speaker?: Speaker };
@@ -32,26 +32,41 @@ const REQUIRED_SPEAKER: Partial<Record<string, { speaker: Speaker; name: string 
   guardianReports: { speaker: 'guardian', name: '보호자' }, guidance: { speaker: 'trainer', name: '훈련사' },
   trainerObservations: { speaker: 'trainer', name: '훈련사' }, tasks: { speaker: 'trainer', name: '훈련사' },
 };
-const BANNED = /진단|치료|완치|처방|증상\s*판정|정확도|효과\s*보장|반드시\s*(?:좋아|낫|나아)|확실히|문제견|나쁜\s*개|공격견|사나운\s*개|좋아졌|좋아지|개선됐|개선되|나아졌|나아지|호전|이\s*품종은\s*원래|분리불안|관절염|슬개골|골절|디스크|치매|피부염|장염|췌장염|강박증|불안장애/g;
+const BANNED = /진단|치료|완치|처방|증상\s*판정|정확도|효과\s*보장|반드시\s*(?:좋아|낫|나아)|확실히|문제견|나쁜\s*개|공격견|사나운\s*개|좋아[지진질져졌]|개선[되된될됐]|나아[지진질져졌]|호전|이\s*품종은\s*원래|분리불안|관절염|슬개골|골절|디스크|치매|피부염|장염|췌장염|강박증|불안장애/g;
 const NAME = /([가-힣]{2,4})\s?(?:님|씨)/g;
-const NAME_BEFORE_TITLE = /([가-힣]{2,4})\s(?:선생님|훈련사|보호자|수의사|원장)/g;
+const SURNAMES = '김이박최정강조윤장임한오서신권황안송류전홍고문양손배백허유남심노하곽성차주우구민진지엄채원천방공현함변염여추도소석선설마길연위표명기반왕금옥육인맹제모탁국어은편용';
+// A surname and two syllables, because a title also follows ordinary words, as in 짖는다고 보호자가.
+const NAME_BEFORE_TITLE = new RegExp(`(?<![가-힣])([${SURNAMES}][가-힣]{2})\\s(?:선생님|훈련사|수의사|원장)`, 'g');
 // Titles and everyday words that end the way a name with an honorific does.
 const NOT_A_NAME = /(?:보호자|훈련사|선생|기사|수의사|원장|사장|고객|손|어머|아버|남편|아내|따|아드|아저|아가|날|솜|말|맵|글|마음|시|사모)$/;
 // Ordinary words that can sit right before a title without being anyone's name.
-const NOT_A_NAME_BEFORE_TITLE = /^(?:담당|가상|이번|다음|지난|저희|우리|오늘|그|이|저|해당|상담|행동|반려견|반려|동물병원|병원)$/;
+const NOT_A_NAME_BEFORE_TITLE = /^(?:반려견|동물병원)$|[은는이가을를의에도로만요고며면서다]$/;
 const ALIAS_MARKER = /\s*[[(]\s*[sm]\d{1,3}(?:\s*,\s*[sm]\d{1,3})*\s*[\])]/g;
 const MIN_CLAIM_SUPPORT = 0.3;
+const MIN_OWN_SUPPORT = 0.15;
 const MIN_FIELD_SUPPORT = 0.6;
+// Stricter than a citation the model chose, since here the code is the one choosing.
+const MIN_FOUND_SUPPORT = 0.5;
+const MAX_ADDED_LINES = 2;
+const REPEAT_SIMILARITY = 0.6;
+const MAX_LINES_AWAY = 6;
+const PLAIN_TITLE = '행동 기록';
+// Pointing these out as unused would only hide the lines that might matter.
+const NOTHING_TO_REPORT = /\?$|말씀해\s*주세요\.?$|^안녕하세요|^네[,.\s]+(?:알겠습니다|그렇군요|맞아요)?\.?$|감사합니다\.?$/;
+const NEGATION = /않|없|못|아니|안\s|말[고아]|마세/;
 const newId = () => crypto.randomUUID();
 
+// The endings a record adds to what someone said. They are in no quote, and say nothing about whether the rest was said.
+const RECORD_WORDING = /(?:라고|다고|도록|것을|것임|것)?\s*(?:안내|설명|요청|당부|언급|말|보고)(?:함|했음|했다)|(?:[을를]\s)?(?:할|말|줄)\s*것(?:을|임)?/g;
 const pairsOf = (text: string) => {
   const clean = text.replace(/[^\p{L}]/gu, '');
   return Array.from({ length: Math.max(0, clean.length - 1) }, (_, index) => clean.slice(index, index + 2));
 };
 /** How much of a sentence comes from its evidence. A rewritten sentence reuses the words; an invented one does not. */
 function supportOf(text: string, sources: string[]) {
-  const pairs = pairsOf(text);
-  if (pairs.length < 3) return 1;
+  const reported = text.replace(RECORD_WORDING, '');
+  const pairs = pairsOf(reported);
+  if (!pairs.length || (pairs.length < 3 && reported === text)) return 1;
   const known = new Set(sources.flatMap(pairsOf));
   return pairs.filter(pair => known.has(pair)).length / pairs.length;
 }
@@ -67,6 +82,48 @@ export function buildNoteSource(consultation: Pick<Consultation, 'segments' | 'm
   ] };
 }
 
+/** A short answer only means something with its question, so a sentence may use the question's words. Numbers still have to be in the answer. */
+function linesBefore(evidence: Evidence[], source: NoteSource) {
+  return evidence.flatMap(item => {
+    const at = source.lines.findIndex(line => line.evidence.kind === item.kind && line.evidence.id === item.id);
+    return at > 0 ? [source.lines[at - 1].evidence.quote] : [];
+  });
+}
+
+/** Mostly the cited lines, so a sentence cannot rest on the words of whoever spoke just before. */
+function wellSupported(text: string, evidence: Evidence[], source: NoteSource) {
+  const quotes = evidence.map(item => item.quote);
+  return supportOf(text, [...quotes, ...source.names]) >= MIN_OWN_SUPPORT && supportOf(text, [...quotes, ...linesBefore(evidence, source), ...source.names]) >= MIN_CLAIM_SUPPORT;
+}
+
+/**
+ * Models often cite the line that says "please do it" and not the line that says what to do. When the words really are
+ * in what that person said, the record can point there itself instead of losing a true sentence. Numbers are checked afterward.
+ */
+function withSupportingLines(section: string, text: string, evidence: Evidence[], source: NoteSource) {
+  const quotes = evidence.map(item => item.quote);
+  if (!evidence.length || supportOf(text, [...quotes, ...source.names]) >= MIN_CLAIM_SUPPORT || numbersSupported(text, quotes).length) return evidence;
+  const required = REQUIRED_SPEAKER[section];
+  const cited = evidence.map(item => source.lines.findIndex(line => line.evidence.id === item.id));
+  const usable = (quote: string) => quote.split(/(?<=[.?!])\s*/).filter(sentence => NEGATION.test(sentence) === NEGATION.test(text)).join(' ');
+  // What the same person said nearby, in sentences that do not say the opposite. A question is not a statement of what it asks about.
+  const nearby = source.lines.filter((line, at) => line.evidence.kind === 'segment' && evidence.some(item => item.speaker === line.evidence.speaker) && (!required || line.evidence.speaker === required.speaker)
+    && cited.some(index => Math.abs(index - at) <= MAX_LINES_AWAY) && !cited.includes(at)).map(line => ({ item: line.evidence, words: usable(line.evidence.quote) }));
+  const kept = [...evidence];
+  const known = [...quotes];
+  const wanted = pairsOf(text);
+  for (let added = 0; added < MAX_ADDED_LINES; added += 1) {
+    const covered = new Set(known.flatMap(pairsOf));
+    const missing = new Set(wanted.filter(pair => !covered.has(pair)));
+    const gain = (words: string) => new Set(pairsOf(words).filter(pair => missing.has(pair))).size;
+    const best = nearby.filter(({ item }) => !kept.includes(item)).sort((left, right) => gain(right.words) - gain(left.words))[0];
+    if (!best || !gain(best.words)) break;
+    kept.push(best.item); known.push(best.words);
+    if (supportOf(text, known) >= MIN_FOUND_SUPPORT) return kept.sort((left, right) => left.startMs - right.startMs);
+  }
+  return evidence;
+}
+
 function problemsWith(section: string, text: string, evidence: Evidence[], source: NoteSource) {
   if (!evidence.length) return ['근거 발화가 없습니다.'];
   const quotes = evidence.map(item => item.quote);
@@ -78,7 +135,7 @@ function problemsWith(section: string, text: string, evidence: Evidence[], sourc
   // A guardian may relay what someone told them. Anywhere else the note would be making the claim itself.
   const banned = bannedIn(text).filter(word => section !== 'guardianReports' || !quotes.some(quote => quote.includes(word)));
   if (banned.length) reasons.push(`금지 표현입니다: ${banned.join(', ')}`);
-  if (supportOf(text, [...quotes, ...source.names]) < MIN_CLAIM_SUPPORT) reasons.push('문장이 근거와 거의 겹치지 않습니다.');
+  if (!wellSupported(text, evidence, source)) reasons.push('문장이 근거와 거의 겹치지 않습니다.');
   return reasons;
 }
 
@@ -104,10 +161,17 @@ function citedSegmentIds(note: Pick<CoachingNote, typeof CLAIM_SECTIONS[number] 
 }
 export const uncited = (note: Parameters<typeof citedSegmentIds>[0], source: NoteSource) => {
   const cited = citedSegmentIds(note);
-  return source.lines.filter(line => line.evidence.kind === 'segment' && !cited.has(line.evidence.id)).map(line => line.evidence.id);
+  return source.lines.filter(line => line.evidence.kind === 'segment' && !cited.has(line.evidence.id) && !NOTHING_TO_REPORT.test(line.evidence.quote.trim())).map(line => line.evidence.id);
 };
-const ruleSafetyFlags = (source: NoteSource) => flagsFromSource(source.lines.map(line => line.evidence.quote).join('\n'));
-const ruleMethodReview = (source: NoteSource) => source.lines.some(line => methodPattern.test(line.evidence.quote));
+const said = (source: NoteSource, kind: Evidence['kind']) => source.lines.filter(line => line.evidence.kind === kind).map(line => line.evidence.quote).join('\n');
+/** From what was said aloud. A private memo must not surface as a warning to the guardian. */
+const ruleSafetyFlags = (source: NoteSource) => flagsFromSource(said(source, 'segment'));
+const ruleMethodReview = (source: NoteSource) => source.lines.some(line => mentionsForcefulMethod(line.evidence.quote));
+const plain = (text: string) => text.replace(/[^\p{L}\p{N}]/gu, '');
+const sortedNumbers = (text: string) => String(extractNumbers(text).sort());
+/** Close in wording, and neither negates the other nor counts differently, which a few changed letters can do. */
+export const sameFact = (left: string, right: string, threshold = REPEAT_SIMILARITY) =>
+  similarity(plain(left), plain(right)) >= threshold && NEGATION.test(left) === NEGATION.test(right) && sortedNumbers(left) === sortedNumbers(right);
 
 /** Sentences come from the model, but citations and times always come from the record, and anything unsupported is left out. */
 export function assembleNote(raw: RawNote, source: NoteSource, createdAt: string) {
@@ -117,7 +181,8 @@ export function assembleNote(raw: RawNote, source: NoteSource, createdAt: string
     const text = item.text.replace(ALIAS_MARKER, '').trim();
     // The schema names the word "unknown", and a model sometimes writes it as a sentence.
     if (!text || /^unknown$/i.test(text)) return [];
-    const { evidence, wrongSpeaker } = evidenceFor(section, item.evidence, source);
+    const { evidence: cited, wrongSpeaker } = evidenceFor(section, item.evidence, source);
+    const evidence = withSupportingLines(section, text, cited, source);
     const reasons = wrongSpeaker ? [`${wrongSpeaker} 발화를 근거로 써야 합니다.`] : problemsWith(section, text, evidence, source);
     if (reasons.length) { reject(section, text, reasons); return []; }
     return [{ id: newId(), text, evidence }];
@@ -125,24 +190,30 @@ export function assembleNote(raw: RawNote, source: NoteSource, createdAt: string
   const behaviors = raw.behaviors.flatMap((item): BehaviorEntry[] => {
     const entry = { id: newId(), title: item.title.trim(), context: claims('behaviors.context', item.context), behavior: claims('behaviors.behavior', item.behavior), response: claims('behaviors.response', item.response), unknown: [...new Set(item.unknown)] };
     const evidenceInEntry = [...entry.context, ...entry.behavior, ...entry.response].flatMap(claim => claim.evidence);
-    const titleProblems = evidenceInEntry.length ? problemsWith('behaviors.title', entry.title, evidenceInEntry, source).filter(reason => !reason.startsWith('문장이')) : [];
-    if (titleProblems.length) { reject('behaviors.title', entry.title, titleProblems); return []; }
-    return entry.context.length || entry.behavior.length || entry.response.length ? [entry] : [];
+    if (!evidenceInEntry.length) return [];
+    // The sentences stand on their own evidence, so a bad title costs only the title. Models also file whole sections under their field names.
+    const titleProblems = problemsWith('behaviors.title', entry.title, evidenceInEntry, source).filter(reason => !reason.startsWith('문장이'));
+    return [{ ...entry, title: /[가-힣]/.test(entry.title) && !titleProblems.length ? entry.title : PLAIN_TITLE }];
   });
   const tasks = raw.tasks.flatMap((item): CoachingTask[] => {
     const text = item.text.replace(ALIAS_MARKER, '').trim();
     if (!text) return [];
-    const { evidence, wrongSpeaker } = evidenceFor('tasks', item.evidence, source);
+    const { evidence: cited, wrongSpeaker } = evidenceFor('tasks', item.evidence, source);
+    const evidence = withSupportingLines('tasks', text, cited, source);
     const reasons = wrongSpeaker ? [`${wrongSpeaker} 발화를 근거로 써야 합니다.`] : problemsWith('tasks', text, evidence, source);
     if (reasons.length) { reject('tasks', text, reasons); return []; }
     const quotes = evidence.map(entry => entry.quote);
     return [{ id: newId(), text, who: supportedField(item.who, quotes), frequency: supportedField(item.frequency, quotes), until: supportedField(item.until, quotes), successCriteria: supportedField(item.successCriteria, quotes), evidence }];
   });
-  const sections = { summary: claims('summary', raw.summary), concerns: claims('concerns', raw.concerns), behaviors, guardianReports: claims('guardianReports', raw.guardianReports),
-    trainerObservations: claims('trainerObservations', raw.trainerObservations), aiObservations: [] as Claim[], guidance: claims('guidance', raw.guidance), tasks, followUps: claims('followUps', raw.followUps) };
+  const underBehaviors = behaviors.flatMap(entry => [...entry.context, ...entry.behavior, ...entry.response]);
+  const fresh = (items: Claim[]) => items.filter(item => !underBehaviors.some(other => sameFact(other.text, item.text)));
+  const sections = { summary: claims('summary', raw.summary), concerns: claims('concerns', raw.concerns), behaviors, guardianReports: fresh(claims('guardianReports', raw.guardianReports)),
+    trainerObservations: fresh(claims('trainerObservations', raw.trainerObservations)), aiObservations: [] as Claim[], guidance: claims('guidance', raw.guidance), tasks, followUps: claims('followUps', raw.followUps) };
+  const spokenFlags = ruleSafetyFlags(source);
+  const memoOnlyFlags = flagsFromSource(said(source, 'moment')).filter(flag => !spokenFlags.includes(flag));
   const note: CoachingNote = { version: 2, ...sections,
     // Rules and the model can each raise a flag. Neither can lower one.
-    safetyFlags: [...new Set([...ruleSafetyFlags(source), ...raw.safetyFlags.filter(flag => SAFETY_LABELS.includes(flag))])],
+    safetyFlags: [...new Set([...spokenFlags, ...raw.safetyFlags.filter(flag => SAFETY_LABELS.includes(flag) && !memoOnlyFlags.includes(flag))])],
     methodReview: raw.methodReview || ruleMethodReview(source),
     uncitedSegmentIds: uncited(sections, source), createdAt, warnings: [] };
   return { note, violations };
@@ -209,6 +280,10 @@ export function approvalProblems(note: CoachingNote) {
     if (claim.edited || !claim.evidence.length) continue;
     if (numbersSupported(claim.text, claim.evidence.map(item => item.quote)).length) problems.push(`고친 전사와 숫자가 맞지 않습니다: ${claim.text}`);
   }
+  for (const task of note.tasks) {
+    if (task.edited || !task.evidence.length) continue;
+    for (const field of [task.who, task.frequency, task.until, task.successCriteria]) if (field && numbersSupported(field, task.evidence.map(item => item.quote)).length) problems.push(`고친 전사와 숫자가 맞지 않습니다: ${field}`);
+  }
   return problems;
 }
 
@@ -220,12 +295,12 @@ export type NoteDelivery = Pick<CoachingNote, 'summary' | 'concerns' | 'behavior
 
 /** What the guardian receives. Method concerns and the trainer's private memos stay out, including inside quotes. */
 export function deliveryOf(note: CoachingNote): NoteDelivery {
-  const evidence = (items: Evidence[]) => items.filter(item => item.kind !== 'moment' && !methodPattern.test(item.quote));
+  const evidence = (items: Evidence[]) => items.filter(item => item.kind !== 'moment' && !mentionsForcefulMethod(item.quote));
   const memoOnly = (item: { evidence: Evidence[] }) => item.evidence.length > 0 && item.evidence.every(entry => entry.kind === 'moment');
-  const claims = (items: Claim[]) => items.filter(item => !methodPattern.test(item.text) && !memoOnly(item)).map(item => ({ ...item, evidence: evidence(item.evidence) }));
-  const field = (value: string | null) => value && methodPattern.test(value) ? null : value;
-  const behaviors = note.behaviors.map(item => ({ ...item, context: claims(item.context), behavior: claims(item.behavior), response: claims(item.response) })).filter(item => !methodPattern.test(item.title) && (item.context.length || item.behavior.length || item.response.length));
-  const tasks = note.tasks.filter(item => !methodPattern.test(item.text) && !memoOnly(item)).map(item => ({ ...item, who: field(item.who), frequency: field(item.frequency), until: field(item.until), successCriteria: field(item.successCriteria), evidence: evidence(item.evidence) }));
+  const claims = (items: Claim[]) => items.filter(item => !mentionsForcefulMethod(item.text) && !memoOnly(item)).map(item => ({ ...item, evidence: evidence(item.evidence) }));
+  const field = (value: string | null) => value && mentionsForcefulMethod(value) ? null : value;
+  const behaviors = note.behaviors.map(item => ({ ...item, context: claims(item.context), behavior: claims(item.behavior), response: claims(item.response) })).filter(item => !mentionsForcefulMethod(item.title) && (item.context.length || item.behavior.length || item.response.length));
+  const tasks = note.tasks.filter(item => !mentionsForcefulMethod(item.text) && !memoOnly(item)).map(item => ({ ...item, who: field(item.who), frequency: field(item.frequency), until: field(item.until), successCriteria: field(item.successCriteria), evidence: evidence(item.evidence) }));
   return { summary: claims(note.summary), concerns: claims(note.concerns), behaviors, guardianReports: claims(note.guardianReports), trainerObservations: claims(note.trainerObservations), aiObservations: claims(note.aiObservations), guidance: claims(note.guidance), tasks, followUps: claims(note.followUps), safetyFlags: note.safetyFlags.filter(flag => !note.dismissedFlags?.includes(flag)), approvedAt: note.approvedAt! };
 }
 
@@ -243,7 +318,7 @@ export function briefContextOf(consultation: Consultation, info: CaseInfo, timeZ
   const date = ['year', 'month', 'day'].map(type => parts.find(part => part.type === type)!.value).join('-');
   return { id: consultation.id, date, petName: info.petName, trainerName: info.trainerName, revision: note.approvedAt!, approvedAt: note.approvedAt!, omittedItems: 0, items: [
     ...note.tasks.map(task => ({ id: task.id, text: taskDescription(task), category: 'task', evidence: evidence(task.evidence) })),
-    ...claims(note.summary, 'purpose'), ...claims(note.concerns, 'purpose'), ...claims(note.followUps, 'follow_up'), ...claims(note.guardianReports, 'owner_report'),
+    ...claims(note.summary, 'purpose'), ...claims(note.concerns, 'purpose'), ...claims(note.followUps, 'follow_up'), ...claims(note.behaviors.flatMap(entry => [...entry.context, ...entry.behavior, ...entry.response]), 'owner_report'), ...claims(note.guardianReports, 'owner_report'),
     ...claims(note.trainerObservations, 'observation'), ...claims(note.aiObservations, 'observation'), ...claims(note.guidance, 'guidance'),
   ] };
 }

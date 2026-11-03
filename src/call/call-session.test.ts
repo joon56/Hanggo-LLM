@@ -306,6 +306,39 @@ describe('recording', () => {
     expect(recorder.start).toHaveBeenCalledTimes(1);
     expect(recorder.start.mock.calls[0][0]()).toBeCloseTo(Date.now() + 60000 - 50000, -2);
   });
+  it('keeps its best clock measurement across a reconnect, since a busy moment can make a new one far off', () => {
+    const { signal, recorder } = clocked();
+    signal.emit(recordingState);
+    const clock = recorder.start.mock.calls[0][0];
+    const before = clock();
+    signal.emit({ type: 'hello', role: 'guardian', serverNow: 1, peerOnline: true });
+    signal.emit({ type: 'pong', at: Date.now() - 6000, serverNow: Date.now() + 63000 });
+    expect(clock()).toBeCloseTo(before, -2);
+  });
+  describe('the recording limit', () => {
+    const atElapsed = (ms: number) => ({ ...recordingState, recordingStartedAt: Date.now() + 60000 - ms });
+    it('counts down the last minutes, so nobody is surprised', async () => {
+      const { session, signal } = clocked();
+      signal.emit(atElapsed(50 * 60000));
+      await vi.advanceTimersByTimeAsync(1000);
+      expect(session.snapshot().recordingLeftMinutes).toBeNull();
+      signal.emit(atElapsed(56 * 60000));
+      await vi.advanceTimersByTimeAsync(1000);
+      expect(session.snapshot().recordingLeftMinutes).toBe(4);
+    });
+    it('stops recording at the limit with the last words sent, says so, and keeps the call', async () => {
+      const { session, signal, recorder } = clocked();
+      signal.emit(atElapsed(60 * 60000 - 2000));
+      await vi.advanceTimersByTimeAsync(1000);
+      expect(session.snapshot().recordingLeftMinutes).toBe(0);
+      expect(recorder.stop).toHaveBeenLastCalledWith({ flush: true });
+      expect(session.snapshot().uploadLost).toBe(false);
+      recorder.start.mockClear();
+      signal.emit(atElapsed(60 * 60000 + 1000));
+      signal.emit({ type: 'pong', at: Date.now(), serverNow: Date.now() + 60000 });
+      expect(recorder.start).not.toHaveBeenCalled();
+    });
+  });
   it('does nothing before consent even with a known clock', () => {
     const { signal, recorder } = clocked();
     signal.emit({ ...recordingState, recording: false, recordingStartedAt: undefined });

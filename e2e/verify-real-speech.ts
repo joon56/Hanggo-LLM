@@ -7,7 +7,8 @@ import { characterErrorRate } from '../scripts/speech-metrics.ts';
 import { loadLocalEnv, readConfig } from '../server/config.ts';
 import type { Consultation, Segment, Speaker } from '../src/domain/coaching.ts';
 import { termRecall } from '../src/domain/speech-terms.ts';
-import { createCaseAsTrainer, enterAsGuardian, enterAsTrainer, ensureMedia, joinAsGuardian, launch, room, startServer } from './helpers/two-way.ts';
+import { createCaseAsTrainer, enterTogether, ensureMedia, joinAsGuardian, launch, room, startServer } from './helpers/two-way.ts';
+import { buildTracks, synthesize, type Line } from './helpers/voices.ts';
 
 // Usage: node e2e/verify-real-speech.ts [--note] [--human <clips>] [dialogue,...]
 // Plays speech through two fake microphones into the real server and the real speech model.
@@ -16,53 +17,9 @@ import { createCaseAsTrainer, enterAsGuardian, enterAsTrainer, ensureMedia, join
 // --note also runs the real LLM on the result, with a real dog video as the guardian's camera.
 const WORK = path.resolve('.tmp/real-speech');
 const LEAD_IN_MS = 30000;
-const GAP_MS = 500;
 const TAIL_MS = 20000;
-const SAMPLE_RATE = 48000;
 const ORGANIZE_TIMEOUT_MS = 90 * 60 * 1000;
-type Line = { id: string; speaker: Speaker; text: string; file?: string };
-type Dialogue = Partial<GoldenDialogue> & { id: string; petName: string; segments: Line[] };
-
-function synthesize(lines: Line[], folder: string) {
-  mkdirSync(folder, { recursive: true });
-  const missing = lines.filter(line => !existsSync(path.join(folder, `${line.id}.wav`)));
-  if (!missing.length) return;
-  const job = path.join(folder, 'job.json');
-  writeFileSync(job, JSON.stringify(missing.map(line => ({ file: path.join(folder, `${line.id}.wav`), text: line.text }))));
-  const script = `$ErrorActionPreference = 'Stop'
-Add-Type -AssemblyName System.Speech
-$synth = New-Object System.Speech.Synthesis.SpeechSynthesizer
-$synth.SelectVoice('Microsoft Heami Desktop')
-foreach ($item in (Get-Content -Raw -Encoding UTF8 '${job.replaceAll("'", "''")}' | ConvertFrom-Json)) {
-  $synth.SetOutputToWaveFile($item.file)
-  $synth.Speak($item.text)
-  $synth.SetOutputToNull()
-}`;
-  execFileSync('powershell', ['-NoProfile', '-NonInteractive', '-Command', script], { windowsHide: true, stdio: 'inherit' });
-}
-
-function pcmOf(file: string) {
-  const raw = execFileSync('ffmpeg', ['-v', 'error', '-nostdin', '-i', file, '-ac', '1', '-ar', String(SAMPLE_RATE), '-f', 's16le', 'pipe:1'], { windowsHide: true, maxBuffer: 1 << 30 });
-  return new Int16Array(raw.buffer, raw.byteOffset, raw.length / 2);
-}
-
-/** One track per microphone. Each person's lines sit where they fall in the conversation, with silence while the other speaks. */
-function buildTracks(dialogue: Dialogue, folder: string) {
-  const perMs = SAMPLE_RATE / 1000;
-  const lines = dialogue.segments.map(line => ({ ...line, pcm: pcmOf(line.file ?? path.join(folder, `${line.id}.wav`)) }));
-  const length = LEAD_IN_MS * perMs + lines.reduce((sum, line) => sum + line.pcm.length + GAP_MS * perMs, 0);
-  const tracks: Record<Speaker, Int16Array> = { guardian: new Int16Array(length), trainer: new Int16Array(length) };
-  let at = LEAD_IN_MS * perMs;
-  for (const line of lines) { tracks[line.speaker].set(line.pcm, at); at += line.pcm.length + GAP_MS * perMs; }
-  const files = {} as Record<Speaker, string>;
-  for (const speaker of ['guardian', 'trainer'] as const) {
-    const raw = path.join(folder, `${speaker}.s16le`); const wav = path.join(folder, `${speaker}.wav`);
-    writeFileSync(raw, Buffer.from(tracks[speaker].buffer));
-    execFileSync('ffmpeg', ['-v', 'error', '-nostdin', '-y', '-f', 's16le', '-ar', String(SAMPLE_RATE), '-ac', '1', '-i', raw, wav], { windowsHide: true });
-    files[speaker] = wav;
-  }
-  return { files, durationMs: length / perMs };
-}
+type Dialogue = Omit<Partial<GoldenDialogue>, 'segments'> & { id: string; petName: string; segments: Line[] };
 
 const bigrams = (text: string) => { const clean = text.replace(/[^\p{L}\p{N}]/gu, ''); return Array.from({ length: Math.max(0, clean.length - 1) }, (_, index) => clean.slice(index, index + 2)); };
 const overlap = (text: string, reference: Set<string>) => { const pairs = bigrams(text); return pairs.length ? pairs.filter(pair => reference.has(pair)).length / pairs.length : 0; };
@@ -87,20 +44,17 @@ async function verify(dialogue: Dialogue, withNote: boolean) {
   const folder = path.join(WORK, dialogue.id);
   mkdirSync(folder, { recursive: true });
   if (dialogue.segments.some(line => !line.file)) synthesize(dialogue.segments, folder);
-  const { files, durationMs } = buildTracks(dialogue, folder);
+  const { files, durationMs } = buildTracks(dialogue.segments, folder, LEAD_IN_MS);
   const server = await startServer(3390, { speech: 'real' });
   const uploadsBeforeConsent = { count: 0 };
   // %noloop plays the dialogue once. It starts when the microphone opens, so the lead-in covers joining the call.
-  const trainer = await launch('trainer', { audioFile: `${files.trainer}%noloop` });
-  const guardian = await launch('guardian', { audioFile: `${files.guardian}%noloop`, ...(withNote ? { videoFile: dogVideo() } : {}) });
+  const trainer = await launch('trainer', { audioFile: `${files.trainer}%noloop`, holdMicrophone: true });
+  const guardian = await launch('guardian', { audioFile: `${files.guardian}%noloop`, holdMicrophone: true, ...(withNote ? { videoFile: dogVideo() } : {}) });
   try {
     const started = Date.now();
     const invite = await createCaseAsTrainer(trainer.page, server.origin, dialogue.petName);
     await joinAsGuardian(guardian.page, invite);
-    await enterAsTrainer(trainer.page, dialogue.petName, false);
-    await guardian.page.reload();
-    await enterAsGuardian(guardian.page, false);
-    const id = /\/room\/([^/?]+)/.exec(trainer.page.url())![1];
+    const id = await enterTogether(trainer.page, guardian.page, dialogue.petName);
     const read = async () => (await trainer.page.request.get(`${server.origin}/api/coaching/consultations/${id}`)).json() as Promise<Consultation>;
     let consented = false;
     for (const { page } of [trainer, guardian]) page.on('request', request => { if (request.method() === 'PUT' && /\/(audio|frames)\//.test(request.url()) && !consented) uploadsBeforeConsent.count += 1; });
@@ -146,7 +100,7 @@ async function verify(dialogue: Dialogue, withNote: boolean) {
       catch: moment && { frames: momentFrames.length, bySpeaker: { guardian: momentFrames.filter(frame => frame.speaker === 'guardian').length, trainer: momentFrames.filter(frame => frame.speaker === 'trainer').length },
         earliestBeforeMs: moment.atMs - Math.min(...momentFrames.map(frame => frame.atMs)), latestAfterMs: Math.max(...momentFrames.map(frame => frame.atMs)) - moment.atMs, largestBytes: Math.max(...momentFrames.map(frame => frame.bytes)) },
       ...(withNote ? {
-        noteScore: labelled ? scoreDelivered(dialogue as GoldenDialogue, finished.note!) : null,
+        noteScore: labelled ? scoreDelivered(dialogue as unknown as GoldenDialogue, finished.note!) : null,
         noteSections: finished.note && { summary: finished.note.summary.length, guardianReports: finished.note.guardianReports.length, guidance: finished.note.guidance.length, tasks: finished.note.tasks.length, fallbackUsed: !!finished.note.fallbackUsed, warnings: finished.note.warnings.length },
         scenes: finished.scenes.map(scene => ({ atMs: scene.atMs, photos: scene.frameIds.length, state: scene.state, observations: scene.observations.map(item => item.text) })),
         errors: finished.errors,
@@ -160,10 +114,13 @@ async function verify(dialogue: Dialogue, withNote: boolean) {
   }
 }
 
+// The speaker goes on talking off script for ten seconds after the labelled sentence. The model wrote that down correctly, and it read as a mistake.
+const CLIPS_LONGER_THAN_THEIR_LABEL = new Set(['105_003_0478.wav']);
+
 function humanDialogue(clips: number): Dialogue {
   const root = path.resolve(readConfig().home, 'cache', 'eval', 'zeroth');
   const { samples } = JSON.parse(readFileSync(path.join(root, 'manifest.json'), 'utf8').replace(/^﻿/, '')) as { samples: { file: string; expected: string }[] };
-  return { id: `human-${clips}`, petName: '초코', segments: samples.slice(0, clips).map((sample, index) => ({ id: `h${index}`, speaker: index % 2 ? 'guardian' : 'trainer', text: sample.expected, file: path.join(root, sample.file) })) };
+  return { id: `human-${clips}`, petName: '초코', segments: samples.filter(sample => !CLIPS_LONGER_THAN_THEIR_LABEL.has(sample.file)).slice(0, clips).map((sample, index) => ({ id: `h${index}`, speaker: index % 2 ? 'guardian' : 'trainer', text: sample.expected, file: path.join(root, sample.file) })) };
 }
 
 loadLocalEnv();

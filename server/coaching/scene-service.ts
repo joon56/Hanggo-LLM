@@ -49,11 +49,13 @@ export function selectScenes({ frames, moments, segments }: Pick<Consultation, '
 export function createSceneService({ llm, store, callTimeoutMs = DEFAULT_CALL_TIMEOUT_MS }: Deps) {
   return {
     /** One failed scene never ends the analysis. Only cancellation throws. */
-    async analyze(consultation: Consultation, signal?: AbortSignal): Promise<Scene[]> {
+    async analyze(consultation: Consultation, signal?: AbortSignal, onProgress?: (done: number, total: number) => Promise<void>): Promise<Scene[]> {
       signal?.throwIfAborted();
       if (!llm.supportsVision) return [];
       const scenes: Scene[] = [];
-      for (const { atMs, frameIds } of selectScenes(consultation)) {
+      const selected = selectScenes(consultation);
+      for (const [index, { atMs, frameIds }] of selected.entries()) {
+        await onProgress?.(index, selected.length);
         const scene: Scene = { id: randomUUID(), atMs, frameIds, observations: [], state: 'failed' };
         try {
           const images = await Promise.all(frameIds.map(id => store.readFrame(consultation.id, id)));

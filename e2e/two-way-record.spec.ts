@@ -196,6 +196,8 @@ test('rejoining shows consent still on, and unchecking it stops the recording be
   await guardian.page.reload();
   const box = guardian.page.getByLabel(/AI 받아쓰기와 장면 저장에 동의합니다/);
   await expect(box).toBeChecked();
+  // People can check their microphone before anyone hears them.
+  await expect(guardian.page.getByRole('meter', { name: '마이크 입력' })).toHaveAttribute('data-heard', 'true', { timeout: 10_000 });
   await box.uncheck();
   const before = uploads.guardian.total();
   await guardian.page.getByRole('button', { name: '입장' }).click();
@@ -204,4 +206,12 @@ test('rejoining shows consent still on, and unchecking it stops the recording be
   await guardian.page.waitForTimeout(6000);
   expect(uploads.guardian.total()).toBe(before);
   await expect(room(guardian.page)).toHaveAttribute('data-recording', 'false');
+});
+
+test('reissuing the invite ends the call of whoever holds the old one', async () => {
+  const { trainer, guardian } = await connected();
+  const { cases: [{ id }] } = await (await trainer.page.request.get(`${server.origin}/api/coaching/cases`)).json() as { cases: { id: string }[] };
+  await trainer.page.request.post(`${server.origin}/api/coaching/cases/${id}/invite`, { headers: { Origin: server.origin } });
+  await expect(guardian.page.getByText(/다른 탭이나 기기에서 입장/)).toBeVisible();
+  await expect(room(trainer.page)).toHaveAttribute('data-peer-online', 'false');
 });

@@ -1,4 +1,4 @@
-import type { Caption, MomentNotice, Speaker, SpeechStatus } from '../domain/coaching';
+import { MAX_RECORDING_MS, type Caption, type MomentNotice, type Speaker, type SpeechStatus } from '../domain/coaching';
 import { estimateOffset, type ClockSample } from './clock';
 
 export type PeerMedia = { camera: boolean; microphone: boolean; screen: boolean };
@@ -25,6 +25,8 @@ export type CallSnapshot = {
   localStream: MediaStream; localScreen: MediaStream | null; remoteStream: MediaStream | null; remoteScreen: MediaStream | null;
   consent: Record<Speaker, boolean>; recording: boolean; consultationState: string;
   captions: Caption[]; speech: SpeechStatus; lastMoment: MomentNotice | null; captionLatencyMs: number | null; uploadLost: boolean;
+  /** Minutes of recording left near the limit, 0 once it stopped, otherwise null. */
+  recordingLeftMinutes: number | null;
 };
 export type SessionRecorder = {
   start(clock: () => number): void; stop(options: { flush: boolean }): void;
@@ -46,6 +48,9 @@ const DISCONNECT_GRACE_MS = 5000;
 const CONNECT_LIMIT_MS = 30000;
 const FINAL_UPLOAD_WAIT_MS = 4000;
 const STATS_INTERVAL_MS = 1000;
+const RECORDING_WARNING_MS = 5 * 60 * 1000;
+// Stops a little early, since the last window has to end before the limit to be accepted.
+const RECORDING_STOP_MARGIN_MS = 3000;
 const CLOCK_PING_DELAYS_MS = [0, 250, 500];
 const NO_STATS: CallStats = { inboundVideoFrames: 0, inboundAudioBytes: 0, inboundAudioEnergy: 0, roundTripMs: null, relayed: false };
 
@@ -82,7 +87,7 @@ export class CallSession {
       microphoneOn: !!audio, cameraOn: !!video, hasCamera: !!video, hasMicrophone: !!audio,
       localStream: options.localStream, localScreen: null, remoteStream: null, remoteScreen: null,
       consent: { guardian: false, trainer: false }, recording: false, consultationState: 'live',
-      captions: [], speech: 'off', lastMoment: null, captionLatencyMs: null, uploadLost: false };
+      captions: [], speech: 'off', lastMoment: null, captionLatencyMs: null, uploadLost: false, recordingLeftMinutes: null };
   }
 
   snapshot() { return this.snapshotValue; }
@@ -103,7 +108,7 @@ export class CallSession {
   start() {
     this.buildPeer();
     this.signal = this.options.openSignal(message => { void this.handleSignal(message); });
-    this.statsTimer = setInterval(() => { void this.readStats(); }, STATS_INTERVAL_MS);
+    this.statsTimer = setInterval(() => { this.checkRecordingLimit(); void this.readStats(); }, STATS_INTERVAL_MS);
   }
 
   private buildPeer() {
@@ -193,9 +198,9 @@ export class CallSession {
     }
   }
 
+  /** Samples are kept across reconnects, because the fastest round trip of the whole call is the most trustworthy. */
   private measureClock() {
     this.clockTimers.forEach(clearTimeout);
-    this.clockSamples = [];
     this.clockTimers = CLOCK_PING_DELAYS_MS.map(delay => setTimeout(() => this.signal?.send({ type: 'ping', at: Date.now() }), delay));
   }
 
@@ -204,8 +209,17 @@ export class CallSession {
     return Date.now() + this.clockOffset! - this.recordingStartedAt!;
   }
 
+  private checkRecordingLimit() {
+    if (!this.snapshotValue.recording || this.recordingStartedAt === undefined || this.clockOffset === undefined) return;
+    const left = MAX_RECORDING_MS - this.recordingNow();
+    const minutes = left <= RECORDING_STOP_MARGIN_MS ? 0 : left <= RECORDING_WARNING_MS ? Math.ceil(left / 60000) : null;
+    if (minutes !== this.snapshotValue.recordingLeftMinutes) this.update({ recordingLeftMinutes: minutes });
+    if (minutes === 0) this.options.recorder?.stop({ flush: true });
+  }
+
   private syncRecorder() {
-    const { recording, consultationState } = this.snapshotValue;
+    const { recording, consultationState, recordingLeftMinutes } = this.snapshotValue;
+    if (recordingLeftMinutes === 0 && recording) return;
     if (recording && this.recordingStartedAt !== undefined && this.clockOffset !== undefined) this.options.recorder?.start(() => this.recordingNow());
     // A withdrawal means stop now and send nothing more. The end of the consultation still owes the last words.
     else if (!recording) this.options.recorder?.stop({ flush: consultationState !== 'live' });

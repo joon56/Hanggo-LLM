@@ -4,7 +4,7 @@ import { login } from '../api';
 import { createCase, deleteCase, getCase, getMe, listCases, reissueInvite, startConsultation } from '../coaching-api';
 import type { CaseDetail } from '../coaching-api';
 import { CaseBrief } from './CaseBrief';
-import { apiMessage, STATE_LABEL } from './copy';
+import { apiMessage, progressLabel, STATE_LABEL } from './copy';
 import './call.css';
 import './review.css';
 
@@ -108,7 +108,7 @@ export function TrainerHome({ navigate, hostname = location.hostname }: { naviga
           {item.consultations.some(consultation => consultation.state !== 'live') && <ul className="coach-history" aria-label={`${item.petName} 지난 상담`}>
             {item.consultations.filter(consultation => consultation.state !== 'live').map(consultation => <li key={consultation.id}>
               <span>{new Date(consultation.createdAt).toLocaleString('ko-KR', { month: 'numeric', day: 'numeric', hour: 'numeric', minute: 'numeric' })}</span>
-              <span className="review-state" data-state={consultation.state}>{STATE_LABEL[consultation.state]}</span>
+              <span className="review-state" data-state={consultation.state}>{STATE_LABEL[consultation.state]}{consultation.state === 'processing' && consultation.organizing ? ` · ${progressLabel(consultation.organizing)}` : ''}</span>
               <button className="call-link coach-link" onClick={() => navigate(`/review/${consultation.id}`)}>{consultation.state === 'review' ? '검토하기' : '열기'}</button>
             </li>)}
           </ul>}

@@ -53,7 +53,7 @@ test('the next session brief shows the last tasks and what the guardian recorded
   await expect(when).toBeVisible({ timeout: 60_000 });
   const today = await when.getAttribute('max');
   await when.fill(today!);
-  await guardian.page.getByRole('button', { name: '저장' }).click();
+  await guardian.page.getByRole('button', { name: '저장', exact: true }).click();
   await expect(guardian.page.getByText(/저장했습니다/)).toBeVisible();
 
   // The brief is the trainer's alone.

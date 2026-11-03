@@ -23,7 +23,7 @@ export function GuardianDelivery({ caseId, consultationId }: { caseId: string; c
   if (!delivery) return <p role="status" className="coach-hint">상담일지를 불러오는 중입니다.</p>;
   const { note, scenes } = delivery;
   return <article className="delivery" aria-label="확정된 상담일지">
-    <h2>훈련사가 확정한 상담일지</h2>
+    <div className="delivery-head"><h2>훈련사가 확정한 상담일지</h2><button type="button" className="call-link" onClick={() => window.print()}>인쇄·PDF 저장</button></div>
     {note.safetyFlags.length > 0 && <p role="alert" className="review-safety"><WarningIcon size={16} />{note.safetyFlags.join(', ')} 내용이 있었습니다. 과제보다 동물병원 상담을 먼저 확인해 주세요.</p>}
     <Claims title="핵심 요약" claims={note.summary} />
     <Claims title="고민" claims={note.concerns} />

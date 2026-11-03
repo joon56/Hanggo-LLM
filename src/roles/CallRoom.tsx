@@ -21,6 +21,7 @@ function LiveCall({ consultationId, room, choice, forceRelay, navigate }: { cons
   const goHome = useCallback(() => {
     if (left.current) return;
     left.current = true;
+    setNotice('상담을 마치고 있습니다. 마지막 기록을 보내는 중입니다.');
     void (sessionRef.current?.finish() ?? Promise.resolve()).finally(() => navigate(room.home));
   }, [navigate, room.home]);
   const onClosedForGood = useCallback((code: number) => {
@@ -64,10 +65,10 @@ export function CallRoom({ consultationId, navigate, forceRelay = new URLSearchP
   const openPreview = useCallback((preference: DevicePreference) => openDevices({ ...preference, facingMode: preference.facingMode ?? (room?.role === 'guardian' && isPhone() ? 'environment' : undefined) }), [room?.role]);
   if (error) return <main className="coach-page"><section className="coach-card coach-narrow"><p role="alert" className="coach-error">{error}</p></section></main>;
   if (!room) return <main className="coach-page"><p role="status">상담 정보를 불러오는 중입니다.</p></main>;
-  if (!choice) return <PreJoin petName={room.petName} role={room.role} caseId={room.caseId} consented={room.consented} relayAvailable={room.ice.relayAvailable} openPreview={openPreview} onJoin={next => {
+  if (!choice) return <PreJoin petName={room.petName} role={room.role} caseId={room.caseId} consented={room.consented} relayAvailable={room.ice.relayAvailable} openPreview={openPreview} onJoin={async next => {
     // Before connecting, so a withdrawal on this screen stops recording before this browser could start it.
-    if (next.consent === room.consented) { setChoice(next); return; }
-    setConsent(consultationId, next.consent).then(() => setChoice(next), cause => setError(apiMessage(cause, '동의 상태를 바꾸지 못했습니다. 다시 시도해 주세요.')));
+    if (next.consent !== room.consented) await setConsent(consultationId, next.consent);
+    setChoice(next);
   }} />;
   return <LiveCall consultationId={consultationId} room={room} choice={choice} forceRelay={forceRelay} navigate={navigate} />;
 }

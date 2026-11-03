@@ -43,7 +43,7 @@ export async function startServer(port: number, options: { turn?: boolean; speec
 }
 
 export type Participant = { browser: Browser; page: Page };
-export async function launch(role: 'guardian' | 'trainer', options: { noCamera?: boolean; audioFile?: string; videoFile?: string; recordVideoDir?: string; viewport?: { width: number; height: number } } = {}): Promise<Participant> {
+export async function launch(role: 'guardian' | 'trainer', options: { noCamera?: boolean; holdMicrophone?: boolean; audioFile?: string; videoFile?: string; recordVideoDir?: string; viewport?: { width: number; height: number } } = {}): Promise<Participant> {
   const browser = await chromium.launch({ channel: 'chrome', headless: true, args: ['--use-fake-ui-for-media-stream', '--use-fake-device-for-media-stream',
     `--use-file-for-fake-video-capture=${options.videoFile ?? path.join(MEDIA, `${role}.y4m`)}`, `--use-file-for-fake-audio-capture=${options.audioFile ?? path.join(MEDIA, `${role}-speech.wav`)}`, '--autoplay-policy=no-user-gesture-required'] });
   const viewport = options.viewport ?? { width: 1100, height: 700 };
@@ -57,6 +57,11 @@ export async function launch(role: 'guardian' | 'trainer', options: { noCamera?:
       setInterval(() => { context.fillStyle = `hsl(${frame++ % 360} 70% 50%)`; context.fillRect(0, 0, 640, 360); }, 50);
       return canvas.captureStream(15);
     };
+  });
+  if (options.holdMicrophone) await page.addInitScript(() => {
+    const original = navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices);
+    const opened = new Promise<void>(resolve => { (window as unknown as { openMicrophone(): void }).openMicrophone = resolve; });
+    navigator.mediaDevices.getUserMedia = async constraints => { await opened; return original(constraints); };
   });
   if (options.noCamera) await page.addInitScript(() => {
     const original = navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices);
@@ -101,6 +106,22 @@ export async function enterAsGuardian(page: Page, consent = false) {
   if (consent) await page.getByLabel(/AI 받아쓰기와 장면 저장에 동의합니다/).check();
   await page.getByRole('button', { name: '입장' }).click();
   await expect(room(page)).toBeVisible();
+}
+
+/**
+ * Goes through the real buttons, with both microphones held shut until both people reach their entry screen.
+ * A fake microphone starts playing its file the moment it opens, so opening them one after the other
+ * would put one person's lines seconds ahead of the other's. Needs holdMicrophone on both.
+ */
+export async function enterTogether(trainer: Page, guardian: Page, petName = '초코') {
+  await trainer.getByRole('button', { name: `${petName} 상담 시작` }).click();
+  await trainer.waitForURL(/\/room\//);
+  await guardian.reload();
+  await guardian.getByRole('button', { name: '상담 입장', exact: true }).click();
+  await guardian.waitForURL(/\/room\//);
+  await Promise.all([trainer, guardian].map(page => page.evaluate(() => (window as unknown as { openMicrophone(): void }).openMicrophone())));
+  for (const page of [trainer, guardian]) { await page.getByRole('button', { name: '입장' }).click(); await expect(room(page)).toBeVisible(); }
+  return /\/room\/([^/?]+)/.exec(trainer.url())![1];
 }
 
 export async function expectFlowing(page: Page) {

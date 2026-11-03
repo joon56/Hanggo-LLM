@@ -111,6 +111,10 @@ export function attachSignal(server: Server, { store, allowedOrigins, resolveAct
       const room = rooms.get(consultationId);
       for (const role of ['trainer', 'guardian'] as const) send(room?.members[role]?.socket, message);
     },
+    /** An invite was reissued because the wrong person may hold the old one, so their open call ends too. */
+    closeGuardian(consultationId: string) {
+      rooms.get(consultationId)?.members.guardian?.socket.close(REPLACED, 'Invite reissued.');
+    },
     notify(consultation: Consultation) {
       const room = rooms.get(consultation.id);
       if (!room) return;

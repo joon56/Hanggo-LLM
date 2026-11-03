@@ -3,7 +3,7 @@ import { ArrowLeftIcon, CheckCircleIcon, PlusIcon, TrashIcon, WarningIcon } from
 import { approveConsultation, frameUrl, getCase, getConsultation, getMe, regenerateNote, saveNote, setObservation, setSegment } from '../coaching-api';
 import type { Consultation, Moment, Segment } from '../domain/coaching';
 import type { BehaviorEntry, Claim, CoachingNote, CoachingTask, Evidence, Scene, UnknownField } from '../domain/coaching-note';
-import { apiMessage, clockLabel, SPEAKER_NAME, STATE_LABEL } from './copy';
+import { apiMessage, clockLabel, progressLabel, SPEAKER_NAME, STATE_LABEL } from './copy';
 import './call.css';
 import './review.css';
 
@@ -189,12 +189,12 @@ export function ReviewRoom({ consultationId, navigate }: { consultationId: strin
       {consultation.state === 'review' && <div className="coach-actions review-actions">
         <button type="button" className="button secondary" disabled={pending || readOnly} onClick={() => { if (window.confirm('지금 초안을 버리고 다시 만들까요? 직접 고친 내용도 사라집니다.')) void act(async () => { const next = await regenerateNote(consultationId); savedEdits.current = edits.current; adopt(next); }); }}>일지 다시 만들기</button>
         <button type="button" className="button secondary" disabled={pending || readOnly} onClick={() => void act(async () => { await save(); setNotice('저장했습니다.'); })}>임시 저장</button>
-        <button type="button" className="button primary" disabled={pending || readOnly || !note} onClick={() => { if (window.confirm('확정하면 보호자에게 전달되고 더 고칠 수 없습니다. 확정할까요?')) void act(async () => { await save(); adopt(await approveConsultation(consultationId)); setNotice('확정해 보호자에게 전달했습니다.'); }); }}>확정하고 보호자에게 전달</button>
+        <button type="button" className="button primary" disabled={pending || readOnly || !note} onClick={() => { if (window.confirm('확정하면 보호자에게 전달되고 더 고칠 수 없습니다. 확정할까요?')) void act(async () => { await save(); const next = await approveConsultation(consultationId); savedEdits.current = edits.current; adopt(next); setNotice('확정해 보호자에게 전달했습니다.'); }); }}>확정하고 보호자에게 전달</button>
       </div>}
     </header>
     {notice && <p role="status" className="review-notice"><CheckCircleIcon size={16} />{notice}</p>}
     {error && <p role="alert" className="coach-error">{error}</p>}
-    {consultation.state === 'processing' && <p role="status" className="review-notice">상담을 정리하고 있습니다. 끝나면 이 화면이 저절로 바뀝니다.</p>}
+    {consultation.state === 'processing' && <p role="status" className="review-notice">상담을 정리하고 있습니다{consultation.organizing ? ` (${progressLabel(consultation.organizing)})` : ''}. 끝나면 이 화면이 저절로 바뀝니다.</p>}
     {consultation.state === 'interrupted' && <p role="alert" className="coach-warning">서버가 다시 시작되어 상담이 중단되었습니다. 저장된 전사만 볼 수 있습니다.</p>}
     {note && note.safetyFlags.length > 0 && <SafetyFlags note={note} readOnly={readOnly} onChange={dismissedFlags => edit({ ...note, dismissedFlags })} />}
     {note?.methodReview && <p className="coach-warning">체벌이나 강압적 방법이 언급되었습니다. 보호자 전달본에서는 이 내용을 뺍니다.</p>}

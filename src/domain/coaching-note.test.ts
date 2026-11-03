@@ -377,7 +377,202 @@ describe('more that must not pass', () => {
   it('holds behavior titles to the same evidence', () => {
     const entry = (title: string) => assemble({ behaviors: [{ title, context: [claim('초인종을 누르면 현관으로 뛰어간다', 's01')], behavior: [], response: [], unknown: [] }] });
     expect(entry('초인종에 짖음').note.behaviors).toHaveLength(1);
-    expect(entry('초인종에 하루 10번 짖음').note.behaviors).toEqual([]);
-    expect(entry('민수 씨 귀가 때 짖음').note.behaviors).toEqual([]);
+    expect(entry('초인종에 하루 10번 짖음').note.behaviors[0].title).toBe('행동 기록');
+    expect(entry('민수 씨 귀가 때 짖음').note.behaviors[0].title).toBe('행동 기록');
+  });
+});
+
+describe('a short answer and its question', () => {
+  const asked = consultation({ segments: [segment('q', 'trainer', 0, '한 번 짖기 시작하면 얼마나 오래 짖나요?'), segment('a', 'guardian', 3000, '삼십 초 정도요.')] });
+  const report = (text: string) => assembleNote({ ...blank, guardianReports: [claim(text, 's02')] }, buildNoteSource(asked, info), 'now');
+  it('may use the words of the question, so the sentence says what the answer was about', () => {
+    expect(report('한 번 짖기 시작하면 삼십 초 정도 짖음').violations).toEqual([]);
+  });
+  it('still needs its numbers in the answer itself', () => {
+    expect(report('한 번 짖기 시작하면 사십 초 정도 짖음').violations).toHaveLength(1);
+  });
+  it('still rejects words from nowhere', () => {
+    expect(report('산책 나가면 낯선 사람에게 달려듦').violations).toHaveLength(1);
+  });
+});
+
+describe('a sentence whose citation falls short', () => {
+  const said = consultation({ segments: [
+    segment('p', 'trainer', 0, '초인종이 울리면 매트로 가는 연습을 할 겁니다. 소리를 작게 틀고 매트에 가면 바로 간식을 주세요.'),
+    segment('x', 'guardian', 4000, '초인종에 매트로 가는 건 어려울 것 같아요.'),
+    segment('t', 'trainer', 8000, '과제는 보호자님이 하루 두 번 다음 상담까지 해 주세요.'),
+  ] });
+  const task = (text: string, ...evidence: string[]) => ({ text, who: null, frequency: null, until: null, successCriteria: null, evidence });
+  const made = (raw: Partial<RawNote>) => assembleNote({ ...blank, ...raw }, buildNoteSource(said, info), 'now');
+  it('points to the lines that really say it, rather than losing a true task', () => {
+    const { note, violations } = made({ tasks: [task('초인종이 울리면 매트로 가는 연습을 하루 두 번 하기', 's03')] });
+    expect(violations).toEqual([]);
+    expect(note.tasks[0].evidence.map(item => item.id)).toEqual(['p', 't']);
+  });
+  it('only looks through what the right person said', () => {
+    const { note } = made({ guidance: [claim('초인종에 매트로 가는 건 어려울 것 같음', 's03')] });
+    expect(note.guidance).toEqual([]);
+  });
+  it('still rejects words nobody said', () => {
+    expect(made({ tasks: [task('공원에서 자전거 타는 사람을 보면 앉히기', 's03')] }).note.tasks).toEqual([]);
+  });
+  it('does not find a number on another line for a sentence that made it up', () => {
+    expect(made({ tasks: [task('초인종이 울리면 매트로 가는 연습을 하루 다섯 번 하기', 's03')] }).note.tasks).toEqual([]);
+  });
+});
+
+describe('one fact in one place', () => {
+  const said = consultation({ segments: [segment('a', 'guardian', 0, '택배 기사님이 초인종을 누르면 현관으로 뛰어가서 계속 짖어요'), segment('b', 'guardian', 4000, '지금은 사료 알갱이를 쓰고 있어요'), segment('c', 'trainer', 8000, '귀가 앞으로 서 있네요')] });
+  const entry = (title: string, text: string, alias: string) => ({ title, context: [], behavior: [claim(text, alias)], response: [], unknown: [] });
+  const made = (raw: Partial<RawNote>) => assembleNote({ ...blank, ...raw }, buildNoteSource(said, info), 'now');
+  it('leaves a fact under its behavior when the report only repeats it', () => {
+    const { note } = made({ behaviors: [entry('초인종에 짖음', '택배 기사님이 초인종을 누르면 현관으로 뛰어가서 짖음', 's01')],
+      guardianReports: [claim('초코는 택배 기사님이 초인종을 누르면 현관으로 뛰어가서 계속 짖음', 's01'), claim('지금은 사료 알갱이를 씀', 's02')] });
+    expect(note.guardianReports.map(item => item.text)).toEqual(['지금은 사료 알갱이를 씀']);
+  });
+  it('does the same for a trainer observation', () => {
+    const { note } = made({ behaviors: [entry('짖음', '귀가 앞으로 서 있음', 's03')], trainerObservations: [claim('귀가 앞으로 서 있음', 's03')] });
+    expect(note.trainerObservations).toEqual([]);
+  });
+  it('removes nothing from a report that says something else', () => {
+    const { note } = made({ behaviors: [entry('짖음', '귀가 앞으로 서 있음', 's03')], guardianReports: [claim('지금은 사료 알갱이를 씀', 's02')] });
+    expect(note.guardianReports).toHaveLength(1);
+  });
+});
+
+describe('finding lines for a sentence, carefully', () => {
+  const task = (text: string, ...evidence: string[]) => ({ text, who: null, frequency: null, until: null, successCriteria: null, evidence });
+  const made = (lines: Segment[], raw: Partial<RawNote>) => assembleNote({ ...blank, ...raw }, buildNoteSource(consultation({ segments: lines }), info), 'now');
+  it('does not turn a question into a fact because an answer was cited', () => {
+    const lines = [segment('q', 'trainer', 0, '아이 손을 문 적이 있나요?'), segment('a', 'guardian', 3000, '아니요, 그런 적 없어요.')];
+    for (const raw of [{ summary: [claim('아이 손을 문 적이 있음', 's02')] }, { concerns: [claim('아이 손을 문 적이 있음', 's02')] }, { behaviors: [{ title: '입질', context: [], behavior: [claim('아이 손을 문 적이 있음', 's02')], response: [], unknown: [] }] }])
+      expect(JSON.stringify(made(lines, raw).note)).not.toContain('아이 손을 문 적이 있음');
+  });
+  it('does not take a number from a line the sentence never cited', () => {
+    const lines = [segment('m', 'trainer', 0, '매트 연습은 하루에 세 번 해 주세요'), segment('r', 'trainer', 3000, '과제는 이렇게 하겠습니다'), segment('d', 'trainer', 6000, '초인종 연습도 같이 합니다')];
+    expect(made(lines, { tasks: [task('초인종 연습은 하루에 세 번 하기', 's02')] }).note.tasks).toEqual([]);
+  });
+  it('does not take a line that says the opposite', () => {
+    const lines = [segment('n', 'guardian', 0, '아이 손을 문 적은 없어요'), segment('o', 'guardian', 3000, '오늘 날씨가 좋네요')];
+    expect(made(lines, { guardianReports: [claim('아이 손을 문 적이 있음', 's02')] }).note.guardianReports).toEqual([]);
+  });
+  it('does not reach far across the conversation', () => {
+    const filler = Array.from({ length: 10 }, (_, index) => segment(`f${index}`, 'trainer', 3000 * (index + 1), '네 그렇군요'));
+    const lines = [segment('p', 'trainer', 0, '초인종이 울리면 매트로 가는 연습을 할 겁니다'), ...filler, segment('t', 'trainer', 60000, '과제는 보호자님이 해 주세요')];
+    expect(made(lines, { tasks: [task('초인종이 울리면 매트로 가는 연습을 하기', 's12')] }).note.tasks).toEqual([]);
+  });
+});
+
+describe('a behavior with a bad title', () => {
+  const said = consultation({ segments: [segment('a', 'guardian', 0, '혼자 두면 계속 짖어요')] });
+  const entry = (title: string) => ({ title, context: [claim('혼자 두면 계속 짖음', 's01')], behavior: [], response: [], unknown: [] });
+  const made = (title: string) => assembleNote({ ...blank, behaviors: [entry(title)] }, buildNoteSource(said, info), 'now');
+  it('keeps its sentences under a plain title, since they are fine', () => {
+    for (const title of ['분리불안 짖음', '하루 10번 짖음', 'guardianReports', 'unknown']) {
+      const { note, violations } = made(title);
+      expect(note.behaviors[0], title).toMatchObject({ title: '행동 기록', context: [expect.objectContaining({ text: '혼자 두면 계속 짖음' })] });
+      expect(violations, title).toEqual([]);
+    }
+  });
+  it('leaves a good title alone', () => {
+    expect(made('혼자 있을 때 짖음').note.behaviors[0].title).toBe('혼자 있을 때 짖음');
+  });
+});
+
+describe('names', () => {
+  const said = consultation({ segments: [segment('a', 'guardian', 0, '초인종이 울리면 짖어요')] });
+  const reasons = (text: string) => assembleNote({ ...blank, summary: [claim(text, 's01')] }, buildNoteSource(said, info), 'now').violations.flatMap(item => item.reasons).join();
+  it('does not mistake the end of a word for a name', () => {
+    for (const text of ['초인종이 울리면 짖는다고 보호자가 말함', '초코의 보호자는 초인종이 울리면 짖는다고 함', '초인종이 울리면 짖는 것을 지금은 훈련사가 봄']) expect(reasons(text), text).not.toContain('이름');
+  });
+  it('still catches a full name', () => {
+    expect(reasons('이민호 선생님이 초인종이 울리면 짖는다고 함')).toContain('이민호');
+    expect(reasons('최수민 훈련사가 초인종이 울리면 짖는다고 함')).toContain('최수민');
+  });
+});
+
+describe('repeats that are not repeats', () => {
+  const said = consultation({ segments: [segment('a', 'guardian', 0, '사람을 보면 짖어요'), segment('b', 'guardian', 3000, '다른 사람을 보면 짖지 않아요')] });
+  const entry = { title: '짖음', context: [], behavior: [claim('사람을 보면 짖음', 's01')], response: [], unknown: [] };
+  it('keeps a sentence that says the opposite of one under a behavior', () => {
+    const { note } = assembleNote({ ...blank, behaviors: [entry], guardianReports: [claim('사람을 보면 짖지 않음', 's02')] }, buildNoteSource(said, info), 'now');
+    expect(note.guardianReports).toHaveLength(1);
+  });
+  it('keeps a sentence with a different count', () => {
+    const counted = consultation({ segments: [segment('a', 'guardian', 0, '하루에 세 번 짖어요'), segment('b', 'guardian', 3000, '주말에는 하루에 다섯 번 짖어요')] });
+    const { note } = assembleNote({ ...blank, behaviors: [{ ...entry, behavior: [claim('하루에 세 번 짖음', 's01')] }], guardianReports: [claim('하루에 다섯 번 짖음', 's02')] }, buildNoteSource(counted, info), 'now');
+    expect(note.guardianReports).toHaveLength(1);
+  });
+});
+
+describe('a memo stays private', () => {
+  it('does not turn into a warning the guardian receives', () => {
+    const said = consultation({ segments: [segment('a', 'guardian', 0, '초인종이 울리면 짖어요')], moments: [{ id: 'm', atMs: 0, createdBy: 'trainer', text: '구토 이력 확인 필요', frameIds: [] }] });
+    const { note } = assembleNote({ ...blank, guardianReports: [claim('초인종이 울리면 짖음', 's01')], safetyFlags: ['구토'] }, buildNoteSource(said, info), 'now');
+    expect(deliveryOf({ ...note, approvedAt: 'x' }).safetyFlags).toEqual([]);
+  });
+  it('still raises what was said aloud', () => {
+    const said = consultation({ segments: [segment('a', 'guardian', 0, '어제 구토를 했어요')], moments: [{ id: 'm', atMs: 0, createdBy: 'trainer', text: '구토 이력 확인 필요', frameIds: [] }] });
+    expect(assembleNote(blank, buildNoteSource(said, info), 'now').note.safetyFlags).toContain('구토');
+  });
+});
+
+describe('words against a method reach the guardian', () => {
+  it('delivers advice not to use force, and holds back the force itself', () => {
+    const said = consultation({ segments: [segment('t', 'trainer', 0, '목줄을 세게 당기지 마세요'), segment('g', 'guardian', 3000, '코를 때린 적이 있어요')] });
+    const { note } = assembleNote({ ...blank, guidance: [claim('목줄을 세게 당기지 말라고 안내함', 's01')], guardianReports: [claim('코를 때린 적이 있음', 's02')] }, buildNoteSource(said, info), 'now');
+    const delivered = deliveryOf({ ...note, approvedAt: 'x' });
+    expect(delivered.guidance).toHaveLength(1);
+    expect(delivered.guidance[0].evidence).toHaveLength(1);
+    expect(delivered.guardianReports).toEqual([]);
+  });
+});
+
+describe('improvement in any form', () => {
+  it('is not something a note can claim', () => {
+    const said = consultation({ segments: [segment('a', 'guardian', 0, '초코가 많이 짖어요')] });
+    for (const text of ['초코가 많이 좋아진 것 같음', '초코가 곧 좋아질 것임', '초코가 좋아져서 많이 짖음', '초코가 많이 나아진 것 같음', '초코가 개선된 것 같음'])
+      expect(assembleNote({ ...blank, summary: [claim(text, 's01')] }, buildNoteSource(said, info), 'now').note.summary, text).toEqual([]);
+  });
+});
+
+describe('details of a task after the transcript changes', () => {
+  it('blocks approval of a frequency its corrected evidence no longer says', () => {
+    const said = (text: string) => consultation({ segments: [segment('t', 'trainer', 0, text)] });
+    const before = said('매트 연습을 하루 세 번 해 주세요');
+    const { note } = assembleNote({ ...blank, tasks: [{ text: '매트 연습 하기', who: null, frequency: '하루 세 번', until: null, successCriteria: null, evidence: ['s01'] }] }, buildNoteSource(before, info), 'now');
+    const after = said('매트 연습을 하루 두 번 해 주세요');
+    const { note: refreshed } = normalizeEditedNote(note, note, after, info);
+    expect(approvalProblems(refreshed).join()).toContain('하루 세 번');
+  });
+});
+
+describe('speech the note did not use', () => {
+  it('points to what might matter, not to questions and small talk', () => {
+    const said = consultation({ segments: [
+      segment('q', 'trainer', 0, '한 번 짖으면 얼마나 오래 짖나요?'), segment('r', 'trainer', 3000, '요즘 어떤 상황인지 말씀해 주세요.'), segment('h', 'trainer', 6000, '안녕하세요, 오늘 잘 부탁드립니다.'),
+      segment('k', 'guardian', 9000, '네, 알겠습니다.'), segment('f', 'guardian', 12000, '밤에는 현관 앞에서 잠을 자요.'),
+    ] });
+    expect(assembleNote(blank, buildNoteSource(said, info), 'now').note.uncitedSegmentIds).toEqual(['f']);
+  });
+});
+
+describe('the next brief', () => {
+  it('carries what was written under behaviors, which is where most of what a guardian said lives', () => {
+    const said = consultation({ segments: [segment('a', 'guardian', 0, '초인종이 울리면 하루에 세 번쯤 짖어요')] });
+    const { note } = assembleNote({ ...blank, behaviors: [{ title: '초인종에 짖음', context: [], behavior: [claim('초인종이 울리면 하루에 세 번쯤 짖음', 's01')], response: [], unknown: [] }] }, buildNoteSource(said, info), 'now');
+    const context = briefContextOf({ ...said, createdAt: '2026-11-04T00:00:00Z', note: { ...note, approvedAt: '2026-11-04T01:00:00Z' } }, info, 'Asia/Seoul');
+    expect(context.items).toContainEqual(expect.objectContaining({ text: '초인종이 울리면 하루에 세 번쯤 짖음', category: 'owner_report' }));
+  });
+});
+
+describe('record style', () => {
+  it('still wants what the sentence reports to have been said', () => {
+    const said = consultation({ segments: [segment('t', 'trainer', 0, '화내지 마시고 그냥 기다려 주세요')] });
+    expect(assembleNote({ ...blank, guidance: [claim('산책을 할 것', 's01')] }, buildNoteSource(said, info), 'now').note.guidance).toEqual([]);
+  });
+  it('does not count the wording of a record against a sentence', () => {
+    const said = consultation({ segments: [segment('t', 'trainer', 0, '화내지 마시고 그냥 기다려 주세요')] });
+    expect(assembleNote({ ...blank, guidance: [claim('화내지 말 것을 안내함', 's01')] }, buildNoteSource(said, info), 'now').violations).toEqual([]);
   });
 });

@@ -19,6 +19,9 @@ export type MomentNotice = Pick<Moment, 'id' | 'atMs' | 'createdBy'>;
 export type Caption = Pick<Segment, 'id' | 'speaker' | 'startMs' | 'endMs' | 'text' | 'state' | 'echoSuspect'>;
 export type Moment = { id: string; atMs: number; createdBy: Speaker; text?: string; frameIds: string[] };
 export type FrameRef = { id: string; atMs: number; source: 'camera' | 'screen'; speaker: Speaker; bytes: number };
+/** How long one consultation is recorded. Calls can go on past it. */
+export const MAX_RECORDING_MS = 60 * 60 * 1000;
+export type OrganizingProgress = { stage: 'scenes' | 'note'; done: number; total: number };
 export type Consultation = {
   id: string; caseId: string; createdAt: string; state: ConsultationState;
   /** Whether transcription and scene capture may run. Separate from state because the call continues without it. */
@@ -29,6 +32,8 @@ export type Consultation = {
   scenes: Scene[]; note?: CoachingNote;
   /** A draft is being generated, so the review screen waits instead of offering stale text. */
   noteGenerating?: boolean;
+  /** How far work after the call has got, since a long consultation can take many minutes. */
+  organizing?: OrganizingProgress;
 };
 export const captionOf = ({ id, speaker, startMs, endMs, text, state, echoSuspect }: Segment): Caption => ({ id, speaker, startMs, endMs, text, state, echoSuspect });
 export type TaskLogStatus = 'done' | 'partial' | 'skipped';
@@ -88,7 +93,7 @@ const ECHO_WINDOW_MS = 3000;
 const ECHO_MIN_CHARACTERS = 6;
 const ECHO_MIN_SIMILARITY = 0.7;
 const comparable = (text: string) => text.toLowerCase().replace(/[^\p{L}\p{N}]/gu, '');
-function similarity(left: string, right: string) {
+export function similarity(left: string, right: string) {
   const counts = new Map<string, number>();
   for (let index = 0; index < left.length - 1; index += 1) { const pair = left.slice(index, index + 2); counts.set(pair, (counts.get(pair) ?? 0) + 1); }
   let shared = 0;

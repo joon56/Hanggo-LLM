@@ -1,0 +1,107 @@
+{
+  "passed": true,
+  "steps": [
+    {
+      "name": "훈련사가 상담 사례와 초대 링크를 만듭니다",
+      "atSeconds": 7
+    },
+    {
+      "name": "보호자가 초대 링크로 들어옵니다",
+      "atSeconds": 10
+    },
+    {
+      "name": "두 브라우저가 실제 WebRTC로 연결되어 서로의 영상과 소리를 받습니다",
+      "atSeconds": 14
+    },
+    {
+      "name": "동의 전에는 음성과 사진을 보내지 않습니다",
+      "atSeconds": 17
+    },
+    {
+      "name": "양쪽이 동의해 기록을 시작합니다",
+      "atSeconds": 19
+    },
+    {
+      "name": "각자 마이크에서 온 말이 화자 이름과 함께 자막으로 나옵니다",
+      "atSeconds": 40
+    },
+    {
+      "name": "훈련사가 화면을 공유합니다. 테스트에서는 캔버스가 바탕화면을 대신합니다",
+      "atSeconds": 47
+    },
+    {
+      "name": "보호자가 장면을 캐치합니다. 양쪽 브라우저가 앞뒤 사진을 올립니다",
+      "atSeconds": 54
+    },
+    {
+      "name": "훈련사가 장면에 메모를 남깁니다",
+      "atSeconds": 57
+    },
+    {
+      "name": "상담을 끝내면 전사, 장면, 일지 순으로 정리합니다",
+      "atSeconds": 166
+    },
+    {
+      "name": "일지 문장을 누르면 근거 발화가 강조됩니다",
+      "atSeconds": 407
+    },
+    {
+      "name": "확정 전에는 보호자에게 아무것도 보이지 않습니다",
+      "atSeconds": 410
+    },
+    {
+      "name": "훈련사가 근거를 확인하고 확정합니다",
+      "atSeconds": 412
+    },
+    {
+      "name": "보호자가 확정된 일지와 과제를 받습니다",
+      "atSeconds": 414
+    },
+    {
+      "name": "보호자가 과제를 해 본 결과를 기록합니다",
+      "atSeconds": 418
+    },
+    {
+      "name": "보호자가 일상 기록을 남깁니다",
+      "atSeconds": 439
+    },
+    {
+      "name": "다음 상담을 시작하면 지난 과제와 보호자 기록이 브리핑에 나옵니다",
+      "atSeconds": 442
+    }
+  ],
+  "metrics": {
+    "speechModel": "qwen-asr",
+    "textModel": "gemma4-12b",
+    "audioSeconds": 126,
+    "organizeSeconds": 237,
+    "segments": 30,
+    "failedSegments": 0,
+    "cer": {
+      "guardian": 0.005813953488372093,
+      "trainer": 0.009009009009009009
+    },
+    "terms": {
+      "found": 25,
+      "total": 25,
+      "missed": {}
+    },
+    "score": {
+      "dialogues": 1,
+      "factRecall": 1,
+      "taskRecall": 1,
+      "taskFieldRecall": 1,
+      "safetyRecall": null,
+      "attributionRecall": null,
+      "inventedTasks": 0,
+      "unsupportedNumbers": 0,
+      "forbiddenHits": 0,
+      "extraSafetyFlags": 0,
+      "methodReviewMismatch": 0,
+      "emptied": 0
+    },
+    "warnings": [
+      "일지에서 뺐습니다: \"보호자는 초코가 짖을 때 큰 소리로 안 된다고 말하며 대응함.\" (문장이 근거와 거의 겹치지 않습니다.)"
+    ]
+  }
+}

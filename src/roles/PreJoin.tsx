@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import type { DevicePreference, MissingDevice } from '../call/devices';
-import { unlockAudio } from '../call/media-tools';
+import { unlockAudio, watchMicLevel } from '../call/media-tools';
 import type { Speaker } from '../domain/coaching';
 import { CaseBrief } from './CaseBrief';
 import { deviceAdvice } from './copy';
@@ -11,15 +11,29 @@ type Props = {
   /** Consent given earlier in this consultation. It is still in force unless changed here. */
   consented?: boolean;
   openPreview: (preference: DevicePreference) => Promise<{ stream: MediaStream; missing: MissingDevice[] }>;
-  onJoin: (choice: JoinChoice) => void;
+  /** Can refuse by rejecting, which keeps this screen and its camera open. */
+  onJoin: (choice: JoinChoice) => void | Promise<void>;
 };
 const stop = (stream: MediaStream) => stream.getTracks().forEach(track => track.stop());
+const HEARD_RMS = 0.003;
+
+function MicLevel({ stream }: { stream: MediaStream }) {
+  const [level, setLevel] = useState(0); const [heard, setHeard] = useState(false);
+  useEffect(() => watchMicLevel(stream, rms => {
+    setLevel(Math.min(100, Math.round(Math.sqrt(rms) * 200)));
+    if (rms >= HEARD_RMS) setHeard(true);
+  }), [stream]);
+  return <div className="prejoin-level" role="meter" aria-label="마이크 입력" aria-valuemin={0} aria-valuemax={100} aria-valuenow={level} data-heard={heard}>
+    <span>마이크 입력</span><i><b style={{ width: `${level}%` }} /></i>
+  </div>;
+}
 
 export function PreJoin({ petName, role, relayAvailable, caseId, consented = false, openPreview, onJoin }: Props) {
   const [preview, setPreview] = useState<{ stream: MediaStream; missing: MissingDevice[] } | null>(null);
   const [preference, setPreference] = useState<DevicePreference>({});
   const [devices, setDevices] = useState<MediaDeviceInfo[]>([]);
   const [consent, setConsent] = useState(consented);
+  const [joinError, setJoinError] = useState('');
   const video = useRef<HTMLVideoElement>(null);
   const handedOver = useRef(false);
 
@@ -43,12 +57,15 @@ export function PreJoin({ petName, role, relayAvailable, caseId, consented = fal
     {!preview && <p role="status">카메라와 마이크를 확인하고 있습니다.</p>}
     {preview && <>
       <video ref={video} className="prejoin-preview" autoPlay muted playsInline aria-label="내 카메라 미리보기" />
+      {preview.stream.getAudioTracks().length > 0 && <MicLevel stream={preview.stream} />}
       {preview.missing.map(item => <p className="coach-warning" key={item.device}>{deviceAdvice(item)}</p>)}
       {cameras.length > 1 && <label>카메라<select value={preference.cameraId ?? ''} onChange={event => setPreference({ ...preference, cameraId: event.target.value || undefined })}><option value="">기본 카메라</option>{cameras.map(device => <option key={device.deviceId} value={device.deviceId}>{device.label || '카메라'}</option>)}</select></label>}
       {microphones.length > 1 && <label>마이크<select value={preference.microphoneId ?? ''} onChange={event => setPreference({ ...preference, microphoneId: event.target.value || undefined })}><option value="">기본 마이크</option>{microphones.map(device => <option key={device.deviceId} value={device.deviceId}>{device.label || '마이크'}</option>)}</select></label>}
       {!relayAvailable && <p className="coach-warning">중계 서버가 설정되지 않아 다른 네트워크에서 연결이 실패할 수 있습니다.</p>}
       <label className="coach-check"><input type="checkbox" checked={consent} onChange={event => setConsent(event.target.checked)} />AI 받아쓰기와 장면 저장에 동의합니다. 양쪽이 모두 동의해야 기록이 시작되며, 동의하지 않아도 통화할 수 있습니다.</label>
-      <button className="button primary" onClick={() => { unlockAudio(); handedOver.current = true; onJoin({ ...preview, consent, preference }); }}>입장</button>
+      {joinError && <p role="alert" className="coach-error">{joinError}</p>}
+      <button className="button primary" onClick={() => { unlockAudio(); setJoinError(''); handedOver.current = true;
+        void (async () => { await onJoin({ ...preview, consent, preference }); })().catch(() => { handedOver.current = false; setJoinError('기록 동의 상태를 저장하지 못했습니다. 다시 시도해 주세요.'); }); }}>입장</button>
     </>}
   </section>
   {role === 'trainer' && caseId && <section className="coach-card coach-narrow"><CaseBrief caseId={caseId} /></section>}

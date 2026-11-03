@@ -1,7 +1,8 @@
 import type { MissingDevice } from '../call/devices';
-import type { ConsultationState, Speaker } from '../domain/coaching';
+import type { ConsultationState, OrganizingProgress, Speaker } from '../domain/coaching';
 
 export const SPEAKER_NAME: Record<Speaker, string> = { guardian: '보호자', trainer: '훈련사' };
+export const progressLabel = ({ stage, done, total }: OrganizingProgress) => `${stage === 'scenes' ? '장면 확인' : '일지'} ${done + 1}/${total} ${stage === 'scenes' ? '중' : '작성 중'}`;
 export const STATE_LABEL: Record<ConsultationState, string> = { scheduled: '예정', live: '진행 중', processing: '정리 중', review: '검토 대기', approved: '확정', interrupted: '중단됨' };
 export const clockLabel = (ms: number) => `${String(Math.floor(ms / 60000)).padStart(2, '0')}:${String(Math.floor(ms / 1000) % 60).padStart(2, '0')}`;
 

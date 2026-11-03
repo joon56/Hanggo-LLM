@@ -52,6 +52,11 @@ describe('ReviewRoom', () => {
       expect(await screen.findByDisplayValue('초인종에 짖는다')).toBeInTheDocument();
     } finally { vi.useRealTimers(); }
   });
+  it('says which part it is on during a long wait', async () => {
+    api.getConsultation.mockResolvedValue(consultation({ state: 'processing', note: undefined, organizing: { stage: 'note', done: 1, total: 4 } }));
+    render(<ReviewRoom consultationId="c" navigate={vi.fn()} />);
+    expect(await screen.findByText(/상담을 정리하고 있습니다/)).toHaveTextContent('일지 2/4 작성 중');
+  });
   it('highlights the evidence for a sentence, with speaker and time', async () => {
     await open();
     const line = document.querySelector('[data-segment="a"]')!;
@@ -133,6 +138,18 @@ describe('ReviewRoom', () => {
     await userEvent.click(screen.getByRole('button', { name: '임시 저장' }));
     await waitFor(() => expect(api.saveNote).toHaveBeenCalledTimes(2));
     expect(api.saveNote.mock.calls[1][1].summary[0].text).toBe('저장 중에 더 고침');
+  });
+  it('shows what was delivered after approving, even if someone typed while it went through', async () => {
+    let finish!: (value: Consultation) => void;
+    api.approveConsultation.mockReturnValueOnce(new Promise(resolve => { finish = resolve; }));
+    api.saveNote.mockResolvedValue(consultation());
+    await open();
+    await userEvent.click(screen.getByRole('button', { name: '확정하고 보호자에게 전달' }));
+    await waitFor(() => expect(api.approveConsultation).toHaveBeenCalled());
+    fireEvent.change(screen.getByLabelText('핵심 요약 문장'), { target: { value: '확정 중에 친 글자' } });
+    finish(consultation({ state: 'approved', note: note({ approvedAt: 'x' }) }));
+    await waitFor(() => expect(screen.queryByText('확정 중에 친 글자')).toBeNull());
+    expect(screen.queryByDisplayValue('확정 중에 친 글자')).toBeNull();
   });
   it('lets the trainer mark a safety flag as not applying, and undo it', async () => {
     api.getConsultation.mockResolvedValue(consultation({ note: note({ safetyFlags: ['통증', '구토'] }) }));
@@ -254,6 +271,13 @@ describe('ReviewRoom', () => {
 });
 
 describe('GuardianDelivery', () => {
+  it('offers a printout or PDF of what was delivered', async () => {
+    api.getDelivery.mockResolvedValue(delivery());
+    const print = vi.spyOn(window, 'print').mockImplementation(() => {});
+    render(<GuardianDelivery caseId="k" consultationId="c" />);
+    await userEvent.click(await screen.findByRole('button', { name: '인쇄·PDF 저장' }));
+    expect(print).toHaveBeenCalledOnce();
+  });
   const delivery = (change: Partial<CoachingNote> = {}, scenes: { id: string; atMs: number; frameIds: string[] }[] = []) => ({ note: { ...note({ approvedAt: 'x', ...change }), uncitedSegmentIds: undefined }, scenes });
   it('shows the confirmed note with missing task details as unknown', async () => {
     api.getDelivery.mockResolvedValue(delivery());

@@ -360,9 +360,14 @@ describe('review and delivery', () => {
   type Agent = ReturnType<typeof request.agent>;
   const words: Record<string, string> = { guardian: '초인종이 울리면 현관으로 뛰어가 짖어요', trainer: '하루 두 번 매트로 가는 연습을 해 주세요' };
   async function reviewed(env: NodeJS.ProcessEnv = {}) {
+    const ready = await ended(env);
+    await expect.poll(async () => (await ready.owner.get(`/api/coaching/consultations/${ready.id}`)).body.state).toBe('review');
+    return ready;
+  }
+  async function ended(env: NodeJS.ProcessEnv = {}, llm: LlmProvider = createStubLlm()) {
     let turn = 0;
     const speech: SpeechProvider = { prepare: async () => {}, release: async () => {}, transcribe: async () => ({ text: Object.values(words)[turn++ % 2], model: 'fake', latencyMs: 1 }) };
-    const app = setup({ AI_ENABLED: 'true', AI_PROVIDER: 'stub', ...env }, speech, createStubLlm());
+    const app = setup({ AI_ENABLED: 'true', AI_PROVIDER: 'stub', ...env }, speech, llm);
     const owner = await trainer(app);
     const created = await createCase(owner);
     const member = await guardian(app, created.inviteToken);
@@ -374,7 +379,6 @@ describe('review and delivery', () => {
     await member.put(`/api/coaching/consultations/${id}/frames/${frame}?atMs=0&source=camera`).set('Origin', origin).set('Content-Type', 'image/jpeg').send(Buffer.from([0xff, 0xd8, 0xff, 1])).expect(201);
     await expect.poll(async () => (await owner.get(`/api/coaching/consultations/${id}`)).body.segments.filter((item: { state: string }) => item.state === 'complete').length).toBe(2);
     await owner.post(`/api/coaching/consultations/${id}/end`).set('Origin', origin).send({}).expect(200);
-    await expect.poll(async () => (await owner.get(`/api/coaching/consultations/${id}`)).body.state).toBe('review');
     const read = async (agent: Agent = owner) => (await agent.get(`/api/coaching/consultations/${id}`).expect(200)).body as Consultation;
     return { app, owner, member, id, frame, read, caseId: created.case.id };
   }
@@ -463,6 +467,17 @@ describe('review and delivery', () => {
     expect(delivery.note.aiObservations).toEqual([]);
     expect(delivery.scenes).toEqual([]);
     await member.get(url(id, `/frames/${frame}`)).expect(403);
+  });
+  it('shows the trainer how far the draft has got, and not the guardian', async () => {
+    let release = () => {};
+    const gate = new Promise<void>(resolve => { release = resolve; });
+    const stub = createStubLlm();
+    const { member, read } = await ended({}, { ...stub, structured: async request => { await gate; return stub.structured(request); } });
+    await expect.poll(async () => (await read()).organizing).toMatchObject({ total: 1 });
+    expect(await read(member)).not.toHaveProperty('organizing');
+    release();
+    await expect.poll(async () => (await read()).state).toBe('review');
+    expect(await read()).not.toHaveProperty('organizing');
   });
   it('freezes everything once approved', async () => {
     const { owner, id, read } = await reviewed();
@@ -646,5 +661,54 @@ describe('guardian input limits', () => {
     for (let index = 0; index < 12; index++) codes.push((await member.post(`/api/coaching/cases/${caseId}/guardian-logs/draft`).set('Origin', origin).send({ text: '기록' })).status);
     expect(codes.slice(0, 10).every(code => code === 200)).toBe(true);
     expect(codes.at(-1)).toBe(429);
+  });
+});
+
+describe('limits a stranger or a guardian could lean on', () => {
+  const tunnel = () => setup({ HANGGO_PROFILE: 'tunnel', PUBLIC_ORIGIN: origin });
+  const tryJoin = (app: App, visitor: string) => request(app).post('/api/coaching/join').set('Origin', origin).set('cf-connecting-ip', visitor).send({ token: 'wrong' });
+  const tryLogin = (app: App, visitor: string) => request(app).post('/api/session').set('Origin', origin).set('cf-connecting-ip', visitor).send({ password: 'wrong' });
+  for (const [name, attempt] of [['joining', tryJoin], ['logging in', tryLogin]] as const) {
+    it(`counts each visitor separately behind the tunnel, so one stranger cannot stop everyone ${name}`, async () => {
+      const app = tunnel();
+      for (let index = 0; index < 10; index++) expect((await attempt(app, '203.0.113.1')).status).not.toBe(429);
+      expect((await attempt(app, '203.0.113.1')).status).toBe(429);
+      expect((await attempt(app, '203.0.113.2')).status).not.toBe(429);
+    });
+    it(`does not believe that header without the tunnel, where anyone could send it, when ${name}`, async () => {
+      const app = setup();
+      for (let index = 0; index < 10; index++) await attempt(app, `203.0.113.${index}`);
+      expect((await attempt(app, '203.0.113.99')).status).toBe(429);
+    });
+  }
+  async function liveCall() {
+    const speech: SpeechProvider = { prepare: async () => {}, release: async () => {}, transcribe: async () => ({ text: '말', model: 'fake', latencyMs: 1 }) };
+    const app = setup({ AI_ENABLED: 'true', AI_PROVIDER: 'stub' }, speech);
+    const owner = await trainer(app);
+    const created = await createCase(owner);
+    const member = await guardian(app, created.inviteToken);
+    const { id } = await start(owner, created.case.id);
+    for (const agent of [owner, member]) await agent.post(`/api/coaching/consultations/${id}/consent`).set('Origin', origin).send({ value: true }).expect(200);
+    return { owner, member, id };
+  }
+  const sound = (ms: number) => Buffer.from(encodeWav(Float32Array.from({ length: ms * 16 }, (_, index) => 0.1 * Math.sin(index / 10))));
+  const upload = (agent: ReturnType<typeof request.agent>, id: string, startMs: number, ms: number) => agent.put(`/api/coaching/consultations/${id}/audio/${startMs}?endMs=${startMs + ms}`).set('Origin', origin).set('Content-Type', 'audio/wav').send(sound(ms));
+  it('ignores a window too short to hold speech, which would only make the model work', async () => {
+    const { member, id } = await liveCall();
+    const { body } = await upload(member, id, 0, 100).expect(200);
+    expect(body).toEqual({ dropped: true });
+  });
+  it('limits how many windows one person can send in a minute, and not the other', async () => {
+    const { owner, member, id } = await liveCall();
+    let last = 0;
+    for (let index = 0; index < 61; index++) last = (await upload(member, id, 100000 + index, 100)).status;
+    expect(last).toBe(429);
+    await upload(owner, id, 0, 1000).expect(202);
+  });
+  it('only hands out relay credentials during the call', async () => {
+    const { owner, member, id } = await liveCall();
+    await member.get(`/api/coaching/consultations/${id}/ice`).expect(200);
+    await owner.post(`/api/coaching/consultations/${id}/end`).set('Origin', origin).send({}).expect(200);
+    await member.get(`/api/coaching/consultations/${id}/ice`).expect(409);
   });
 });

@@ -2,20 +2,22 @@ import { z } from 'zod';
 import type { NoteLine, NoteViolation, RawNote } from '../../src/domain/coaching-note.ts';
 import { SAFETY_LABELS } from '../../src/domain/notes.ts';
 
+const REPAIR_MAX_TOKENS = 1024;
 const NOTE_INSTRUCTIONS = `너는 반려동물 행동 훈련사의 상담 기록을 정리하는 보조다. 입력은 보호자와 훈련사의 화상 상담 전사다.
 
 규칙
 1. 전사에 있는 내용만 정리한다. 말하지 않은 사실, 원인, 조언, 과제를 만들지 않는다.
 2. 모든 문장에 근거 발화 id를 evidence로 단다. 문장 안에는 id를 쓰지 않는다.
-3. 문장은 근거 발화의 낱말을 되도록 그대로 쓴다. 숫자와 이름은 근거 발화에 있는 그대로 쓴다.
-4. "않았다", "없다", "못했다" 같은 부정 표현을 뒤집지 않는다. 누가 말했는지 바꾸지 않는다.
+3. 문장은 말투를 옮기지 말고 기록체로 쓴다. "~함", "~다고 함", "~하도록 안내함"처럼 끝맺고 "~요", "네," 같은 입말은 쓰지 않는다. 숫자, 이름, 행동을 가리키는 낱말은 근거 발화에 있는 그대로 쓴다. "삼십 초 정도요"처럼 대답만으로 뜻이 통하지 않으면 앞 질문의 낱말로 무엇에 대한 말인지 밝혀 쓴다.
+4. "않았다", "없다", "못했다" 같은 부정 표현을 뒤집지 않는다. 누가 말했는지 바꾸지 않는다. "물지는 않아요"처럼 아니라고 답한 내용도 사실이므로 빠뜨리지 않는다. 횟수, 시간대, 양도 빠뜨리지 않는다.
 5. 진단, 치료, 완치, 질환명 추정, 효과 보장, 개체에 붙이는 낙인을 쓰지 않는다. 측정값을 개선으로 단정하지 않는다.
-6. guardianReports는 보호자가 말한 내용만, guidance와 trainerObservations는 훈련사가 말한 내용만 담고, 그 사람의 발화를 근거로 단다. 맞장구나 인사는 넣지 않는다. 훈련사가 한 조언과 설명, 하지 말라고 한 것은 과제와 겹쳐도 guidance에 빠짐없이 담는다.
-7. tasks에는 훈련사가 보호자에게 해 달라고 실제로 내준 과제만 담는다. 설명만 한 연습, 나중에 정하기로 한 일, 주의 사항은 과제가 아니다. 과제를 정하지 않았으면 빈 배열이다. text에는 무엇을 어떻게 하는지 행동을 쓴다. "해 주세요"만 옮기지 말고 앞 발화의 연습 내용을 합쳐 적고 그 발화들을 모두 evidence로 단다. 성공 기준은 훈련사가 잘 됐다고 볼 기준을 말한 경우에만 쓴다. 담당, 횟수, 기한, 성공 기준이 전사에 없으면 null이다. 사람이 여럿이면 과제를 나눠 담당을 각각 적는다.
-8. behaviors는 문제 행동마다 하나씩 만든다. 상황과 계기, 행동 양상과 빈도와 지속 시간, 보호자 대응과 이후 반응을 나눈다. 전사에 없는 항목은 unknown에 적는다.
+6. guardianReports는 보호자가 말한 사실 중 behaviors에 쓰지 않은 것만, guidance와 trainerObservations는 훈련사가 말한 내용만 담고, 그 사람의 발화를 근거로 단다. 맞장구나 인사는 넣지 않는다. 훈련사가 한 조언과 설명, 하지 말라고 한 것은 과제와 겹쳐도 guidance에 빠짐없이 담는다.
+7. tasks에는 훈련사가 보호자에게 해 달라고 실제로 내준 과제만 담는다. 설명만 한 연습, 나중에 정하기로 한 일, 주의 사항은 과제가 아니다. 과제를 정하지 않았으면 빈 배열이다. text에는 무엇을 어떻게 하는지 행동을 "~하기"로 끝맺어 쓴다. "해 주세요"만 옮기지 말고 앞 발화의 연습 내용을 합쳐 적고 그 발화들을 모두 evidence로 단다. 성공 기준은 훈련사가 잘 됐다고 볼 기준을 말한 경우에만 쓴다. 담당, 횟수, 기한, 성공 기준이 전사에 없으면 null이다. 사람이 여럿이면 과제를 나눠 담당을 각각 적는다.
+8. behaviors는 문제 행동마다 하나씩 만들고 title에는 "초인종 소리에 짖음"처럼 행동 이름을 쓴다. 문제 행동이 아닌 내용은 behaviors에 넣지 않는다. context에는 상황과 계기, behavior에는 행동 양상과 빈도와 지속 시간, response에는 보호자 대응과 이후 반응을 쓴다. 전사에 없는 항목은 unknown에 적는다.
 9. 체벌이나 강압적 방법이 언급되면 methodReview를 true로 한다.
 10. 통증, 구토, 출혈, 절뚝거림, 갑작스러운 공격성, 호흡 곤란, 발작, 설사, 식욕 저하, 물림이 언급되면 safetyFlags에 넣는다.
-11. summary는 핵심 3문장 이내다. 짧게 쓴다. 한 문장에 한 가지 사실만 쓴다.`;
+11. summary는 핵심 3문장 이내다. 짧게 쓴다. 한 문장에 한 가지 사실만 쓴다.
+12. 같은 내용을 여러 항목에 되풀이하지 않는다. summary만 예외다. 보호자가 말한 문제 행동의 상황, 양상, 대응은 behaviors에 쓰고 guardianReports에는 되풀이하지 않는다. 그 밖에 보호자가 말한 사실은 guardianReports에, 훈련사의 관찰은 trainerObservations에, 훈련사의 안내는 guidance에, 내준 과제는 tasks에 쓴다. concerns는 보호자가 고치고 싶어 하는 문제를 한 문장씩만 쓴다.`;
 
 const SUMMARY_INSTRUCTIONS = `너는 반려동물 행동 훈련사의 상담 기록을 정리하는 보조다. 입력은 이미 정리되어 근거 id가 붙은 문장 목록이다.
 목록에 있는 내용만 써서 핵심 3문장 이내로 요약한다. 새 사실, 진단, 효과 보장을 쓰지 않는다. 숫자와 이름은 그대로 쓴다. 각 문장에 입력에 있는 근거 id를 evidence로 단다. 문장 안에는 id를 쓰지 않는다.`;
@@ -46,8 +48,8 @@ export function buildNoteRequest(petName: string, lines: NoteLine[], problems: N
       followUps: claims, safetyFlags: { type: 'array', items: { enum: SAFETY_LABELS } }, methodReview: { type: 'boolean' },
     } };
   const transcript = lines.map(line => `[${line.alias} ${formatTime(line.evidence.startMs)} ${label(line)}] ${line.evidence.quote}`).join('\n');
-  const repair = problems.length ? `\n\n이전 결과에서 아래 문장이 규칙을 어겼다. 같은 문제를 되풀이하지 않는다. 고칠 수 없으면 그 문장을 뺀다.\n${problems.map(item => `- ${item.section}: "${item.text}" (${item.reasons.join(' ')})`).join('\n')}` : '';
-  return { jsonSchema, system: NOTE_INSTRUCTIONS, user: `반려동물: ${petName}\n\n전사:\n${transcript}${repair}`, maxTokens: 4096 };
+  const repair = problems.length ? `\n\n이전 결과에서 아래 문장이 규칙을 어겼다. 이 문장들만 규칙에 맞게 고쳐서 원래 항목에 담고, 나머지 항목은 모두 빈 배열로 둔다. 숫자나 낱말이 다른 발화에 있으면 그 발화도 evidence에 함께 단다. 고칠 수 없는 문장은 뺀다.\n${problems.map(item => `- ${item.section}: "${item.text}" (${item.reasons.join(' ')})`).join('\n')}` : '';
+  return { jsonSchema, system: NOTE_INSTRUCTIONS, user: `반려동물: ${petName}\n\n전사:\n${transcript}${repair}`, maxTokens: problems.length ? REPAIR_MAX_TOKENS : 4096 };
 }
 
 export function buildSummaryRequest(petName: string, statements: { text: string; aliases: string[] }[]) {
