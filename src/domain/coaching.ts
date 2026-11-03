@@ -1,5 +1,9 @@
 export type Speaker = 'guardian' | 'trainer';
-export type CoachingCase = { id: string; petName: string; guardianName: string; trainerName: string; createdAt: string; inviteHash: string; inviteExpiresAt: string };
+export type CoachingCase = {
+  id: string; petName: string; guardianName: string; trainerName: string; createdAt: string; inviteHash: string; inviteExpiresAt: string;
+  /** Reissuing an invite bumps this so sessions from an earlier device stop working. */
+  guardianGeneration: number;
+};
 export type ConsultationState = 'scheduled' | 'live' | 'processing' | 'review' | 'approved' | 'interrupted';
 export type RecordingGap = { startMs: number; endMs?: number };
 export type Consultation = {
