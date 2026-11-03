@@ -125,7 +125,9 @@ export function createFileStore(directory: string, options: { now?: () => number
     putFrame: (consultationId, frameId, bytes) => queued(() => replace(framePath(consultationId, frameId), bytes)),
     readFrame: (consultationId, frameId) => queued(() => readFile(framePath(consultationId, frameId)).catch(notFound)),
     recoverInterrupted: () => queued(async () => {
-      for (const item of await allConsultations()) if (item.state === 'live' || item.state === 'processing') await save(consultationPath(item.id), transition(item, 'interrupt', now()));
+      for (const item of await allConsultations()) if (item.state === 'live' || item.state === 'processing') await save(consultationPath(item.id), {
+        // Queued audio lived in memory, so those windows can no longer be transcribed.
+        ...transition(item, 'interrupt', now()), segments: item.segments.map(segment => segment.state === 'queued' ? { ...segment, state: 'failed' } : segment) });
     }),
   };
 }

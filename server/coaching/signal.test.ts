@@ -181,3 +181,29 @@ it('closes participants after the consultation leaves the live state', async () 
   await expect(trainer.next('state')).resolves.toMatchObject({ state: 'review' });
   expect(await trainer.closed).toBe(1000);
 });
+
+it('sends a late joiner the captions so far and the speech status, and nothing still in progress', async () => {
+  const caption = { id: '00000000-0000-4000-8000-000000000001', speaker: 'trainer' as const, startMs: 0, endMs: 1000, text: '앉아', originalText: '앉아', state: 'complete' as const };
+  const waiting = { ...caption, id: '00000000-0000-4000-8000-000000000002', state: 'queued' as const, text: '', originalText: '', startMs: 2000, endMs: 3000 };
+  await store.updateConsultation(consultationId, current => ({ ...current, segments: [caption, waiting] }));
+  const guardian = await connect(guardianCookie);
+  expect(await guardian.next('speech')).toEqual({ type: 'speech', status: 'off' });
+  const message = await guardian.next('caption');
+  expect(message).toMatchObject({ replay: true, segments: [{ id: caption.id, text: '앉아' }] });
+  expect(message.segments).toHaveLength(1);
+  expect(message.segments[0]).not.toHaveProperty('originalText');
+});
+it('broadcasts to both participants of one consultation only', async () => {
+  const trainer = await connect(trainerCookie, { call: 'trainer-call' });
+  const guardian = await connect(guardianCookie, { call: 'guardian-call' });
+  await trainer.next('hello'); await guardian.next('hello');
+  hub.broadcast(consultationId, { type: 'moment', id: 'moment-1', atMs: 10, createdBy: 'trainer' });
+  await expect(trainer.next('moment')).resolves.toMatchObject({ id: 'moment-1' });
+  await expect(guardian.next('moment')).resolves.toMatchObject({ id: 'moment-1' });
+  expect(() => hub.broadcast('00000000-0000-4000-8000-000000000009', { type: 'moment' })).not.toThrow();
+});
+it('tells participants when the recording clock started', async () => {
+  await store.updateConsultation(consultationId, current => ({ ...current, recording: true, recordingStartedAt: 1234 }));
+  const trainer = await connect(trainerCookie);
+  await expect(trainer.next('state')).resolves.toMatchObject({ recording: true, recordingStartedAt: 1234 });
+});

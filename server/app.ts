@@ -15,8 +15,10 @@ import { createGuardianSessions } from './coaching/guardian-session.ts';
 import { createActorResolver, createCoachingRouter } from './coaching/router.ts';
 import { attachSignal } from './coaching/signal.ts';
 import { createFileStore } from './coaching/store.ts';
+import { createTranscription } from './coaching/transcription.ts';
 import type { VisionService } from './consultation-vision.ts';
 import { ConsultationError } from './consultation-store.ts';
+import type { Consultation } from '../src/domain/coaching.ts';
 import type { SourceKind } from '../src/domain/notes.ts';
 import { AudioValidationError, validateAudioDuration } from './audio.ts';
 import { OwnerInputSchema } from './owner-service.ts';
@@ -46,6 +48,7 @@ const AudioInput = z.object({ duration: z.coerce.number().min(3).max(60), petNam
 export function createApp(config: Config, services: Services) {
   const app = express();
   let stopping = false;
+  let shutdownTask: Promise<void> | undefined;
   const lessons = loadLessonCatalog(config.lessonCatalogPath);
   app.disable('x-powered-by');
   app.set('trust proxy', config.trustProxy);
@@ -96,7 +99,10 @@ export function createApp(config: Config, services: Services) {
   const coachingStore = createFileStore(config.coachingDirectory);
   const coachingAccess = { store: coachingStore, sessions: createGuardianSessions(config.coachingDirectory), isTrainer: (headers: { cookie?: string }) => authenticated({ headers }) };
   let signal: ReturnType<typeof attachSignal> | undefined;
-  app.use('/api/coaching', createCoachingRouter({ ...coachingAccess, turn: config.turn, secureCookies: config.production, notify: consultation => signal?.notify(consultation) }));
+  const notifyCoaching = (consultation: Consultation) => signal?.notify(consultation);
+  const broadcast = (consultationId: string, message: unknown) => signal?.broadcast(consultationId, message);
+  const transcription = createTranscription({ store: coachingStore, speech: config.aiEnabled ? services.liveSpeech : undefined, broadcast, notify: notifyCoaching, graceMs: config.coachingGraceMs });
+  app.use('/api/coaching', createCoachingRouter({ ...coachingAccess, turn: config.turn, secureCookies: config.production, transcription, graceMs: config.coachingGraceMs, notify: notifyCoaching, broadcast }));
   app.use('/api', (req, res, next) => {
     if (!authenticated(req)) { res.status(401).json({ error: '로그인이 필요합니다.', code: 'AUTH', requestId: res.locals.requestId }); return; }
     next();
@@ -209,8 +215,8 @@ export function createApp(config: Config, services: Services) {
   };
   app.use(errors);
   return Object.assign(app, {
-    attachSignal(server: Server) { signal = attachSignal(server, { store: coachingStore, allowedOrigins: origins, resolveActor: createActorResolver(coachingAccess) }); },
+    attachSignal(server: Server) { signal = attachSignal(server, { store: coachingStore, allowedOrigins: origins, resolveActor: createActorResolver(coachingAccess), speechStatus: transcription.status }); },
     recoverCoaching: () => coachingStore.recoverInterrupted(),
-    shutdown: () => { stopping = true; signal?.close(); return consultation.shutdown(); },
+    shutdown: () => { stopping = true; signal?.close(); shutdownTask ??= transcription.close().then(() => consultation.shutdown()); return shutdownTask; },
   });
 }

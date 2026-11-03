@@ -12,6 +12,7 @@ export type Segment = {
   /** Likely the other speaker heard through this microphone. The text stays, but notes must not cite it. */
   echoSuspect?: boolean; model?: string; latencyMs?: number;
 };
+export type Caption = Pick<Segment, 'id' | 'speaker' | 'startMs' | 'endMs' | 'text' | 'state' | 'echoSuspect'>;
 export type Moment = { id: string; atMs: number; createdBy: Speaker; text?: string; frameIds: string[] };
 export type FrameRef = { id: string; atMs: number; source: 'camera' | 'screen'; speaker: Speaker; bytes: number };
 export type Consultation = {
@@ -22,6 +23,7 @@ export type Consultation = {
   recordingGaps: RecordingGap[]; errors: { code: string; message: string }[];
   segments: Segment[]; moments: Moment[]; frames: FrameRef[];
 };
+export const captionOf = ({ id, speaker, startMs, endMs, text, state, echoSuspect }: Segment): Caption => ({ id, speaker, startMs, endMs, text, state, echoSuspect });
 export type ConsultationEvent = 'start' | 'end' | 'processed' | 'approve' | 'interrupt';
 
 export class TransitionError extends Error {}

@@ -1,0 +1,42 @@
+import type { SpeechProvider } from './types.ts';
+
+const AUDIBLE = 0.001;
+const HEADER = 44;
+const SAMPLE_RATE = 16000;
+const FRAME_SAMPLES = 800;
+
+export const STUB_TEXT = {
+  guardian: '[시험 전사] 보호자 마이크 신호입니다',
+  trainer: '[시험 전사] 훈련사 마이크 신호입니다',
+  unknown: '[시험 전사] 알 수 없는 신호입니다',
+};
+
+/** Zero crossings over the audible parts only, because a pause holds no pitch to measure. */
+function pitchOf(wav: Buffer) {
+  const samples = new Int16Array(wav.buffer, wav.byteOffset + HEADER, Math.floor((wav.length - HEADER) / 2));
+  let crossings = 0; let counted = 0;
+  for (let start = 0; start + FRAME_SAMPLES <= samples.length; start += FRAME_SAMPLES) {
+    const frame = samples.subarray(start, start + FRAME_SAMPLES);
+    const level = Math.sqrt(frame.reduce((sum, sample) => sum + (sample / 32768) ** 2, 0) / frame.length);
+    if (level < AUDIBLE) continue;
+    for (let index = 1; index < frame.length; index++) if ((frame[index - 1] < 0) !== (frame[index] < 0)) crossings += 1;
+    counted += frame.length;
+  }
+  return counted ? crossings / 2 / (counted / SAMPLE_RATE) : 0;
+}
+
+/**
+ * For automated runs only. It recognizes which test tone reached the server, so a run can prove that
+ * each microphone gets the right speaker label. It is not speech recognition and says so in its text.
+ */
+export function createStubSpeech(): SpeechProvider {
+  return {
+    async prepare() {},
+    async transcribe(wav) {
+      const pitch = pitchOf(wav);
+      const text = Math.abs(pitch - 440) < 60 ? STUB_TEXT.guardian : Math.abs(pitch - 880) < 120 ? STUB_TEXT.trainer : STUB_TEXT.unknown;
+      return { text, model: 'stub', latencyMs: 0 };
+    },
+    async release() {},
+  };
+}

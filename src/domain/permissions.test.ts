@@ -23,6 +23,7 @@ const table: [Action, 'trainer-only' | 'shared' | 'guardian-writes'][] = [
   ['caption:read', 'shared'],
   ['moment:create', 'shared'],
   ['delivery:read', 'shared'],
+  ['recording:upload', 'shared'],
   ['frame:read-cited', 'shared'],
   ['task-log:read', 'shared'],
   ['task-log:write', 'guardian-writes'],
@@ -36,7 +37,7 @@ describe('can', () => {
     expect(can(guardian, action)).toBe(false);
   });
   it('covers every action in the table', () => {
-    expect(table.length).toBe(19);
+    expect(table.length).toBe(20);
   });
   it('denies unknown actions by default', () => {
     expect(can(trainer, 'admin:everything' as Action, 'case-1')).toBe(false);
