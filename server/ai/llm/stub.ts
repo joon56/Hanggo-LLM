@@ -21,10 +21,12 @@ export function createStubLlm(): LlmProvider {
       const lines = [...user.matchAll(LINE)].map(([, alias, speaker, text]) => ({ alias, speaker, text }));
       const claim = ({ alias, text }: { alias: string; text: string }) => ({ text, evidence: [alias] });
       const guardian = lines.filter(line => line.speaker === '보호자').slice(0, MAX_ITEMS);
-      const trainer = lines.filter(line => line.speaker === '훈련사').slice(0, MAX_ITEMS);
+      const spokenByTrainer = lines.filter(line => line.speaker === '훈련사');
+      const trainer = spokenByTrainer.slice(0, MAX_ITEMS);
+      const asked = spokenByTrainer.find(line => /과제|연습/.test(line.text)) ?? spokenByTrainer.find(line => /주세요|하세요/.test(line.text)) ?? spokenByTrainer[0];
       return { finished: true, json: {
         summary: lines.slice(0, 1).map(claim), concerns: [], behaviors: [], guardianReports: guardian.map(claim), trainerObservations: [], guidance: trainer.map(claim),
-        tasks: trainer.slice(0, 1).map(line => ({ text: line.text, who: null, frequency: null, until: null, successCriteria: null, evidence: [line.alias] })),
+        tasks: (asked ? [asked] : []).map(line => ({ text: line.text, who: null, frequency: null, until: null, successCriteria: null, evidence: [line.alias] })),
         followUps: [], safetyFlags: [], methodReview: false,
       } };
     },

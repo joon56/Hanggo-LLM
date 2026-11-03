@@ -108,7 +108,8 @@ export function assembleNote(raw: RawNote, source: NoteSource, createdAt: string
   const reject = (section: string, text: string, reasons: string[]) => { violations.push({ section, text, reasons }); };
   const claims = (section: string, items: RawClaim[]): Claim[] => items.flatMap(item => {
     const text = item.text.replace(ALIAS_MARKER, '').trim();
-    if (!text) return [];
+    // The schema names the word "unknown", and a model sometimes writes it as a sentence.
+    if (!text || /^unknown$/i.test(text)) return [];
     const { evidence, wrongSpeaker } = evidenceFor(section, item.evidence, source);
     const reasons = wrongSpeaker ? [`${wrongSpeaker} 발화를 근거로 써야 합니다.`] : problemsWith(section, text, evidence, source);
     if (reasons.length) { reject(section, text, reasons); return []; }

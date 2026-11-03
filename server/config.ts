@@ -42,10 +42,10 @@ export function readConfig(env: NodeJS.ProcessEnv = process.env) {
   if (!['whisper-turbo', 'qwen-asr'].includes(liveSpeechModel)) throw new Error('Invalid SPEECH_MODEL');
   const aiProvider = env.AI_PROVIDER === 'stub' ? 'stub' as const : 'local' as const;
   if (production && aiProvider === 'stub') throw new Error('AI_PROVIDER=stub is for automated tests only.');
-  return { home, profile, aiProvider,
+  return { home, profile, aiProvider, stubScript: env.STUB_SCRIPT || '',
     production, host, password, publicOrigin, provider: 'local' as const,
     liveSpeechModel: liveSpeechModel as 'whisper-turbo' | 'qwen-asr',
-    turn: readTurn(env), coachingDirectory: path.join(home, 'data', 'coaching'),
+    turn: readTurn(env), coachingDirectory: env.COACHING_DIRECTORY || path.join(home, 'data', 'coaching'),
     liveModelDirectory: env.LIVE_MODEL_DIRECTORY || path.join(home, 'models', 'stt'),
     whisperServer: env.WHISPER_SERVER || path.join(home, 'runtime', 'whisper-cpp', 'Release', 'whisper-server.exe'),
     llamaServer: env.LLAMA_SERVER || path.join(home, 'runtime', 'llama-cpp', 'llama-server.exe'),

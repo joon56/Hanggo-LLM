@@ -78,10 +78,12 @@ test('catching a moment saves the scenes before the press from both sides', asyn
   await expect(guardian.page.getByLabel('장면 메모')).toHaveCount(0);
   await trainer.page.getByLabel('장면 메모').fill('귀가 먼저 움직임');
   await trainer.page.getByRole('button', { name: '메모 저장' }).click();
+  // Photos upload oldest first, so wait for them all before looking at the latest one.
   await expect.poll(async () => {
     const { frames, moments } = await read();
-    return new Set(frames.filter(frame => moments[0]?.frameIds.includes(frame.id)).map(frame => frame.speaker)).size;
-  }, { timeout: 20_000 }).toBe(2);
+    const caught = frames.filter(frame => moments[0]?.frameIds.includes(frame.id));
+    return new Set(caught.map(frame => frame.speaker)).size === 2 && caught.length >= 12;
+  }, { timeout: 30_000 }).toBe(true);
   const consultation = await read();
   const [moment] = consultation.moments;
   expect(moment).toMatchObject({ createdBy: 'guardian', text: '귀가 먼저 움직임' });

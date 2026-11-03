@@ -77,9 +77,35 @@ jobs:
             if (!response.ok || session.authenticated || !session.requirePassword || session.aiEnabled) process.exit(1);
           '
 
+  demo:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - name: Install video, Korean font, and browser dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg fonts-noto-cjk
+          npx playwright install --with-deps chrome ffmpeg
+      - run: npm run build
+      - name: Record both screens through one coaching loop
+        run: node e2e/auto-demo.ts .tmp/demo/site
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: demo-site
+          path: .tmp/demo/site/
+          if-no-files-found: ignore
+          retention-days: 14
+
   pages:
     if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
-    needs: [verify, container]
+    needs: [verify, container, demo]
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
@@ -101,6 +127,11 @@ jobs:
           VITE_PUBLIC_DEMO: "true"
           REPOSITORY_NAME: ${{ github.event.repository.name }}
         run: npm run build -- --base "/$REPOSITORY_NAME/"
+      - name: Add the recorded demo
+        uses: actions/download-artifact@v4
+        with:
+          name: demo-site
+          path: dist/demo
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:

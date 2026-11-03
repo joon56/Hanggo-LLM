@@ -2,6 +2,8 @@ import { defineConfig, devices } from '@playwright/test';
 
 export default defineConfig({
   testDir: './e2e',
+  // These are run as plain Node programs, not as test files.
+  testIgnore: ['**/auto-demo.ts', '**/verify-real-speech.ts', '**/check-tunnel.ts'],
   timeout: 30_000,
   fullyParallel: false,
   workers: 1,

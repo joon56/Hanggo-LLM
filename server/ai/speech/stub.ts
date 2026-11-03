@@ -26,16 +26,24 @@ function pitchOf(wav: Buffer) {
   return counted ? crossings / 2 / (counted / SAMPLE_RATE) : 0;
 }
 
+export type StubScript = { speaker: string; text: string }[];
+
 /**
  * For automated runs only. It recognizes which test tone reached the server, so a run can prove that
  * each microphone gets the right speaker label. It is not speech recognition and says so in its text.
+ * With a script it answers that speaker's next line, so a recorded demo has readable captions.
  */
-export function createStubSpeech(): SpeechProvider {
+export function createStubSpeech(script: StubScript = []): SpeechProvider {
+  const next = { guardian: 0, trainer: 0 };
+  const scripted = (speaker: 'guardian' | 'trainer') => {
+    const lines = script.filter(line => line.speaker === speaker);
+    return lines.length ? `[시험 전사] ${lines[next[speaker]++ % lines.length].text}` : STUB_TEXT[speaker];
+  };
   return {
     async prepare() {},
     async transcribe(wav) {
       const pitch = pitchOf(wav);
-      const text = Math.abs(pitch - 440) < 60 ? STUB_TEXT.guardian : Math.abs(pitch - 880) < 120 ? STUB_TEXT.trainer : STUB_TEXT.unknown;
+      const text = Math.abs(pitch - 440) < 60 ? scripted('guardian') : Math.abs(pitch - 880) < 120 ? scripted('trainer') : STUB_TEXT.unknown;
       return { text, model: 'stub', latencyMs: 0 };
     },
     async release() {},

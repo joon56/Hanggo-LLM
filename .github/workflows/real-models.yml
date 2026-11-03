@@ -1,0 +1,76 @@
+name: Real models
+
+# Runs the whole path with real speech and text models on a CPU runner: real people's read speech through two browsers,
+# then a real note. The runner has no GPU, so it uses a small LLM and measures that the path works, not the quality on the product's own hardware.
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 18 * * *'
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/real-models.yml
+      - scripts/fetch-ci-models.ts
+      - e2e/verify-real-speech.ts
+
+permissions:
+  contents: read
+
+concurrency:
+  group: real-models
+  cancel-in-progress: false
+
+jobs:
+  real:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    env:
+      HANGGO_HOME: ${{ github.workspace }}/.hanggo-ci
+      LLM_MODEL: qwen35-4b
+      LLM_CONTEXT_SIZE: '8192'
+      LLM_TIMEOUT_MS: '1800000'
+      LOCAL_STT_TIMEOUT_MS: '600000'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - name: Install audio and browser dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg fonts-noto-cjk
+          npx playwright install --with-deps chrome
+      - uses: actions/cache@v4
+        with:
+          path: .hanggo-ci/models
+          key: real-models-v1-${{ hashFiles('scripts/models.manifest.json') }}
+      - name: Fetch CPU runtime and models
+        run: node scripts/fetch-ci-models.ts
+      - name: Fetch read speech
+        run: node scripts/fetch-speech-eval.ts 12
+      - run: npm run build
+      - name: Run two browsers through real speech and a real note
+        run: node e2e/verify-real-speech.ts --note --human 12 | tee real-run.log
+      - name: Report the result where it can be read without a token
+        if: always()
+        run: |
+          node --input-type=module -e '
+            import fs from "node:fs";
+            const file = ".tmp/real-speech/report-note-human.json";
+            if (!fs.existsSync(file)) { console.log("::error title=Real models::No report was written."); process.exit(0); }
+            const { results: [result] } = JSON.parse(fs.readFileSync(file, "utf8"));
+            const { speakerLabels, cer, segments, organizeSeconds, audioSeconds, noteSections, captionDelayMs, errors } = result;
+            const line = JSON.stringify({ audioSeconds, segments, mislabeled: speakerLabels.mislabeled, cer, captionDelayP95: captionDelayMs.trainerScreen.p95, organizeSeconds, noteSections, errors });
+            console.log(`::notice title=Real models::${line}`);
+          '
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: real-models-report
+          path: |
+            .tmp/real-speech/report*.json
+            real-run.log
+          if-no-files-found: ignore
+          retention-days: 14
