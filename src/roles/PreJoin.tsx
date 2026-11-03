@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import type { DevicePreference, MissingDevice } from '../call/devices';
-import { unlockAudio } from '../call/media-tools';
+import { unlockAudio, watchMicLevel } from '../call/media-tools';
 import type { Speaker } from '../domain/coaching';
 import { CaseBrief } from './CaseBrief';
 import { deviceAdvice } from './copy';
@@ -14,6 +14,18 @@ type Props = {
   onJoin: (choice: JoinChoice) => void;
 };
 const stop = (stream: MediaStream) => stream.getTracks().forEach(track => track.stop());
+const HEARD_RMS = 0.003;
+
+function MicLevel({ stream }: { stream: MediaStream }) {
+  const [level, setLevel] = useState(0); const [heard, setHeard] = useState(false);
+  useEffect(() => watchMicLevel(stream, rms => {
+    setLevel(Math.min(100, Math.round(Math.sqrt(rms) * 200)));
+    if (rms >= HEARD_RMS) setHeard(true);
+  }), [stream]);
+  return <div className="prejoin-level" role="meter" aria-label="마이크 입력" aria-valuemin={0} aria-valuemax={100} aria-valuenow={level} data-heard={heard}>
+    <span>마이크 입력</span><i><b style={{ width: `${level}%` }} /></i>
+  </div>;
+}
 
 export function PreJoin({ petName, role, relayAvailable, caseId, consented = false, openPreview, onJoin }: Props) {
   const [preview, setPreview] = useState<{ stream: MediaStream; missing: MissingDevice[] } | null>(null);
@@ -43,6 +55,7 @@ export function PreJoin({ petName, role, relayAvailable, caseId, consented = fal
     {!preview && <p role="status">카메라와 마이크를 확인하고 있습니다.</p>}
     {preview && <>
       <video ref={video} className="prejoin-preview" autoPlay muted playsInline aria-label="내 카메라 미리보기" />
+      {preview.stream.getAudioTracks().length > 0 && <MicLevel stream={preview.stream} />}
       {preview.missing.map(item => <p className="coach-warning" key={item.device}>{deviceAdvice(item)}</p>)}
       {cameras.length > 1 && <label>카메라<select value={preference.cameraId ?? ''} onChange={event => setPreference({ ...preference, cameraId: event.target.value || undefined })}><option value="">기본 카메라</option>{cameras.map(device => <option key={device.deviceId} value={device.deviceId}>{device.label || '카메라'}</option>)}</select></label>}
       {microphones.length > 1 && <label>마이크<select value={preference.microphoneId ?? ''} onChange={event => setPreference({ ...preference, microphoneId: event.target.value || undefined })}><option value="">기본 마이크</option>{microphones.map(device => <option key={device.deviceId} value={device.deviceId}>{device.label || '마이크'}</option>)}</select></label>}

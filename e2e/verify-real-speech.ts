@@ -114,10 +114,13 @@ async function verify(dialogue: Dialogue, withNote: boolean) {
   }
 }
 
+// The speaker goes on talking off script for ten seconds after the labelled sentence. The model wrote that down correctly, and it read as a mistake.
+const CLIPS_LONGER_THAN_THEIR_LABEL = new Set(['105_003_0478.wav']);
+
 function humanDialogue(clips: number): Dialogue {
   const root = path.resolve(readConfig().home, 'cache', 'eval', 'zeroth');
   const { samples } = JSON.parse(readFileSync(path.join(root, 'manifest.json'), 'utf8').replace(/^﻿/, '')) as { samples: { file: string; expected: string }[] };
-  return { id: `human-${clips}`, petName: '초코', segments: samples.slice(0, clips).map((sample, index) => ({ id: `h${index}`, speaker: index % 2 ? 'guardian' : 'trainer', text: sample.expected, file: path.join(root, sample.file) })) };
+  return { id: `human-${clips}`, petName: '초코', segments: samples.filter(sample => !CLIPS_LONGER_THAN_THEIR_LABEL.has(sample.file)).slice(0, clips).map((sample, index) => ({ id: `h${index}`, speaker: index % 2 ? 'guardian' : 'trainer', text: sample.expected, file: path.join(root, sample.file) })) };
 }
 
 loadLocalEnv();

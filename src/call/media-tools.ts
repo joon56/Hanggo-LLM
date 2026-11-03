@@ -5,6 +5,7 @@ const FRAME_HEIGHT = 360;
 const MAX_FRAME_BYTES = 256 * 1024;
 const QUALITIES = [0.75, 0.5, 0.3];
 const RESUME_TIMEOUT_MS = 4000;
+const LEVEL_INTERVAL_MS = 100;
 
 let sharedContext: AudioContext | undefined;
 let workletLoaded: Promise<void> | undefined;
@@ -37,6 +38,22 @@ export async function tapMicrophone(track: MediaStreamTrack, onSamples: (samples
     worklet.port.onmessage = null;
     source.disconnect(); worklet.disconnect(); mute.disconnect();
   } };
+}
+
+/** Reports how loud the microphone is, so someone can see it works before joining. Returns how to stop. */
+export function watchMicLevel(stream: MediaStream, onLevel: (rms: number) => void) {
+  if (typeof AudioContext === 'undefined' || !stream.getAudioTracks().length) return () => {};
+  const context = audioContext();
+  void context.resume().catch(() => {});
+  const source = context.createMediaStreamSource(stream);
+  const analyser = context.createAnalyser();
+  source.connect(analyser);
+  const samples = new Float32Array(analyser.fftSize);
+  const timer = setInterval(() => {
+    analyser.getFloatTimeDomainData(samples);
+    onLevel(Math.sqrt(samples.reduce((sum, value) => sum + value * value, 0) / samples.length));
+  }, LEVEL_INTERVAL_MS);
+  return () => { clearInterval(timer); source.disconnect(); analyser.disconnect(); };
 }
 
 /** Reads from a hidden element because mobile browsers stop drawing a video that is not in the page. */

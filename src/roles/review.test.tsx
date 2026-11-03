@@ -254,6 +254,13 @@ describe('ReviewRoom', () => {
 });
 
 describe('GuardianDelivery', () => {
+  it('offers a printout or PDF of what was delivered', async () => {
+    api.getDelivery.mockResolvedValue(delivery());
+    const print = vi.spyOn(window, 'print').mockImplementation(() => {});
+    render(<GuardianDelivery caseId="k" consultationId="c" />);
+    await userEvent.click(await screen.findByRole('button', { name: '인쇄·PDF 저장' }));
+    expect(print).toHaveBeenCalledOnce();
+  });
   const delivery = (change: Partial<CoachingNote> = {}, scenes: { id: string; atMs: number; frameIds: string[] }[] = []) => ({ note: { ...note({ approvedAt: 'x', ...change }), uncitedSegmentIds: undefined }, scenes });
   it('shows the confirmed note with missing task details as unknown', async () => {
     api.getDelivery.mockResolvedValue(delivery());

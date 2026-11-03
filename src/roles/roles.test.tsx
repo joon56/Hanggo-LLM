@@ -297,7 +297,7 @@ describe('PreJoin', () => {
   });
   it('shows consent given earlier as checked, so rejoining cannot hide that recording is on', async () => {
     const onJoin = vi.fn();
-    render(<PreJoin petName="초코" role="guardian" relayAvailable consented openPreview={async () => ({ stream: { getTracks: () => [] } as unknown as MediaStream, missing: [] })} onJoin={onJoin} />);
+    render(<PreJoin petName="초코" role="guardian" relayAvailable consented openPreview={async () => ({ stream: stream(), missing: [] })} onJoin={onJoin} />);
     const box = await screen.findByRole('checkbox');
     expect(box).toBeChecked();
     await userEvent.click(box);

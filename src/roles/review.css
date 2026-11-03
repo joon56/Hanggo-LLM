@@ -37,6 +37,8 @@
 .review-photos img { width: 150px; max-width: 100%; aspect-ratio: 16 / 9; object-fit: contain; background: #1c1f1c; border-radius: 6px; }
 
 .delivery { display: grid; gap: 14px; }
+.delivery-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; }
+.delivery-head .call-link { color: var(--ink); }
 .delivery h2 { font-size: 16px; }
 .delivery h3 { font-size: 14px; color: var(--muted); }
 .delivery ul { display: grid; gap: 6px; padding-left: 18px; font-size: 14px; line-height: 1.5; }
@@ -58,4 +60,12 @@
   .review-pane { max-height: none; }
   .review-pane h2 { position: static; }
   .review-actions { margin-left: 0; }
+}
+
+/* The printed copy is the note alone, without the forms around it. */
+@media print {
+  .coach-page { padding: 0; max-width: none; }
+  .coach-page > :not(:has(.delivery)), .delivery button, .delivery form, .delivery .delivery-memo { display: none !important; }
+  .coach-card { border: 0; padding: 0; }
+  .review-photos img { max-width: 200px; }
 }
