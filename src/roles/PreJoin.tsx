@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import type { DevicePreference, MissingDevice } from '../call/devices';
+import { unlockAudio } from '../call/media-tools';
 import type { Speaker } from '../domain/coaching';
 import { CaseBrief } from './CaseBrief';
 import { deviceAdvice } from './copy';
@@ -45,7 +46,7 @@ export function PreJoin({ petName, role, relayAvailable, caseId, openPreview, on
       {microphones.length > 1 && <label>마이크<select value={preference.microphoneId ?? ''} onChange={event => setPreference({ ...preference, microphoneId: event.target.value || undefined })}><option value="">기본 마이크</option>{microphones.map(device => <option key={device.deviceId} value={device.deviceId}>{device.label || '마이크'}</option>)}</select></label>}
       {!relayAvailable && <p className="coach-warning">중계 서버가 설정되지 않아 다른 네트워크에서 연결이 실패할 수 있습니다.</p>}
       <label className="coach-check"><input type="checkbox" checked={consent} onChange={event => setConsent(event.target.checked)} />AI 받아쓰기와 장면 저장에 동의합니다. 양쪽이 모두 동의해야 기록이 시작되며, 동의하지 않아도 통화할 수 있습니다.</label>
-      <button className="button primary" onClick={() => { handedOver.current = true; onJoin({ ...preview, consent, preference }); }}>입장</button>
+      <button className="button primary" onClick={() => { unlockAudio(); handedOver.current = true; onJoin({ ...preview, consent, preference }); }}>입장</button>
     </>}
   </section>
   {role === 'trainer' && caseId && <section className="coach-card coach-narrow"><CaseBrief caseId={caseId} /></section>}

@@ -22,7 +22,8 @@ const CAPTURE_INTERVAL_MS = 1000;
 const GUARDIAN_CAMERA_INTERVAL_MS = 30000;
 const AFTER_MOMENT_MS = 2000;
 const MAX_DRIFT_MS = 1000;
-const RETRY_DELAYS_MS = [1000, 3000, 8000];
+// A phone can drop off the network for a while, and what was said meanwhile is worth waiting for.
+const RETRY_DELAYS_MS = [1000, 2000, 4000, 8000, 15000, 30000, 30000, 30000];
 const MAX_WAITING_AUDIO = 40;
 const MAX_WAITING_FRAMES = 64;
 

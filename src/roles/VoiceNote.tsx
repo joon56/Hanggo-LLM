@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { MicrophoneIcon, StopIcon } from '@phosphor-icons/react';
 import { startDictation } from '../call/dictation';
+import { unlockAudio } from '../call/media-tools';
 import { transcribeVoice } from '../coaching-api';
 import { apiMessage } from './copy';
 
@@ -11,6 +12,7 @@ export function VoiceNote({ caseId, label, onText, onError }: { caseId: string; 
   useEffect(() => () => session.current?.stop(), []);
   if (!navigator.mediaDevices?.getUserMedia) return null;
   const start = () => {
+    unlockAudio();
     setState('starting');
     startDictation({ transcribe: bytes => transcribeVoice(caseId, bytes).then(result => result.text), onText,
       onError: cause => onError(apiMessage(cause, '받아쓰지 못했습니다. 글로 적어 주세요.')), onStopped: () => { session.current = null; setState('idle'); } })

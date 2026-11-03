@@ -8,7 +8,7 @@ afterEach(() => { vi.useRealTimers(); });
 const voice = (ms: number) => Float32Array.from({ length: ms * 16 }, (_, index) => 0.1 * Math.sin(index / 5));
 const silence = (ms: number) => new Float32Array(ms * 16);
 
-function build(role: 'guardian' | 'trainer' = 'guardian', options: { hasMicrophone?: boolean; hasCamera?: boolean; tapError?: Error; transcribes?: () => boolean } = {}) {
+function build(role: 'guardian' | 'trainer' = 'guardian', options: { hasMicrophone?: boolean; hasCamera?: boolean; tapError?: Error; transcribes?: () => boolean; refusalsArePermanent?: boolean } = {}) {
   const audio = { getAudioTracks: () => options.hasMicrophone === false ? [] : [{ kind: 'audio' }], getVideoTracks: () => options.hasCamera === false ? [] : [{ kind: 'video' }] };
   let onSamples: (samples: Float32Array) => void = () => {};
   const tap = { sampleRate: 16000, stop: vi.fn() };
@@ -19,7 +19,7 @@ function build(role: 'guardian' | 'trainer' = 'guardian', options: { hasMicropho
   const uploadFrame = vi.fn(async (_frame: { atMs: number; source: string; id: string }, _moment?: string) => {});
   const onLost = vi.fn();
   let nextId = 0;
-  const recorder = new CallRecorder({ role, localStream: audio as unknown as MediaStream, tapMicrophone, createGrabber, uploadAudio, uploadFrame, isPermanent: () => true, onLost, transcribes: options.transcribes, createId: () => `frame-${nextId++}` });
+  const recorder = new CallRecorder({ role, localStream: audio as unknown as MediaStream, tapMicrophone, createGrabber, uploadAudio, uploadFrame, isPermanent: () => options.refusalsArePermanent ?? true, onLost, transcribes: options.transcribes, createId: () => `frame-${nextId++}` });
   let time = 100000;
   const clock = () => time;
   return { recorder, tap, tapMicrophone, createGrabber, grabbers, uploadAudio, uploadFrame, onLost, clock, speak: (samples: Float32Array) => onSamples(samples), advance: async (ms: number) => { for (let elapsed = 0; elapsed < ms; elapsed += 100) { time += 100; await vi.advanceTimersByTimeAsync(100); } }, setTime: (value: number) => { time = value; } };
@@ -207,6 +207,20 @@ describe('scenes', () => {
     recorder.moment({ id: 'moment-1', atMs: 0 });
     await advance(3000);
     expect(uploadFrame).not.toHaveBeenCalled();
+  });
+  it('keeps trying through a long network drop instead of losing what was said', async () => {
+    const { recorder, clock, speak, uploadAudio, onLost } = build('guardian', { refusalsArePermanent: false });
+    let online = false;
+    uploadAudio.mockImplementation(async () => { if (!online) throw new Error('offline'); });
+    recorder.start(clock); await flush();
+    speak(voice(1000)); recorder.stop({ flush: true }); await flush();
+    await vi.advanceTimersByTimeAsync(60_000);
+    const attempts = uploadAudio.mock.calls.length;
+    expect(attempts).toBeGreaterThan(3);
+    online = true;
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(uploadAudio.mock.calls.length).toBe(attempts + 1);
+    expect(onLost).not.toHaveBeenCalled();
   });
   it('reports frames that could not be delivered', async () => {
     const { recorder, clock, uploadFrame, onLost, advance } = build('guardian');
