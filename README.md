@@ -9,9 +9,9 @@
 [![CI](https://github.com/joon56/Hanggo-LLM/actions/workflows/ci.yml/badge.svg)](https://github.com/joon56/Hanggo-LLM/actions/workflows/ci.yml)
 ![Node.js 24](https://img.shields.io/badge/Node.js-24_LTS-405438?style=flat-square)
 ![React](https://img.shields.io/badge/React-19-405438?style=flat-square)
-![Local AI](https://img.shields.io/badge/Ollama_%2B_Whisper-Local_AI-405438?style=flat-square)
+![Local AI](https://img.shields.io/badge/llama.cpp_%2B_Qwen3--ASR-Local_AI-405438?style=flat-square)
 
-[공개 체험판](https://joon56.github.io/Hanggo-LLM/) · [빠른 시작](#빠른-시작) · [브리핑 시연](docs/testing/consultation-brief.md) · [카메라 상담 시연](docs/testing/camera-consultation.md) · [기존 기능 시연](docs/testing/beta-test-script.md)
+[공개 체험판](https://joon56.github.io/Hanggo-LLM/) · [빠른 시작](#빠른-시작) · [브리핑 시연](docs/testing/consultation-brief.md) · [화상 코칭 시연](docs/testing/two-way-coaching.md) · [기존 기능 시연](docs/testing/beta-test-script.md)
 
 </div>
 
@@ -25,15 +25,13 @@
 
 | 기능 | 흐름 |
 |---|---|
-| **쌍방향 화상 코칭** | 훈련사가 사례 생성 → 보호자 초대 링크 → 각자 기기로 입장 → 영상·음성·바탕화면 공유 → 양쪽 동의 후 기록 표시 |
-| 카메라 상담 · 로컬 | 실제 카메라·마이크 → 최대 60분 전사·녹화 → 중요 장면 표시 → 종료 후 영상 관찰·검토 → 7개 항목 상세 일지·근거 시간·확정 |
-| 탭 녹화 · 로컬 | Chrome/Edge 탭 화면·음성 + 선택한 마이크 → 전사·녹화 → 원문 검토·일지 |
+| **쌍방향 화상 코칭** | 훈련사가 사례 생성 → 보호자 초대 링크 → 각자 기기로 입장 → 영상·음성·바탕화면 공유 → 양쪽 동의 후 화자별 자막과 캐치 장면 저장 |
 | 상담일지 | 3~60초 음성 또는 8,000자 이하 텍스트 → 원문·분류·숫자 확인 → 승인·저장 |
 | 보호자 일상 기록 | 반려동물 등록 → 음성 또는 텍스트 → 사건별 반려동물·시각·근거 확인 → 저장 |
 | 상담 전 브리핑 | 보호자 기록 + 직접 선택한 확정 상담일지 → 핵심 3줄·구체적인 확인 질문·날짜와 원문 근거·자료 부족 표시 |
 | 보호소 프로필 | 날짜·작성자 역할이 있는 관찰 메모 → 긍정·주의 관찰 확인 → 담당자 확정 |
 
-실시간 상담 자료는 서버 PC의 `.local-data/consultations`에 저장합니다. 기존 짧은 상담일지·보호자 기록 등은 브라우저 `localStorage`를 사용합니다. 실제 레슨 카탈로그가 연결된 경우에만 레슨 후보가 표시됩니다. 사용자별 계정·권한, 팀 공유 저장소, 보호자 자동 전송은 제공하지 않습니다.
+화상 코칭의 전사와 장면은 `HANGGO_HOME/data/coaching`에 저장합니다. 원본 음성은 저장하지 않고, 영상은 녹화하지 않습니다. 기존 짧은 상담일지·보호자 기록 등은 브라우저 `localStorage`를 사용합니다. 실제 레슨 카탈로그가 연결된 경우에만 레슨 후보가 표시됩니다. 사용자별 계정·권한, 팀 공유 저장소, 보호자 자동 전송은 제공하지 않습니다.
 
 ### 상담 전 브리핑
 
@@ -41,15 +39,13 @@
 
 카메라 없이도 텍스트 기록과 확정 상담일지로 시연할 수 있습니다. [브리핑 시연 대본](docs/testing/consultation-brief.md) · [브리핑 검증 결과](docs/llm/consultation-brief-verification.md)
 
-### 실시간 상담의 흐름
+### 화상 코칭의 흐름
 
-**카메라·마이크 → 전사·녹화 → 중요 장면 표시 → 종료 후 영상 분석 → 원문·관찰 수정 → 상세 일지 → 검토·내보내기**
+**입장 → 양쪽 동의 → 화자별 자막·캐치 → 종료 → 전사 정리**
 
-상담 목적·고민 / 보호자 보고 / 상담 중 관찰 / 훈련사 안내 / 합의한 과제 / 후속 확인 / 중요 장면으로 정리합니다. 각 항목의 전사 인용·수동 메모·AI 영상 관찰을 구분하고 근거 시각으로 이동합니다. 중요 장면은 버튼을 누른 순간을 먼저 고정하고 나중에 메모를 저장합니다.
+각 브라우저가 자기 마이크만 침묵 기준으로 잘라 서버로 보내므로 화자는 업로드한 사람으로 정해집니다. 캐치를 누르면 양쪽 브라우저가 버튼 약 5초 전부터 2초 후까지의 사진을 올립니다. 공유 화면과 훈련사 카메라는 캐치할 때만 저장합니다. 어느 쪽이든 동의를 철회하면 아직 보내지 않은 음성과 사진을 버립니다.
 
-영상은 기본 30초 간격과 중요 메모 주변의 최대 3개 프레임을 `qwen3.5:9b`로 분석합니다. 장면 사이의 짧은 행동은 빠질 수 있습니다. 프레임 시각은 관찰 근거 위치이며 행동 시작·종료나 보상 반응 시간을 자동 측정한 값이 아닙니다. 영상 관찰에도 오인식이 있어 근거 장면 검토·수정 후 일지를 확정합니다. 자동 화자 식별과 보호자·훈련사 원격 통화는 제공하지 않습니다.
-
-[카메라 상담 시연 대본](docs/testing/camera-consultation.md) · [탭 공유 시연 대본](docs/testing/live-consultation.md) · [무료 음성 모델 비교 결과](docs/llm/speech-comparison.md)
+[사람 시연 대본](docs/testing/two-way-coaching.md) · [2단계 검증 결과](docs/llm/two-way-step-2.md) · [무료 음성 모델 비교 결과](docs/llm/speech-comparison.md)
 
 <details>
 <summary><strong>모바일 검토 화면 보기</strong></summary>

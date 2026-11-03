@@ -36,10 +36,19 @@
 .call-tile figcaption { position: absolute; left: 6px; bottom: 6px; padding: 2px 6px; border-radius: 6px; background: rgba(0, 0, 0, .55); font-size: 11px; }
 .call-tile-off { position: absolute; inset: 0; display: grid; place-items: center; background: #0e100e; color: #a9afa2; font-size: 13px; text-align: center; padding: 8px; }
 .call-sound { position: absolute; top: 8px; right: 8px; background: #fff; color: var(--ink); }
-.call-controls { display: flex; justify-content: center; gap: 10px; padding: 12px; padding-bottom: max(12px, env(safe-area-inset-bottom)); }
+.call-moment { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; padding: 6px 14px; font-size: 13px; background: rgba(255, 255, 255, .08); }
+.call-moment form { display: flex; flex: 1; min-width: 240px; align-items: center; gap: 6px; }
+.call-moment input { flex: 1; min-width: 0; min-height: 32px; padding: 0 10px; border: 0; border-radius: 8px; background: rgba(255, 255, 255, .92); color: var(--ink); font-size: 13px; }
+.call-captions { padding: 8px 14px 0; display: grid; gap: 2px; font-size: 14px; line-height: 1.45; }
+.call-captions strong { color: #cfd8c4; font-weight: 600; margin-right: 4px; }
+.call-captions p[data-speaker="trainer"] strong { color: #f0c98a; }
+.call-captions .is-failed { color: #a9afa2; }
+.call-controls { display: flex; flex-wrap: wrap; justify-content: center; gap: 10px; padding: 12px; padding-bottom: max(12px, env(safe-area-inset-bottom)); }
 .call-control { width: 48px; height: 48px; display: grid; place-items: center; border-radius: 50%; background: rgba(255, 255, 255, .14); color: #fff; }
 .call-control[data-off="true"] { background: #fff; color: var(--ink); }
 .call-control[data-active="true"] { background: var(--green); }
+.call-control:disabled { opacity: .45; }
+.call-control.is-catch { width: auto; display: flex; align-items: center; gap: 6px; padding: 0 16px; border-radius: 24px; font-size: 14px; font-weight: 600; }
 .call-control.is-end { background: #b23a28; }
 
 @media (max-width: 720px) {

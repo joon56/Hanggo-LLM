@@ -4,7 +4,6 @@ import { createAiServices } from './ai/services.ts';
 import { createLlamaServer } from './ai/llm/llama-server.ts';
 import { LLM_MODELS } from './ai/llm/models.ts';
 import type { LlmProvider } from './ai/llm/types.ts';
-import { createConsultationVision } from './consultation-vision.ts';
 import { getLocalStatus } from './local-status.ts';
 import { createSpeechProvider } from './ai/speech/index.ts';
 import { createUploadTranscriber } from './ai/speech/upload.ts';
@@ -19,7 +18,6 @@ export function createAIServices(config: Config) {
   const llm = createLlmProvider(config);
   const speech = createSpeechProvider(config, { unloadTextModel: () => llm.release() });
   return { ...createAiServices(config, llm), llm,
-    vision: createConsultationVision(config, llm),
     liveSpeech: speech,
     status: () => getLocalStatus(config),
     transcribe: createUploadTranscriber({ speech, ffmpegPath: config.ffmpegPath, timeoutMs: config.sttTimeoutMs }),

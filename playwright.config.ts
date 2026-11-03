@@ -5,7 +5,8 @@ export default defineConfig({
   timeout: 30_000,
   fullyParallel: false,
   workers: 1,
-  reporter: 'list',
+  // Annotations can be read without a token, unlike the raw job log.
+  reporter: process.env.GITHUB_ACTIONS ? [['list'], ['github']] : 'list',
   outputDir: '.tmp/browser-results',
   globalSetup: './scripts/dev.mjs',
   use: {

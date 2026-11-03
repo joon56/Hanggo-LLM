@@ -14,7 +14,6 @@ const app = createApp(config, {
   },
   transcribe: services.transcribe,
   liveSpeech: services.liveSpeech,
-  vision: services.vision,
   async generateOwner(...args) { const result = await services.generateOwner(...args); logResult('owner_log', result); return result; },
   async generateBrief(...args) { const result = await services.generateBrief(...args); logResult('brief', result); return result; },
   async generateShelter(...args) { const result = await services.generateShelter(...args); logResult('shelter', result); return result; },

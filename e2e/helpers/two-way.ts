@@ -13,17 +13,21 @@ export function ensureMedia() {
   const make = (file: string, args: string[]) => { if (!existsSync(path.join(MEDIA, file))) execFileSync('ffmpeg', ['-v', 'error', '-nostdin', '-y', ...args, path.join(MEDIA, file)], { windowsHide: true }); };
   make('guardian.y4m', ['-f', 'lavfi', '-i', 'testsrc2=size=480x270:rate=15', '-t', '4', '-pix_fmt', 'yuv420p']);
   make('trainer.y4m', ['-f', 'lavfi', '-i', 'smptebars=size=480x270:rate=15', '-t', '4', '-pix_fmt', 'yuv420p']);
-  make('guardian.wav', ['-f', 'lavfi', '-i', 'sine=frequency=440:sample_rate=48000', '-t', '6', '-ac', '1']);
-  make('trainer.wav', ['-f', 'lavfi', '-i', 'sine=frequency=880:sample_rate=48000', '-t', '6', '-ac', '1']);
+  // Bursts with pauses, because speech windows are cut at pauses. The pitch says whose microphone a window came from.
+  const speech = (frequency: number) => ['-f', 'lavfi', '-i', `aevalsrc='if(lt(mod(t,5),4),0.3*sin(2*PI*${frequency}*t),0)':s=48000:d=20`, '-ac', '1'];
+  make('guardian-speech.wav', speech(440));
+  make('trainer-speech.wav', speech(880));
 }
 
 export type TestServer = { origin: string; stop(): Promise<void> };
-export async function startServer(port: number, options: { turn?: boolean } = {}): Promise<TestServer> {
+export async function startServer(port: number, options: { turn?: boolean; speech?: 'stub' | 'real' } = {}): Promise<TestServer> {
   if (!existsSync('dist/index.html')) throw new Error('Run npm run build before this test.');
   const home = mkdtempSync(path.join(tmpdir(), 'hanggo-e2e-'));
   const origin = `http://127.0.0.1:${port}`;
   const child: ChildProcess = spawn(process.execPath, ['server/index.ts'], { stdio: 'ignore', windowsHide: true,
-    env: { ...process.env, HANGGO_HOME: home, APP_ACCESS_PASSWORD: PASSWORD, PORT: String(port), HOST: '127.0.0.1', PUBLIC_ORIGIN: origin, AI_ENABLED: 'false', ...(options.turn ? {} : { TURN_URLS: '', TURN_USERNAME: '', TURN_CREDENTIAL: '' }) } });
+    env: { ...process.env, HANGGO_HOME: home, APP_ACCESS_PASSWORD: PASSWORD, PORT: String(port), HOST: '127.0.0.1', PUBLIC_ORIGIN: origin, COACHING_GRACE_MS: '3000', AI_ENABLED: options.speech ? 'true' : 'false', ...(options.speech === 'stub' ? { AI_PROVIDER: 'stub' } : {}),
+      // Data stays in the temporary folder, but the real model files live in the real home.
+      ...(options.speech === 'real' ? { LIVE_MODEL_DIRECTORY: path.join(process.env.HANGGO_HOME!, 'models', 'stt'), LLAMA_SERVER: path.join(process.env.HANGGO_HOME!, 'runtime', 'llama-cpp', 'llama-server.exe') } : {}), ...(options.turn ? {} : { TURN_URLS: '', TURN_USERNAME: '', TURN_CREDENTIAL: '' }) } });
   const deadline = Date.now() + 20_000;
   while (true) {
     if (child.exitCode !== null) throw new Error(`Server exited with ${child.exitCode}.`);
@@ -39,9 +43,9 @@ export async function startServer(port: number, options: { turn?: boolean } = {}
 }
 
 export type Participant = { browser: Browser; page: Page };
-export async function launch(role: 'guardian' | 'trainer', options: { noCamera?: boolean } = {}): Promise<Participant> {
+export async function launch(role: 'guardian' | 'trainer', options: { noCamera?: boolean; audioFile?: string } = {}): Promise<Participant> {
   const browser = await chromium.launch({ channel: 'chrome', headless: true, args: ['--use-fake-ui-for-media-stream', '--use-fake-device-for-media-stream',
-    `--use-file-for-fake-video-capture=${path.join(MEDIA, `${role}.y4m`)}`, `--use-file-for-fake-audio-capture=${path.join(MEDIA, `${role}.wav`)}`, '--autoplay-policy=no-user-gesture-required'] });
+    `--use-file-for-fake-video-capture=${path.join(MEDIA, `${role}.y4m`)}`, `--use-file-for-fake-audio-capture=${options.audioFile ?? path.join(MEDIA, `${role}-speech.wav`)}`, '--autoplay-policy=no-user-gesture-required'] });
   const page = await (await browser.newContext({ viewport: { width: 1100, height: 700 } })).newPage();
   page.on('dialog', dialog => void dialog.accept());
   await page.addInitScript(() => {

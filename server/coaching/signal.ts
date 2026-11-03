@@ -2,7 +2,8 @@ import type { IncomingMessage, Server } from 'node:http';
 import type { Duplex } from 'node:stream';
 import { WebSocket, WebSocketServer } from 'ws';
 import { z } from 'zod';
-import type { Consultation, Speaker } from '../../src/domain/coaching.ts';
+import { captionOf } from '../../src/domain/coaching.ts';
+import type { Consultation, Speaker, SpeechStatus } from '../../src/domain/coaching.ts';
 import { can } from '../../src/domain/permissions.ts';
 import type { Actor } from '../../src/domain/permissions.ts';
 import type { CoachingStore } from './store.ts';
@@ -21,17 +22,17 @@ const ClientMessage = z.discriminatedUnion('type', [
 
 type Member = { socket: WebSocket; call: string };
 type Room = { members: Partial<Record<Speaker, Member>>; lastCall: Partial<Record<Speaker, string>> };
-type Deps = { store: CoachingStore; allowedOrigins: Set<string>; resolveActor: (headers: { cookie?: string }) => Promise<Actor | null>; now?: () => number };
+type Deps = { store: CoachingStore; allowedOrigins: Set<string>; resolveActor: (headers: { cookie?: string }) => Promise<Actor | null>; speechStatus?: () => SpeechStatus; now?: () => number };
 
 const other = (role: Speaker): Speaker => role === 'trainer' ? 'guardian' : 'trainer';
 
 /** Relays negotiation and consultation state. Media never passes through this server. */
-export function attachSignal(server: Server, { store, allowedOrigins, resolveActor, now = Date.now }: Deps) {
+export function attachSignal(server: Server, { store, allowedOrigins, resolveActor, speechStatus = () => 'off', now = Date.now }: Deps) {
   const wss = new WebSocketServer({ noServer: true, maxPayload: MAX_MESSAGE_BYTES });
   const rooms = new Map<string, Room>();
   const roomFor = (id: string) => { let room = rooms.get(id); if (!room) { room = { members: {}, lastCall: {} }; rooms.set(id, room); } return room; };
   const send = (socket: WebSocket | undefined, message: unknown) => { if (socket?.readyState === WebSocket.OPEN) socket.send(JSON.stringify(message)); };
-  const stateMessage = (consultation: Consultation, room: Room, role: Speaker) => ({ type: 'state', consent: consultation.consent, recording: consultation.recording, state: consultation.state, peerOnline: !!room.members[other(role)] });
+  const stateMessage = (consultation: Consultation, room: Room, role: Speaker) => ({ type: 'state', consent: consultation.consent, recording: consultation.recording, recordingStartedAt: consultation.recordingStartedAt, state: consultation.state, peerOnline: !!room.members[other(role)] });
 
   function refuse(socket: Duplex, status: number) {
     socket.end(`HTTP/1.1 ${status} ${status === 401 ? 'Unauthorized' : status === 403 ? 'Forbidden' : status === 404 ? 'Not Found' : 'Conflict'}\r\nConnection: close\r\n\r\n`);
@@ -62,6 +63,9 @@ export function attachSignal(server: Server, { store, allowedOrigins, resolveAct
     void store.getConsultation(id).then(consultation => {
       send(socket, stateMessage(consultation, room, role));
       send(peer?.socket, stateMessage(consultation, room, other(role)));
+      send(socket, { type: 'speech', status: speechStatus() });
+      const settled = consultation.segments.filter(segment => segment.state !== 'queued');
+      if (settled.length) send(socket, { type: 'caption', replay: true, segments: settled.map(captionOf) });
     }, () => {});
 
     let windowStart = now(); let count = 0;
@@ -100,6 +104,10 @@ export function attachSignal(server: Server, { store, allowedOrigins, resolveAct
   server.on('upgrade', onUpgrade);
 
   return {
+    broadcast(consultationId: string, message: unknown) {
+      const room = rooms.get(consultationId);
+      for (const role of ['trainer', 'guardian'] as const) send(room?.members[role]?.socket, message);
+    },
     notify(consultation: Consultation) {
       const room = rooms.get(consultation.id);
       if (!room) return;

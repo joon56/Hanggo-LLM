@@ -46,11 +46,12 @@ function fakeSignal() {
   return { sent, channel, open: (next: SignalHandler) => { handler = next; return channel; }, emit: (message: any) => handler(message) };
 }
 const flush = async () => { for (let index = 0; index < 8; index++) await Promise.resolve(); };
-function build(role: 'trainer' | 'guardian', options: { tracks?: FakeTrack[]; display?: () => Promise<MediaStream>; forceRelay?: boolean } = {}) {
+function fakeRecorder() { return { start: vi.fn<(clock: () => number) => void>(), stop: vi.fn(), moment: vi.fn(), setScreen: vi.fn() }; }
+function build(role: 'trainer' | 'guardian', options: { tracks?: FakeTrack[]; display?: () => Promise<MediaStream>; forceRelay?: boolean; recorder?: ReturnType<typeof fakeRecorder> } = {}) {
   const signal = fakeSignal();
   const local = new FakeStream(options.tracks ?? [new FakeTrack('audio'), new FakeTrack('video')]);
   const session = new CallSession({ role, iceServers: [{ urls: 'stun:example' }], forceRelay: options.forceRelay, localStream: local as unknown as MediaStream, openSignal: signal.open,
-    createPeer: config => new FakePeer(config) as unknown as RTCPeerConnection, createStream: () => new FakeStream() as unknown as MediaStream, getDisplayMedia: options.display });
+    createPeer: config => new FakePeer(config) as unknown as RTCPeerConnection, createStream: () => new FakeStream() as unknown as MediaStream, getDisplayMedia: options.display, recorder: options.recorder });
   session.start();
   return { session, signal, local, peer: () => FakePeer.instances.at(-1)! };
 }
@@ -266,5 +267,110 @@ describe('recovery', () => {
     peer().getStats.mockClear();
     await vi.advanceTimersByTimeAsync(3000);
     expect(peer().getStats).not.toHaveBeenCalled();
+  });
+});
+
+describe('recording', () => {
+  const recordingState = { type: 'state', consent: { guardian: true, trainer: true }, recording: true, recordingStartedAt: 50000, state: 'live', peerOnline: true };
+  const stoppedState = { ...recordingState, recording: false };
+  const pings = (sent: any[]) => sent.filter(message => message.type === 'ping');
+  function clocked(role: 'trainer' | 'guardian' = 'guardian', options: Parameters<typeof build>[1] = {}) {
+    const recorder = fakeRecorder();
+    const built = build(role, { ...options, recorder });
+    built.signal.emit({ type: 'hello', role, serverNow: 1, peerOnline: true });
+    const at = Date.now();
+    built.signal.emit({ type: 'pong', at, serverNow: at + 60000 });
+    return { ...built, recorder };
+  }
+  it('measures the server clock several times after hello', async () => {
+    const { signal } = build('guardian');
+    signal.emit({ type: 'hello', role: 'guardian', serverNow: 1, peerOnline: false });
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(pings(signal.sent)).toHaveLength(3);
+  });
+  it('stops measuring when the participant has left', async () => {
+    const { session, signal } = build('guardian');
+    signal.emit({ type: 'hello', role: 'guardian', serverNow: 1, peerOnline: false });
+    session.leave();
+    const sent = pings(signal.sent).length;
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(pings(signal.sent)).toHaveLength(sent);
+  });
+  it('starts the recorder only once recording is on and the clock is known', () => {
+    const recorder = fakeRecorder();
+    const { signal } = build('guardian', { recorder });
+    signal.emit(recordingState);
+    expect(recorder.start).not.toHaveBeenCalled();
+    const at = Date.now();
+    signal.emit({ type: 'pong', at, serverNow: at + 60000 });
+    expect(recorder.start).toHaveBeenCalledTimes(1);
+    expect(recorder.start.mock.calls[0][0]()).toBeCloseTo(Date.now() + 60000 - 50000, -2);
+  });
+  it('does nothing before consent even with a known clock', () => {
+    const { signal, recorder } = clocked();
+    signal.emit({ ...recordingState, recording: false, recordingStartedAt: undefined });
+    expect(recorder.start).not.toHaveBeenCalled();
+  });
+  it('discards buffered work when consent is withdrawn during the call', () => {
+    const { signal, recorder } = clocked();
+    signal.emit(recordingState); signal.emit(stoppedState);
+    expect(recorder.stop).toHaveBeenLastCalledWith({ flush: false });
+  });
+  it('sends buffered work when the consultation ends', () => {
+    const { signal, recorder } = clocked();
+    signal.emit(recordingState); signal.emit({ ...stoppedState, state: 'processing' });
+    expect(recorder.stop).toHaveBeenLastCalledWith({ flush: true });
+  });
+  it('sends buffered work when the participant leaves, before tracks stop', () => {
+    const audio = new FakeTrack('audio');
+    const { session, recorder } = clocked('guardian', { tracks: [audio] });
+    recorder.stop.mockImplementation(() => { expect(audio.stop).not.toHaveBeenCalled(); });
+    session.leave();
+    expect(recorder.stop).toHaveBeenCalledWith({ flush: true });
+    expect(audio.stop).toHaveBeenCalled();
+  });
+  it('passes moments to the recorder and shows who made them', () => {
+    const { session, signal, recorder } = clocked();
+    signal.emit({ type: 'moment', id: 'm1', atMs: 1200, createdBy: 'trainer' });
+    expect(recorder.moment).toHaveBeenCalledWith({ id: 'm1', atMs: 1200 });
+    expect(session.snapshot().lastMoment).toEqual({ id: 'm1', atMs: 1200, createdBy: 'trainer' });
+  });
+  it('merges captions by id and keeps them in speaking order', () => {
+    const { session, signal } = clocked();
+    const line = (id: string, startMs: number, text: string) => ({ id, speaker: 'trainer', startMs, endMs: startMs + 1000, text, state: 'complete' });
+    signal.emit({ type: 'caption', replay: true, segments: [line('a', 5000, '나중'), line('b', 1000, '먼저')] });
+    expect(session.snapshot().captions.map(item => item.text)).toEqual(['먼저', '나중']);
+    signal.emit({ type: 'caption', segments: [{ ...line('b', 1000, '먼저'), echoSuspect: true }] });
+    expect(session.snapshot().captions.map(item => item.echoSuspect)).toEqual([true, undefined]);
+  });
+  it('measures caption delay for live captions, not the replay after joining', () => {
+    const { session, signal } = clocked();
+    signal.emit(recordingState);
+    const elapsed = Date.now() + 60000 - 50000;
+    signal.emit({ type: 'caption', replay: true, segments: [{ id: 'a', speaker: 'trainer', startMs: 0, endMs: 1000, text: '이전', state: 'complete' }] });
+    expect(session.snapshot().captionLatencyMs).toBeNull();
+    signal.emit({ type: 'caption', segments: [{ id: 'b', speaker: 'trainer', startMs: elapsed - 3000, endMs: elapsed - 2500, text: '방금', state: 'complete' }] });
+    expect(session.snapshot().captionLatencyMs).toBeGreaterThanOrEqual(2400);
+    expect(session.snapshot().captionLatencyMs).toBeLessThanOrEqual(2600);
+  });
+  it('shows the speech model status', () => {
+    const { session, signal } = clocked();
+    expect(session.snapshot().speech).toBe('off');
+    signal.emit({ type: 'speech', status: 'preparing' });
+    expect(session.snapshot().speech).toBe('preparing');
+  });
+  it('tells the recorder about a shared screen', async () => {
+    const screen = new FakeStream([new FakeTrack('video')]);
+    const { session, recorder } = clocked('trainer', { display: async () => screen as unknown as MediaStream });
+    await session.startScreenShare();
+    expect(recorder.setScreen).toHaveBeenLastCalledWith(screen);
+    session.stopScreenShare();
+    expect(recorder.setScreen).toHaveBeenLastCalledWith(null);
+  });
+  it('remembers that an upload was lost', () => {
+    const { session } = clocked();
+    expect(session.snapshot().uploadLost).toBe(false);
+    session.noteUploadLost();
+    expect(session.snapshot().uploadLost).toBe(true);
   });
 });

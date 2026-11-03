@@ -1,24 +1,30 @@
+import { randomUUID } from 'node:crypto';
 import express from 'express';
 import type { ErrorRequestHandler, Request, Response } from 'express';
 import rateLimit from 'express-rate-limit';
 import { z } from 'zod';
 import { setConsent, transition, TransitionError } from '../../src/domain/coaching.ts';
-import type { CoachingCase, Consultation, Speaker } from '../../src/domain/coaching.ts';
+import type { CoachingCase, Consultation, Moment, Speaker } from '../../src/domain/coaching.ts';
 import { can } from '../../src/domain/permissions.ts';
 import type { Action, Actor } from '../../src/domain/permissions.ts';
 import { iceConfig, type TurnConfig } from '../turn.ts';
 import type { GuardianSessions } from './guardian-session.ts';
 import { StoreError, type CoachingStore } from './store.ts';
+import type { Transcription } from './transcription.ts';
+import { isSilentWav } from './wav.ts';
 
 export const GUARDIAN_COOKIE = 'hanggo_guardian';
 type Headers = { cookie?: string };
 
 export type CoachingDeps = {
-  store: CoachingStore; sessions: GuardianSessions; turn: TurnConfig; secureCookies: boolean;
+  store: CoachingStore; sessions: GuardianSessions; turn: TurnConfig; secureCookies: boolean; transcription: Transcription;
+  /** How long after the end to accept what browsers still hold. */
+  graceMs: number;
   /** Password session check owned by the app. */
   isTrainer: (headers: Headers) => boolean;
   /** Tells connected participants that consultation state changed. */
   notify?: (consultation: Consultation) => void;
+  broadcast?: (consultationId: string, message: unknown) => void;
   now?: () => number;
 };
 
@@ -26,8 +32,20 @@ const name = z.string().trim().min(1).max(200);
 const CaseInput = z.object({ petName: name, guardianName: name, trainerName: name }).strict();
 const JoinInput = z.object({ token: z.string().min(1).max(200) }).strict();
 const ConsentInput = z.object({ value: z.boolean() }).strict();
+const MAX_RECORDING_MS = 60 * 60 * 1000;
+const CLOCK_SLACK_MS = 5000;
+const MAX_FRAMES = 1000;
+const MAX_MOMENTS = 200;
+const MERGE_MOMENTS_MS = 1000;
+const time = z.string().regex(/^\d{1,8}$/).transform(Number).pipe(z.number().max(MAX_RECORDING_MS));
+const AudioParams = z.object({ startMs: time, endMs: time }).strict();
+const FrameParams = z.object({ frameId: z.uuid(), atMs: time, source: z.enum(['camera', 'screen']), moment: z.uuid().optional() }).strict();
+const MemoInput = z.object({ text: z.string().trim().max(500) }).strict();
+const isJpeg = (bytes: unknown) => Buffer.isBuffer(bytes) && bytes.length > 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff;
 
 const publicCase = ({ inviteHash: _inviteHash, inviteExpiresAt: _inviteExpiresAt, guardianGeneration: _generation, ...shared }: CoachingCase) => shared;
+/** Scenes and memos stay with the trainer until a confirmed note cites them. */
+const viewFor = (actor: Actor, consultation: Consultation): Consultation => actor.role === 'trainer' ? consultation : { ...consultation, frames: [], moments: [] };
 const readCookie = (headers: Headers, key: string) => headers.cookie?.split(';').map(part => part.trim()).find(part => part.startsWith(`${key}=`))?.slice(key.length + 1);
 
 /** Shared with the signaling server so REST and WebSocket apply the same identity rules. */
@@ -44,7 +62,7 @@ export function createActorResolver({ store, sessions, isTrainer }: Pick<Coachin
 }
 
 export function createCoachingRouter(deps: CoachingDeps) {
-  const { store, sessions, notify, now = Date.now } = deps;
+  const { store, sessions, notify, transcription, graceMs, broadcast, now = Date.now } = deps;
   const router = express.Router();
   const resolveActor = createActorResolver(deps);
   const joinLimit = rateLimit({ windowMs: 60_000, limit: 10, keyGenerator: () => 'join', standardHeaders: 'draft-8', legacyHeaders: false,
@@ -87,7 +105,7 @@ export function createCoachingRouter(deps: CoachingDeps) {
   router.get('/cases/:id', async (req, res) => {
     const id = param(req, 'id');
     if (!allowed(req, res, 'case:read', id)) return;
-    res.json({ ...publicCase(await store.getCase(id)), consultations: await store.listConsultations(id) });
+    res.json({ ...publicCase(await store.getCase(id)), consultations: (await store.listConsultations(id)).map(item => viewFor(actorOf(req), item)) });
   });
   router.post('/cases/:id/invite', async (req, res) => {
     const id = param(req, 'id');
@@ -106,7 +124,7 @@ export function createCoachingRouter(deps: CoachingDeps) {
   }
   router.get('/consultations/:id', async (req, res) => {
     const consultation = await consultationFor(req, res, 'case:read');
-    if (consultation) res.json(consultation);
+    if (consultation) res.json(viewFor(actorOf(req), consultation));
   });
   router.get('/consultations/:id/ice', async (req, res) => {
     if (await consultationFor(req, res, 'call:join')) res.json(iceConfig(deps.turn));
@@ -116,14 +134,84 @@ export function createCoachingRouter(deps: CoachingDeps) {
     if (!consultation) return;
     const { value } = ConsentInput.parse(req.body);
     const updated = await store.updateConsultation(consultation.id, current => setConsent(current, roleOf(actorOf(req)), value, now()));
-    notify?.(updated); res.json(updated);
+    if (updated.recording) transcription.start(updated.id);
+    notify?.(updated); res.json(viewFor(actorOf(req), updated));
   });
   router.post('/consultations/:id/end', async (req, res) => {
     const consultation = await consultationFor(req, res, 'consultation:end');
     if (!consultation) return;
-    // Nothing to post-process until transcription arrives, so ending goes straight to review.
-    const updated = await store.updateConsultation(consultation.id, current => transition(transition(current, 'end', now()), 'processed', now()));
+    const updated = await store.updateConsultation(consultation.id, current => transition(current, 'end', now()));
     notify?.(updated); res.json(updated);
+    void transcription.finish(updated.id).catch(() => { console.error('상담 마무리 처리에 실패했습니다.'); });
+  });
+
+  /** The browser's last window arrives after the end, but only if both sides were still consenting then. */
+  function acceptsMedia(consultation: Consultation) {
+    if (consultation.recording) return true;
+    return consultation.state === 'processing' && consultation.consent.guardian && consultation.consent.trainer && now() - consultation.endedAt! < graceMs;
+  }
+  async function recordingFor(req: Request, res: Response) {
+    const consultation = await consultationFor(req, res, 'recording:upload');
+    if (consultation && !acceptsMedia(consultation)) throw new StoreError('NOT_RECORDING', '지금은 기록 중이 아닙니다.', 409);
+    return consultation;
+  }
+  const elapsed = (consultation: Consultation) => (consultation.endedAt ?? now()) - consultation.recordingStartedAt!;
+  router.put('/consultations/:id/audio/:startMs', express.raw({ type: 'audio/wav', limit: '600kb' }), async (req, res) => {
+    const consultation = await recordingFor(req, res);
+    if (!consultation) return;
+    const times = AudioParams.parse({ startMs: param(req, 'startMs'), endMs: req.query.endMs });
+    if (times.endMs > elapsed(consultation) + CLOCK_SLACK_MS) throw new StoreError('INPUT', '기록 시간을 벗어났습니다.');
+    if (isSilentWav(req.body, times.startMs, times.endMs)) { res.json({ dropped: true }); return; }
+    const segment = await transcription.accept(consultation.id, roleOf(actorOf(req)), times, req.body);
+    res.status(202).json({ id: segment.id });
+  });
+  router.put('/consultations/:id/frames/:frameId', express.raw({ type: 'image/jpeg', limit: '256kb' }), async (req, res) => {
+    const consultation = await recordingFor(req, res);
+    if (!consultation) return;
+    const { frameId, atMs, source, moment } = FrameParams.parse({ frameId: param(req, 'frameId'), ...req.query });
+    const speaker = roleOf(actorOf(req));
+    // A shared screen or the trainer's own camera can show private things, so they are kept only when someone marked the moment.
+    if (!moment && (speaker !== 'guardian' || source !== 'camera')) throw new StoreError('INPUT', '이 장면은 캐치할 때만 저장합니다.');
+    if (!isJpeg(req.body)) throw new StoreError('INPUT', 'JPEG 사진이 아닙니다.');
+    if (moment && !consultation.moments.some(item => item.id === moment)) throw new StoreError('NOT_FOUND', '캐치를 찾을 수 없습니다.', 404);
+    const existing = consultation.frames.find(item => item.id === frameId);
+    if (existing && existing.speaker !== speaker) throw new StoreError('FRAME', '이미 다른 참가자가 올린 사진입니다.', 409);
+    if (!existing && consultation.frames.length >= MAX_FRAMES) throw new StoreError('FRAME_LIMIT', '저장할 수 있는 사진 수를 넘었습니다.', 429);
+    if (!existing) await store.putFrame(consultation.id, frameId, req.body);
+    await store.updateConsultation(consultation.id, current => ({ ...current,
+      frames: current.frames.some(item => item.id === frameId) ? current.frames : [...current.frames, { id: frameId, atMs, source, speaker, bytes: req.body.length }],
+      moments: current.moments.map(item => item.id === moment && !item.frameIds.includes(frameId) ? { ...item, frameIds: [...item.frameIds, frameId] } : item) }));
+    res.status(201).json({ id: frameId });
+  });
+  router.get('/consultations/:id/frames/:frameId', async (req, res) => {
+    const consultation = await consultationFor(req, res, 'frame:read-all');
+    if (consultation) res.type('image/jpeg').send(await store.readFrame(consultation.id, param(req, 'frameId')));
+  });
+  router.post('/consultations/:id/moments', async (req, res) => {
+    const consultation = await consultationFor(req, res, 'moment:create');
+    if (!consultation) return;
+    if (!consultation.recording) throw new StoreError('NOT_RECORDING', '지금은 기록 중이 아닙니다.', 409);
+    const createdBy = roleOf(actorOf(req)); const atMs = elapsed(consultation);
+    if (atMs > MAX_RECORDING_MS) throw new StoreError('INPUT', '기록 시간을 벗어났습니다.');
+    let moment!: Moment; let added = false;
+    await store.updateConsultation(consultation.id, current => {
+      const recent = current.moments.filter(item => item.createdBy === createdBy && atMs - item.atMs < MERGE_MOMENTS_MS).at(-1);
+      if (recent) { moment = recent; return current; }
+      if (current.moments.length >= MAX_MOMENTS) throw new StoreError('MOMENT_LIMIT', '저장할 수 있는 캐치 수를 넘었습니다.', 429);
+      moment = { id: randomUUID(), atMs, createdBy, frameIds: [] }; added = true;
+      return { ...current, moments: [...current.moments, moment] };
+    });
+    if (added) broadcast?.(consultation.id, { type: 'moment', id: moment.id, atMs, createdBy });
+    res.status(201).json({ ...moment, text: undefined });
+  });
+  router.patch('/consultations/:id/moments/:momentId', async (req, res) => {
+    const consultation = await consultationFor(req, res, 'scene:review');
+    if (!consultation) return;
+    const { text } = MemoInput.parse(req.body);
+    const momentId = param(req, 'momentId');
+    if (!consultation.moments.some(item => item.id === momentId)) throw new StoreError('NOT_FOUND', '캐치를 찾을 수 없습니다.', 404);
+    const updated = await store.updateConsultation(consultation.id, current => ({ ...current, moments: current.moments.map(item => item.id === momentId ? { ...item, text } : item) }));
+    res.json(updated.moments.find(item => item.id === momentId));
   });
 
   const errors: ErrorRequestHandler = (error, _req, res, next) => {

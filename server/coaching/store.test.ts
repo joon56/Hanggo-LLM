@@ -1,5 +1,5 @@
 // @vitest-environment node
-import { mkdtempSync, readFileSync, readdirSync, rmSync, statSync } from 'node:fs';
+import { mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, expect, it } from 'vitest';
@@ -115,4 +115,28 @@ it('leaves no temporary files behind', async () => {
   const { case: created } = await store.createCase(input);
   await store.createConsultation(created.id);
   expect(allFiles(root).filter(file => file.endsWith('.tmp'))).toEqual([]);
+});
+it('stores frames beside the consultation and rejects unsafe frame ids', async () => {
+  const store = createFileStore(directory());
+  const { case: created } = await store.createCase(input);
+  const { id } = await store.createConsultation(created.id);
+  const frame = '00000000-0000-4000-8000-000000000001';
+  await store.putFrame(id, frame, Buffer.from([255, 216, 1]));
+  expect([...await store.readFrame(id, frame)]).toEqual([255, 216, 1]);
+  await expect(store.putFrame(id, '../outside', Buffer.from([1]))).rejects.toBeInstanceOf(StoreError);
+  await expect(store.readFrame(id, '00000000-0000-4000-8000-000000000002')).rejects.toMatchObject({ code: 'NOT_FOUND' });
+});
+it('starts consultations with empty transcript, moment, and frame lists', async () => {
+  const store = createFileStore(directory());
+  const { case: created } = await store.createCase(input);
+  await expect(store.startConsultation(created.id)).resolves.toMatchObject({ segments: [], moments: [], frames: [] });
+});
+it('reads consultation records written before transcription existed', async () => {
+  const root = directory(); const store = createFileStore(root);
+  const { case: created } = await store.createCase(input);
+  const { id } = await store.createConsultation(created.id);
+  const file = path.join(root, 'consultations', id, 'consultation.json');
+  const { segments: _segments, moments: _moments, frames: _frames, ...earlier } = JSON.parse(readFileSync(file, 'utf8'));
+  writeFileSync(file, JSON.stringify(earlier));
+  await expect(store.getConsultation(id)).resolves.toMatchObject({ segments: [], moments: [], frames: [] });
 });

@@ -1,4 +1,5 @@
-import type { Speaker } from '../domain/coaching';
+import type { Caption, MomentNotice, Speaker, SpeechStatus } from '../domain/coaching';
+import { estimateOffset, type ClockSample } from './clock';
 
 export type PeerMedia = { camera: boolean; microphone: boolean; screen: boolean };
 export type SignalMessage =
@@ -7,7 +8,10 @@ export type SignalMessage =
   | { type: 'offer' | 'answer'; sdp: string }
   | { type: 'candidate'; candidate: RTCIceCandidateInit | null }
   | ({ type: 'media' } & PeerMedia)
-  | { type: 'state'; consent: Record<Speaker, boolean>; recording: boolean; state: string; peerOnline: boolean }
+  | { type: 'state'; consent: Record<Speaker, boolean>; recording: boolean; recordingStartedAt?: number; state: string; peerOnline: boolean }
+  | { type: 'caption'; replay?: boolean; segments: Caption[] }
+  | ({ type: 'moment' } & MomentNotice)
+  | { type: 'speech'; status: SpeechStatus }
   | { type: 'pong'; at: number; serverNow: number }
   | { type: 'error'; code: string };
 export type OutgoingSignal = Extract<SignalMessage, { type: 'offer' | 'answer' | 'candidate' | 'media' }> | { type: 'ping'; at: number };
@@ -20,6 +24,11 @@ export type CallSnapshot = {
   microphoneOn: boolean; cameraOn: boolean; hasCamera: boolean; hasMicrophone: boolean;
   localStream: MediaStream; localScreen: MediaStream | null; remoteStream: MediaStream | null; remoteScreen: MediaStream | null;
   consent: Record<Speaker, boolean>; recording: boolean; consultationState: string;
+  captions: Caption[]; speech: SpeechStatus; lastMoment: MomentNotice | null; captionLatencyMs: number | null; uploadLost: boolean;
+};
+export type SessionRecorder = {
+  start(clock: () => number): void; stop(options: { flush: boolean }): void;
+  moment(moment: { id: string; atMs: number }): void; setScreen(stream: MediaStream | null): void;
 };
 type DisplayOptions = DisplayMediaStreamOptions & { systemAudio?: string; monitorTypeSurfaces?: string; surfaceSwitching?: string };
 type Options = {
@@ -28,11 +37,13 @@ type Options = {
   createPeer?: (config: RTCConfiguration) => RTCPeerConnection;
   createStream?: () => MediaStream;
   getDisplayMedia?: (options: DisplayOptions) => Promise<MediaStream>;
+  recorder?: SessionRecorder;
   onChange?: () => void;
 };
 
 const DISCONNECT_GRACE_MS = 5000;
 const STATS_INTERVAL_MS = 1000;
+const CLOCK_PING_DELAYS_MS = [0, 250, 500];
 const NO_STATS: CallStats = { inboundVideoFrames: 0, inboundAudioBytes: 0, inboundAudioEnergy: 0, roundTripMs: null, relayed: false };
 
 /** One participant's side of the call, kept free of React so negotiation can be tested without a browser. */
@@ -51,6 +62,11 @@ export class CallSession {
   private statsTimer: ReturnType<typeof setInterval> | undefined;
   private screenStream: MediaStream | null = null;
   private screenSenders: RTCRtpSender[] = [];
+  private clockSamples: ClockSample[] = [];
+  /** Server time minus browser time, once measured. */
+  private clockOffset: number | undefined;
+  private clockTimers: ReturnType<typeof setTimeout>[] = [];
+  private recordingStartedAt: number | undefined;
   private snapshotValue: CallSnapshot;
 
   constructor(options: Options) {
@@ -61,7 +77,8 @@ export class CallSession {
     this.snapshotValue = { status: 'waiting', peerOnline: false, peerMedia: { camera: false, microphone: false, screen: false }, stats: NO_STATS, error: '',
       microphoneOn: !!audio, cameraOn: !!video, hasCamera: !!video, hasMicrophone: !!audio,
       localStream: options.localStream, localScreen: null, remoteStream: null, remoteScreen: null,
-      consent: { guardian: false, trainer: false }, recording: false, consultationState: 'live' };
+      consent: { guardian: false, trainer: false }, recording: false, consultationState: 'live',
+      captions: [], speech: 'off', lastMoment: null, captionLatencyMs: null, uploadLost: false };
   }
 
   snapshot() { return this.snapshotValue; }
@@ -111,6 +128,7 @@ export class CallSession {
   private async handleSignal(message: SignalMessage) {
     switch (message.type) {
       case 'hello':
+        this.measureClock();
         this.update({ peerOnline: message.peerOnline, status: message.peerOnline ? 'connecting' : this.snapshotValue.status });
         if (message.peerOnline) this.announceMedia();
         if (message.peerOnline && this.options.role === 'trainer' && !this.peer.remoteDescription) this.sendOfferNow();
@@ -135,13 +153,58 @@ export class CallSession {
         return;
       }
       case 'state':
+        this.recordingStartedAt = message.recordingStartedAt;
         this.update({ consent: message.consent, recording: message.recording, consultationState: message.state, peerOnline: message.peerOnline,
           ...(message.peerOnline ? this.snapshotValue.status === 'waiting' ? { status: 'connecting' as const } : {} : { status: 'waiting' as const, peerMedia: { camera: false, microphone: false, screen: false } }) });
+        this.syncRecorder();
         return;
-      case 'error':
-      case 'pong': return;
+      case 'caption': return this.mergeCaptions(message.segments, !!message.replay);
+      case 'moment': {
+        const { id, atMs, createdBy } = message;
+        this.update({ lastMoment: { id, atMs, createdBy } });
+        this.options.recorder?.moment({ id, atMs });
+        return;
+      }
+      case 'speech':
+        this.update({ speech: message.status });
+        return;
+      case 'pong':
+        this.clockSamples.push({ sentAt: message.at, receivedAt: Date.now(), serverNow: message.serverNow });
+        this.clockOffset = estimateOffset(this.clockSamples);
+        this.syncRecorder();
+        return;
+      case 'error': return;
     }
   }
+
+  private measureClock() {
+    this.clockTimers.forEach(clearTimeout);
+    this.clockSamples = [];
+    this.clockTimers = CLOCK_PING_DELAYS_MS.map(delay => setTimeout(() => this.signal?.send({ type: 'ping', at: Date.now() }), delay));
+  }
+
+  /** Recording time on the server's clock, so both browsers place evidence on one timeline. */
+  private recordingNow() {
+    return Date.now() + this.clockOffset! - this.recordingStartedAt!;
+  }
+
+  private syncRecorder() {
+    const { recording, consultationState } = this.snapshotValue;
+    if (recording && this.recordingStartedAt !== undefined && this.clockOffset !== undefined) this.options.recorder?.start(() => this.recordingNow());
+    // A withdrawal means stop now and send nothing more. The end of the consultation still owes the last words.
+    else if (!recording) this.options.recorder?.stop({ flush: consultationState !== 'live' });
+  }
+
+  private mergeCaptions(segments: Caption[], replay: boolean) {
+    const byId = new Map(this.snapshotValue.captions.map(item => [item.id, item]));
+    for (const segment of segments) byId.set(segment.id, segment);
+    const captions = [...byId.values()].sort((left, right) => left.startMs - right.startMs);
+    const newest = segments.at(-1);
+    const measurable = !replay && newest?.state === 'complete' && this.recordingStartedAt !== undefined && this.clockOffset !== undefined;
+    this.update({ captions, ...(measurable ? { captionLatencyMs: Math.round(this.recordingNow() - newest.endMs) } : {}) });
+  }
+
+  noteUploadLost() { this.update({ uploadLost: true }); }
 
   private async handleDescription(description: { type: 'offer' | 'answer'; sdp: string }) {
     const peer = this.peer;
@@ -262,6 +325,7 @@ export class CallSession {
     this.screenStream = stream;
     this.screenSenders = stream.getTracks().map(track => this.peer.addTrack(track, stream));
     stream.getVideoTracks()[0]?.addEventListener('ended', () => this.stopScreenShare());
+    this.options.recorder?.setScreen(stream);
     this.update({ localScreen: stream });
     this.announceMedia();
   }
@@ -273,12 +337,15 @@ export class CallSession {
     for (const sender of this.screenSenders) this.peer.removeTrack(sender);
     this.screenSenders = [];
     stream.getTracks().forEach(track => track.stop());
+    this.options.recorder?.setScreen(null);
     this.update({ localScreen: null });
     this.announceMedia();
   }
 
   leave() {
     clearTimeout(this.restartTimer); clearInterval(this.statsTimer);
+    this.clockTimers.forEach(clearTimeout);
+    this.options.recorder?.stop({ flush: true });
     this.screenStream?.getTracks().forEach(track => track.stop());
     this.options.localStream.getTracks().forEach(track => track.stop());
     this.peer?.close();
