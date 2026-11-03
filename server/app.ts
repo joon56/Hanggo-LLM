@@ -101,7 +101,7 @@ export function createApp(config: Config, services: Services) {
   const notifyCoaching = (consultation: Consultation) => signal?.notify(consultation);
   const broadcast = (consultationId: string, message: unknown) => signal?.broadcast(consultationId, message);
   const transcription = createTranscription({ store: coachingStore, speech: config.aiEnabled ? services.liveSpeech : undefined, broadcast, graceMs: config.coachingGraceMs });
-  const postProcess = createPostProcess({ store: coachingStore, transcription, llm: config.aiEnabled ? services.llm : undefined, notify: notifyCoaching });
+  const postProcess = createPostProcess({ store: coachingStore, transcription, llm: config.aiEnabled ? services.llm : undefined, callTimeoutMs: config.timeoutMs * 2, notify: notifyCoaching });
   app.use('/api/coaching', createCoachingRouter({ ...coachingAccess, turn: config.turn, secureCookies: config.production, transcription, postProcess, graceMs: config.coachingGraceMs, notify: notifyCoaching, broadcast,
     generateOwner: config.aiEnabled && services.generateOwner ? (services.generateOwner as NonNullable<CoachingDeps['generateOwner']>) : undefined }));
   app.use('/api', (req, res, next) => {

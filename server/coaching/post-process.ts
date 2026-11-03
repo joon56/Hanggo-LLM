@@ -9,15 +9,17 @@ import type { Transcription } from './transcription.ts';
 
 type Deps = {
   store: CoachingStore; transcription: Pick<Transcription, 'settle' | 'close'>; llm?: LlmProvider;
+  /** Slower machines can raise the limit on a single model call. */
+  callTimeoutMs?: number;
   notify?: (consultation: Consultation) => void;
   now?: () => number;
 };
 export type PostProcess = ReturnType<typeof createPostProcess>;
 
 /** Everything after a call, in the order one GPU allows: speech model out, then scenes, then the note. */
-export function createPostProcess({ store, transcription, llm, notify, now = Date.now }: Deps) {
-  const scenes = llm && createSceneService({ llm, store });
-  const notes = llm && createNoteService({ llm, now });
+export function createPostProcess({ store, transcription, llm, callTimeoutMs, notify, now = Date.now }: Deps) {
+  const scenes = llm && createSceneService({ llm, store, callTimeoutMs });
+  const notes = llm && createNoteService({ llm, now, callTimeoutMs });
   const stopping = new AbortController();
   const running = new Set<Promise<unknown>>();
   const track = <T>(work: Promise<T>) => { running.add(work); void work.finally(() => running.delete(work)).catch(() => {}); return work; };

@@ -155,3 +155,21 @@ describe('long consultations', () => {
     expect(note.warnings.join()).toContain('요약');
   });
 });
+
+describe('a model that never answers', () => {
+  const hanging = () => vi.fn((request: LlmRequest) => new Promise<LlmOutput>((_resolve, reject) => { request.signal?.addEventListener('abort', () => reject(new Error('aborted'))); }));
+  it('gives up after the time limit and falls back to the blank form, so a consultation cannot stay stuck', async () => {
+    const structured = hanging();
+    const service = createNoteService({ llm: { name: 'fake', supportsVision: false, structured, release: async () => {} }, callTimeoutMs: 5 });
+    const note = await service.generate(consultation(short), info);
+    expect(structured).toHaveBeenCalledTimes(2);
+    expect(note.fallbackUsed).toBe(true);
+  });
+  it('still treats a cancellation from outside as a cancellation', async () => {
+    const controller = new AbortController();
+    const service = createNoteService({ llm: { name: 'fake', supportsVision: false, structured: hanging(), release: async () => {} }, callTimeoutMs: 60_000 });
+    const pending = service.generate(consultation(short), info, controller.signal);
+    setTimeout(() => controller.abort(), 5);
+    await expect(pending).rejects.toThrow();
+  });
+});

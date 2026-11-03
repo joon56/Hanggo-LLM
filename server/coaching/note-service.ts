@@ -5,7 +5,8 @@ import { buildNoteRequest, buildSummaryRequest, RawNoteSchema, RawSummarySchema 
 
 const CHUNK_MS = 15 * 60 * 1000;
 type CaseInfo = { petName: string; guardianName: string; trainerName: string };
-type Deps = { llm: LlmProvider; now?: () => number };
+const DEFAULT_CALL_TIMEOUT_MS = 10 * 60 * 1000;
+type Deps = { llm: LlmProvider; now?: () => number; callTimeoutMs?: number };
 type Attempt = { note: CoachingNote; violations: NoteViolation[] };
 
 const timeLabel = (ms: number) => `${String(Math.floor(ms / 60000)).padStart(2, '0')}:${String(Math.floor(ms / 1000) % 60).padStart(2, '0')}`;
@@ -34,10 +35,12 @@ function merge(notes: CoachingNote[], source: NoteSource, createdAt: string, war
   return { version: 2, ...sections, safetyFlags: [...new Set(notes.flatMap(note => note.safetyFlags))], methodReview: notes.some(note => note.methodReview), uncitedSegmentIds: uncited(sections, source), createdAt, warnings };
 }
 
-export function createNoteService({ llm, now = Date.now }: Deps) {
+export function createNoteService({ llm, now = Date.now, callTimeoutMs = DEFAULT_CALL_TIMEOUT_MS }: Deps) {
   async function ask<T>(request: Parameters<LlmProvider['structured']>[0], parse: (json: unknown) => T): Promise<T | null> {
+    // A model that stops answering must not leave the consultation stuck, so each call has a limit of its own.
+    const limit = AbortSignal.timeout(callTimeoutMs);
     try {
-      const { json, finished } = await llm.structured(request);
+      const { json, finished } = await llm.structured({ ...request, signal: request.signal ? AbortSignal.any([request.signal, limit]) : limit });
       return finished && json !== null ? parse(json) : null;
     } catch (error) {
       if (request.signal?.aborted) throw error;

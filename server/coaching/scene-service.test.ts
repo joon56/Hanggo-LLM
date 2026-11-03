@@ -97,3 +97,12 @@ describe('createSceneService', () => {
     expect(structured).not.toHaveBeenCalled();
   });
 });
+
+describe('a vision model that never answers', () => {
+  it('marks the scene failed after the time limit and moves on', async () => {
+    const structured = vi.fn((request: LlmRequest) => new Promise<{ json: unknown; finished: boolean }>((_resolve, reject) => { request.signal?.addEventListener('abort', () => reject(new Error('aborted'))); }));
+    const service = createSceneService({ llm: { name: 'fake', supportsVision: true, structured, release: async () => {} }, store: { readFrame: async () => Buffer.from([1]) }, callTimeoutMs: 5 });
+    const scenes = await service.analyze(consultation({ frames: [frame('a', 0), frame('b', 60000)] }));
+    expect(scenes.map(scene => scene.state)).toEqual(['failed', 'failed']);
+  });
+});

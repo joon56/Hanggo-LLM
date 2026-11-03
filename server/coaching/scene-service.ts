@@ -14,7 +14,8 @@ const VISION_SYSTEM = 'Describe only directly visible observations in these samp
 const jsonSchema = { type: 'object', properties: { observations: { type: 'array', maxItems: 12, items: { type: 'string', maxLength: 500 } } }, required: ['observations'], additionalProperties: false };
 const VisionOutput = z.object({ observations: z.array(z.string().trim().min(1).max(500)).max(12) }).strict();
 type Selection = { atMs: number; frameIds: string[] };
-type Deps = { llm: LlmProvider; store: Pick<CoachingStore, 'readFrame'> };
+const DEFAULT_CALL_TIMEOUT_MS = 5 * 60 * 1000;
+type Deps = { llm: LlmProvider; store: Pick<CoachingStore, 'readFrame'>; callTimeoutMs?: number };
 
 function nearest(frames: FrameRef[], atMs: number) {
   return frames.reduce((best, frame) => Math.abs(frame.atMs - atMs) < Math.abs(best.atMs - atMs) ? frame : best);
@@ -45,7 +46,7 @@ export function selectScenes({ frames, moments, segments }: Pick<Consultation, '
   return [...caught.slice(0, MAX_SCENES), ...spread];
 }
 
-export function createSceneService({ llm, store }: Deps) {
+export function createSceneService({ llm, store, callTimeoutMs = DEFAULT_CALL_TIMEOUT_MS }: Deps) {
   return {
     /** One failed scene never ends the analysis. Only cancellation throws. */
     async analyze(consultation: Consultation, signal?: AbortSignal): Promise<Scene[]> {
@@ -56,7 +57,7 @@ export function createSceneService({ llm, store }: Deps) {
         const scene: Scene = { id: randomUUID(), atMs, frameIds, observations: [], state: 'failed' };
         try {
           const images = await Promise.all(frameIds.map(id => store.readFrame(consultation.id, id)));
-          const { json, finished } = await llm.structured({ jsonSchema, system: VISION_SYSTEM, user: '사진에서 직접 보이는 것만 적으세요.', images, maxTokens: 1024, signal });
+          const { json, finished } = await llm.structured({ jsonSchema, system: VISION_SYSTEM, user: '사진에서 직접 보이는 것만 적으세요.', images, maxTokens: 1024, signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(callTimeoutMs)]) : AbortSignal.timeout(callTimeoutMs) });
           if (!finished) throw new Error('Unfinished vision output.');
           scene.observations = VisionOutput.parse(json).observations.filter(text => !bannedIn(text).length).map(text => ({ id: randomUUID(), text, originalText: text, reviewed: false }));
           scene.state = 'complete';
