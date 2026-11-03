@@ -133,6 +133,8 @@ jobs:
         with:
           name: demo-site
           path: dist/demo
+      - name: Add the run with real models, recorded on a GPU PC
+        run: if [ -d docs/demo-real ]; then cp -r docs/demo-real dist/demo/real; fi
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:

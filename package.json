@@ -12,6 +12,7 @@
     "verify:real-speech": "node --env-file-if-exists=.env e2e/verify-real-speech.ts",
     "eval:notes": "node --env-file-if-exists=.env scripts/eval-notes.ts",
     "demo:record": "node e2e/auto-demo.ts",
+    "demo:record:real": "node --env-file-if-exists=.env e2e/auto-demo.ts --real docs/demo-real",
     "measure:call": "node e2e/measure-call.ts",
     "score": "node --env-file-if-exists=.env scripts/score.ts",
     "local:check": "node --env-file-if-exists=.env scripts/check-local.ts",

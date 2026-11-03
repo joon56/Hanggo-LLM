@@ -103,6 +103,18 @@ export async function enterAsGuardian(page: Page, consent = false) {
   await expect(room(page)).toBeVisible();
 }
 
+/**
+ * Opens both people's entry screens at once. A fake microphone starts playing its file the moment it opens,
+ * so going through the screens one after the other would put one person's lines seconds ahead of the other's.
+ */
+export async function enterTogether(trainer: Page, guardian: Page, origin: string) {
+  const { cases: [{ id: caseId }] } = await (await trainer.request.get(`${origin}/api/coaching/cases`)).json() as { cases: { id: string }[] };
+  const { id } = await (await trainer.request.post(`${origin}/api/coaching/cases/${caseId}/consultations`, { headers: { Origin: origin } })).json() as { id: string };
+  await Promise.all([trainer, guardian].map(page => page.goto(`${origin}/room/${id}`)));
+  for (const page of [trainer, guardian]) { await page.getByRole('button', { name: '입장' }).click(); await expect(room(page)).toBeVisible(); }
+  return id;
+}
+
 export async function expectFlowing(page: Page) {
   await expect(room(page)).toHaveAttribute('data-call-status', 'connected', { timeout: 20_000 });
   const frames = await number(page, 'data-inbound-video-frames');
