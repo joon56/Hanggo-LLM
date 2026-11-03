@@ -100,6 +100,8 @@ it('relays negotiation only to the other participant', async () => {
   expect(await trainer.next('answer')).toEqual({ type: 'answer', sdp: 'guardian-answer' });
   send(guardian, { type: 'candidate', candidate: { candidate: 'x', sdpMid: '0' } });
   expect(await trainer.next('candidate')).toEqual({ type: 'candidate', candidate: { candidate: 'x', sdpMid: '0' } });
+  send(guardian, { type: 'media', camera: true, microphone: false, screen: true });
+  expect(await trainer.next('media')).toEqual({ type: 'media', camera: true, microphone: false, screen: true });
   await expect(trainer.next('offer')).rejects.toThrow('Timed out');
 });
 it('answers ping with server time for clock sync', async () => {

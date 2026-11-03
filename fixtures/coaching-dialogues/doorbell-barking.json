@@ -1,0 +1,39 @@
+{
+  "id": "doorbell-barking",
+  "title": "초인종 짖음 첫 상담",
+  "synthetic": true,
+  "petName": "초코",
+  "segments": [
+    { "id": "s01", "speaker": "trainer", "startMs": 0, "endMs": 6000, "text": "안녕하세요, 오늘은 초코가 초인종 소리에 짖는 문제부터 보겠습니다. 요즘 어떤 상황인지 말씀해 주세요." },
+    { "id": "s02", "speaker": "guardian", "startMs": 6000, "endMs": 14000, "text": "택배 기사님이 초인종을 누르면 현관으로 뛰어가서 계속 짖어요. 하루에 세 번쯤 그런 것 같아요." },
+    { "id": "s03", "speaker": "trainer", "startMs": 14000, "endMs": 18000, "text": "한 번 짖기 시작하면 얼마나 오래 짖나요?" },
+    { "id": "s04", "speaker": "guardian", "startMs": 18000, "endMs": 25000, "text": "삼십 초 정도요. 문이 닫히면 금방 멈추는데 초인종이 또 울리면 다시 짖어요." },
+    { "id": "s05", "speaker": "trainer", "startMs": 25000, "endMs": 30000, "text": "그때 보호자님은 어떻게 하세요? 그리고 언제부터 그랬나요?" },
+    { "id": "s06", "speaker": "guardian", "startMs": 30000, "endMs": 39000, "text": "안 돼 하고 큰 소리로 말해요. 그러면 더 흥분해서 짖는 것 같아요. 언제부터인지는 정확히 모르겠어요." },
+    { "id": "s07", "speaker": "trainer", "startMs": 39000, "endMs": 46000, "text": "지금 화면에서 보니까 초코가 현관 쪽을 보면서 귀가 앞으로 서 있네요. 벨 소리를 한번 작게 틀어 볼게요." },
+    { "id": "s08", "speaker": "guardian", "startMs": 46000, "endMs": 50000, "text": "네, 틀었어요. 지금 벌써 일어났어요." },
+    { "id": "s09", "speaker": "trainer", "startMs": 50000, "endMs": 58000, "text": "네, 일어나서 현관으로 두 걸음 갔고 짖지는 않았습니다. 이 정도 소리에서는 아직 괜찮은 것 같아요." },
+    { "id": "s10", "speaker": "trainer", "startMs": 58000, "endMs": 69000, "text": "초인종이 울리면 매트로 가는 연습을 할 겁니다. 소리를 작게 틀고, 매트에 가면 바로 간식을 주세요. 큰 소리로 혼내지는 마세요." },
+    { "id": "s11", "speaker": "guardian", "startMs": 69000, "endMs": 73000, "text": "간식은 뭘 주면 될까요? 지금은 사료 알갱이를 쓰고 있어요." },
+    { "id": "s12", "speaker": "trainer", "startMs": 73000, "endMs": 79000, "text": "사료 알갱이로 시작해도 됩니다. 반응이 약하면 다음에 다른 간식으로 바꿔 보죠." },
+    { "id": "s13", "speaker": "trainer", "startMs": 79000, "endMs": 90000, "text": "과제는 보호자님이 하루 두 번, 한 번에 삼 분씩 다음 상담까지 해 주세요. 소리 크기는 지금처럼 작게 유지하시고요." },
+    { "id": "s14", "speaker": "guardian", "startMs": 90000, "endMs": 95000, "text": "네, 아침이랑 저녁에 해 볼게요. 남편은 낮에 집에 없어서 제가 할게요." },
+    { "id": "s15", "speaker": "trainer", "startMs": 95000, "endMs": 103000, "text": "좋습니다. 다음 상담에서는 매트까지 가는 데 몇 초 걸리는지와 짖는 횟수가 어땠는지 같이 확인해 보겠습니다." }
+  ],
+  "expectedFacts": [
+    { "id": "trigger", "any": [["초인종"]] },
+    { "id": "frequency", "any": [["세 번", "3번", "3회"]] },
+    { "id": "duration", "any": [["삼십 초", "30초"]] },
+    { "id": "guardian-response", "any": [["안 돼", "큰 소리", "혼내"]] },
+    { "id": "response-effect", "any": [["흥분", "더 짖"]] },
+    { "id": "observed", "any": [["두 걸음", "2걸음"], ["짖지"]] },
+    { "id": "guidance", "any": [["매트"], ["간식"]] }
+  ],
+  "expectedTasks": [
+    { "id": "mat-practice", "any": [["매트", "초인종", "소리"]], "who": ["보호자"], "frequency": ["두 번", "2번", "2회", "삼 분", "3분"], "until": ["다음 상담"] }
+  ],
+  "unknown": ["언제부터"],
+  "expectedSafetyFlags": [],
+  "expectedMethodReview": false,
+  "forbiddenClaims": ["분리불안", "공격성", "진단", "치료", "완치", "좋아졌", "개선됐", "남편이 연습", "산책"]
+}

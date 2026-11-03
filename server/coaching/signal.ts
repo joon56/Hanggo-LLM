@@ -16,6 +16,7 @@ const ClientMessage = z.discriminatedUnion('type', [
   z.object({ type: z.literal('ping'), at: z.number() }).strict(),
   z.object({ type: z.enum(['offer', 'answer']), sdp: z.string().min(1) }).strict(),
   z.object({ type: z.literal('candidate'), candidate: z.record(z.string(), z.unknown()).nullable() }).strict(),
+  z.object({ type: z.literal('media'), camera: z.boolean(), microphone: z.boolean(), screen: z.boolean() }).strict(),
 ]);
 
 type Member = { socket: WebSocket; call: string };
