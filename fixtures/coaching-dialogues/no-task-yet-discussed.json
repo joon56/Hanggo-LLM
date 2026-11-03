@@ -1,0 +1,44 @@
+{
+  "id": "no-task-yet-discussed",
+  "title": "산책 후 발 닦기 거부, 일반 연습 설명만 하고 과제 보류",
+  "synthetic": true,
+  "petName": "두부",
+  "segments": [
+    { "id": "s01", "speaker": "trainer", "startMs": 0, "endMs": 8500, "text": "안녕하세요. 오늘은 두부가 산책 후에 발 닦는 걸 싫어한다고 하셨죠? 어떤 상황인지 말씀해 주세요." },
+    { "id": "s02", "speaker": "guardian", "startMs": 8500, "endMs": 18000, "text": "산책에서 돌아오면 수건으로 발을 닦는데, 두부가 발을 빼고 거실로 도망가요. 하루에 두 번 산책하니까 매번 그래요." },
+    { "id": "s03", "speaker": "trainer", "startMs": 18000, "endMs": 23000, "text": "발을 빼고 도망갈 때 으르렁거리거나 소리를 내기도 하나요?" },
+    { "id": "s04", "speaker": "guardian", "startMs": 23000, "endMs": 30000, "text": "으르렁거리지는 않아요. 그냥 발을 빼고 가요. 수건을 꺼내면 벌써 뒤로 물러나요." },
+    { "id": "s05", "speaker": "trainer", "startMs": 30000, "endMs": 35500, "text": "수건 말고 다른 걸로 닦아 보신 적은 있나요? 물티슈 같은 거요." },
+    { "id": "s06", "speaker": "guardian", "startMs": 35500, "endMs": 40000, "text": "물티슈는 써 본 적이 없어서 두부가 어떨지 모르겠어요." },
+    { "id": "s07", "speaker": "trainer", "startMs": 40000, "endMs": 44000, "text": "알겠습니다. 닦아 줄 때 보호자님은 어떻게 하세요?" },
+    { "id": "s08", "speaker": "guardian", "startMs": 44000, "endMs": 52500, "text": "발을 잡고 빨리 닦아요. 그래야 빨리 끝나니까요. 닦고 나서 간식을 줄 때도 있고 안 줄 때도 있어요." },
+    { "id": "s09", "speaker": "trainer", "startMs": 52500, "endMs": 59500, "text": "지금 화면에서 보니까 두부가 수건을 보고 몸을 뒤로 빼면서 귀를 뒤로 눕히고 있네요." },
+    { "id": "s10", "speaker": "trainer", "startMs": 59500, "endMs": 72500, "text": "이런 경우에 보통은 이런 연습을 합니다. 수건을 바닥에 두고 두부가 다가가면 간식을 주고, 그다음에는 수건으로 발을 한 번 살짝 건드리고 간식을 줍니다." },
+    { "id": "s11", "speaker": "trainer", "startMs": 72500, "endMs": 81000, "text": "단계를 아주 작게 나눠서 두부가 편안해하면 한 단계씩 넘어가요. 다만 이건 일반적인 방법 설명이에요." },
+    { "id": "s12", "speaker": "guardian", "startMs": 81000, "endMs": 84000, "text": "그럼 오늘부터 집에서 해 보면 되나요?" },
+    { "id": "s13", "speaker": "trainer", "startMs": 84000, "endMs": 94000, "text": "아니요, 오늘은 과제를 정하지 않고 다음에 정하겠습니다. 긴장하지 않은 평소 모습도 화면으로 조금 더 보고 싶어서요." },
+    { "id": "s14", "speaker": "guardian", "startMs": 94000, "endMs": 97500, "text": "그럼 그 전까지는 평소처럼 닦아도 되나요?" },
+    { "id": "s15", "speaker": "trainer", "startMs": 97500, "endMs": 103000, "text": "네, 지금까지 하시던 대로 하시면 됩니다. 새로 시작하실 건 없어요." },
+    { "id": "s16", "speaker": "guardian", "startMs": 103000, "endMs": 106500, "text": "알겠습니다. 다음 상담 때 알려 주세요." },
+    { "id": "s17", "speaker": "trainer", "startMs": 106500, "endMs": 112500, "text": "네, 다음 상담에서 두부 모습을 더 확인한 뒤에 정해서 말씀드리겠습니다." }
+  ],
+  "expectedFacts": [
+    { "id": "avoids-paw-wiping", "any": [["발"], ["빼", "뺀", "뺐", "도망", "피하", "피한"]] },
+    { "id": "walks-per-day", "any": [["두 번", "2번", "2회"]] },
+    { "id": "towel-retreat", "any": [["수건"], ["물러", "뒤로", "알아차"]] },
+    { "id": "no-growl", "any": [["으르렁거리지 않", "으르렁거리지는 않", "으르렁거리지도 않", "으르렁대지 않", "으르렁하지 않", "으르렁은 없", "으르렁 없", "으르렁거림은 없", "으르렁거림이 없"]] },
+    { "id": "inconsistent-treat", "any": [["간식"], ["줄 때도", "주기도", "주지 않을 때도", "안 줄 때도", "일정하지", "때도 있", "경우도 있"]] },
+    { "id": "trainer-observed-ears", "any": [["귀"], ["뒤로", "눕"]] },
+    { "id": "task-deferred", "any": [["과제"], ["다음 상담", "다음 시간", "다음에", "다음 회차", "추후"]] }
+  ],
+  "expectedTasks": [],
+  "unknown": ["물티슈"],
+  "expectedSafetyFlags": [],
+  "expectedMethodReview": false,
+  "forbiddenClaims": ["과제로 안내했", "과제로 제시했", "과제로 부여했", "과제로 정했", "연습하도록 안내했", "연습하기로 했", "통증", "으르렁거렸", "분리불안", "진단"],
+  "attributions": [
+    { "section": "guardianReports", "any": [["간식"], ["줄 때도", "주기도", "주지 않을 때도", "안 줄 때도", "일정하지", "때도 있", "경우도 있"]] },
+    { "section": "guardianReports", "any": [["으르렁거리지 않", "으르렁거리지는 않", "으르렁거리지도 않", "으르렁대지 않", "으르렁하지 않", "으르렁은 없", "으르렁 없", "으르렁거림은 없", "으르렁거림이 없"]] },
+    { "section": "trainerObservations", "any": [["귀"], ["뒤로", "눕"]] }
+  ]
+}

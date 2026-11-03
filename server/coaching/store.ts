@@ -4,6 +4,7 @@ import path from 'node:path';
 import { z } from 'zod';
 import { newConsultation, transition } from '../../src/domain/coaching.ts';
 import type { CoachingCase, Consultation } from '../../src/domain/coaching.ts';
+import { noteSchema, sceneSchema } from './note-schema.ts';
 
 export class StoreError extends Error {
   readonly code: string; readonly status: number;
@@ -25,7 +26,8 @@ const consultationSchema = z.object({ id: z.uuid(), caseId: z.uuid(), createdAt:
   startedAt: z.number().optional(), endedAt: z.number().optional(), recordingStartedAt: z.number().optional(),
   recordingGaps: z.array(z.object({ startMs: z.number(), endMs: z.number().optional() })), errors: z.array(z.object({ code: z.string(), message: z.string() })),
   // Records written before transcription existed have none of these.
-  segments: z.array(segmentSchema).default([]), moments: z.array(momentSchema).default([]), frames: z.array(frameSchema).default([]) }).strict();
+  segments: z.array(segmentSchema).default([]), moments: z.array(momentSchema).default([]), frames: z.array(frameSchema).default([]),
+  scenes: z.array(sceneSchema).default([]), note: noteSchema.optional(), noteGenerating: z.boolean().optional() }).strict();
 
 export type CaseInput = Pick<CoachingCase, 'petName' | 'guardianName' | 'trainerName'>;
 export type CoachingStore = {
@@ -110,7 +112,7 @@ export function createFileStore(directory: string, options: { now?: () => number
     }),
     startConsultation: caseId => queued(async () => {
       await load(casePath(caseId), caseSchema);
-      if ((await allConsultations()).some(item => item.state === 'live')) throw new StoreError('ACTIVE_CONSULTATION', 'Another consultation is live.', 409);
+      if ((await allConsultations()).some(item => item.state === 'live' || item.state === 'processing')) throw new StoreError('ACTIVE_CONSULTATION', 'Another consultation is live or still being organized.', 409);
       const started = transition(newConsultation({ id: randomUUID(), caseId, createdAt: new Date(now()).toISOString() }), 'start', now());
       await save(consultationPath(started.id), started);
       return started;
@@ -125,9 +127,12 @@ export function createFileStore(directory: string, options: { now?: () => number
     putFrame: (consultationId, frameId, bytes) => queued(() => replace(framePath(consultationId, frameId), bytes)),
     readFrame: (consultationId, frameId) => queued(() => readFile(framePath(consultationId, frameId)).catch(notFound)),
     recoverInterrupted: () => queued(async () => {
-      for (const item of await allConsultations()) if (item.state === 'live' || item.state === 'processing') await save(consultationPath(item.id), {
+      for (const item of await allConsultations()) {
+        if (item.noteGenerating) { const { noteGenerating: _noteGenerating, ...rest } = item; await save(consultationPath(item.id), rest); }
+        if (item.state === 'live' || item.state === 'processing') await save(consultationPath(item.id), {
         // Queued audio lived in memory, so those windows can no longer be transcribed.
         ...transition(item, 'interrupt', now()), segments: item.segments.map(segment => segment.state === 'queued' ? { ...segment, state: 'failed' } : segment) });
+      }
     }),
   };
 }

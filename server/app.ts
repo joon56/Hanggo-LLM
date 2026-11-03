@@ -9,10 +9,12 @@ import rateLimit from 'express-rate-limit';
 import multer from 'multer';
 import { z } from 'zod';
 import type { Config } from './config.ts';
+import type { LlmProvider } from './ai/llm/types.ts';
 import type { SpeechProvider } from './ai/speech/types.ts';
 import { createGuardianSessions } from './coaching/guardian-session.ts';
 import { createActorResolver, createCoachingRouter } from './coaching/router.ts';
 import { attachSignal } from './coaching/signal.ts';
+import { createPostProcess } from './coaching/post-process.ts';
 import { createFileStore } from './coaching/store.ts';
 import { createTranscription } from './coaching/transcription.ts';
 import type { Consultation } from '../src/domain/coaching.ts';
@@ -30,6 +32,7 @@ import { validateDraft, type Draft } from '../src/domain/notes.ts';
 
 type Services = {
   liveSpeech?: SpeechProvider;
+  llm?: LlmProvider;
   status?: () => Promise<{ configured: boolean; sttReady: boolean; statusMessage: string }>;
   generateOwner?: (input: OwnerInput, signal?: AbortSignal) => Promise<unknown>;
   generateBrief?: (input: BriefInput, signal?: AbortSignal) => Promise<unknown>;
@@ -97,8 +100,9 @@ export function createApp(config: Config, services: Services) {
   let signal: ReturnType<typeof attachSignal> | undefined;
   const notifyCoaching = (consultation: Consultation) => signal?.notify(consultation);
   const broadcast = (consultationId: string, message: unknown) => signal?.broadcast(consultationId, message);
-  const transcription = createTranscription({ store: coachingStore, speech: config.aiEnabled ? services.liveSpeech : undefined, broadcast, notify: notifyCoaching, graceMs: config.coachingGraceMs });
-  app.use('/api/coaching', createCoachingRouter({ ...coachingAccess, turn: config.turn, secureCookies: config.production, transcription, graceMs: config.coachingGraceMs, notify: notifyCoaching, broadcast }));
+  const transcription = createTranscription({ store: coachingStore, speech: config.aiEnabled ? services.liveSpeech : undefined, broadcast, graceMs: config.coachingGraceMs });
+  const postProcess = createPostProcess({ store: coachingStore, transcription, llm: config.aiEnabled ? services.llm : undefined, notify: notifyCoaching });
+  app.use('/api/coaching', createCoachingRouter({ ...coachingAccess, turn: config.turn, secureCookies: config.production, transcription, postProcess, graceMs: config.coachingGraceMs, notify: notifyCoaching, broadcast }));
   app.use('/api', (req, res, next) => {
     if (!authenticated(req)) { res.status(401).json({ error: '로그인이 필요합니다.', code: 'AUTH', requestId: res.locals.requestId }); return; }
     next();
@@ -187,7 +191,7 @@ export function createApp(config: Config, services: Services) {
   const dist = path.resolve('dist');
   if (existsSync(path.join(dist, 'index.html'))) {
     app.use(express.static(dist, { index: false, dotfiles: 'deny', setHeaders: (res, file) => res.setHeader('Cache-Control', file.includes(`${path.sep}assets${path.sep}`) ? 'public, max-age=31536000, immutable' : 'no-cache') }));
-    app.get(['/', '/coaching', '/guardian', '/join/:token', '/room/:id'], (_req, res) => { res.set('Cache-Control', 'no-cache').sendFile('index.html', { root: dist }); });
+    app.get(['/', '/coaching', '/guardian', '/join/:token', '/room/:id', '/review/:id'], (_req, res) => { res.set('Cache-Control', 'no-cache').sendFile('index.html', { root: dist }); });
   }
   const errors: ErrorRequestHandler = (error, _req, res, _next) => {
     if (res.headersSent || res.destroyed) return;
@@ -199,6 +203,6 @@ export function createApp(config: Config, services: Services) {
   return Object.assign(app, {
     attachSignal(server: Server) { signal = attachSignal(server, { store: coachingStore, allowedOrigins: origins, resolveActor: createActorResolver(coachingAccess), speechStatus: transcription.status }); },
     recoverCoaching: () => coachingStore.recoverInterrupted(),
-    shutdown: () => { stopping = true; signal?.close(); shutdownTask ??= transcription.close(); return shutdownTask; },
+    shutdown: () => { stopping = true; signal?.close(); shutdownTask ??= postProcess.close(); return shutdownTask; },
   });
 }

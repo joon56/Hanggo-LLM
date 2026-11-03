@@ -3,9 +3,11 @@ import { CopyIcon, PawPrintIcon } from '@phosphor-icons/react';
 import { login } from '../api';
 import { createCase, getCase, getMe, listCases, reissueInvite, startConsultation } from '../coaching-api';
 import type { CaseDetail } from '../coaching-api';
-import { apiMessage } from './copy';
+import { apiMessage, STATE_LABEL } from './copy';
 import './call.css';
+import './review.css';
 
+const POLL_MS = 3000;
 const LOOPBACK = new Set(['127.0.0.1', 'localhost', '[::1]']);
 const inviteLink = (token: string) => `${location.origin}/join/${token}`;
 
@@ -51,6 +53,12 @@ export function TrainerHome({ navigate, hostname = location.hostname }: { naviga
     }
   }, [navigate]);
   useEffect(() => { void load(); }, [load]);
+  const organizing = cases.some(item => item.consultations.some(consultation => consultation.state === 'processing'));
+  useEffect(() => {
+    if (!organizing) return;
+    const timer = setInterval(() => { void load(); }, POLL_MS);
+    return () => clearInterval(timer);
+  }, [load, organizing]);
 
   const act = async (work: () => Promise<void>) => {
     setPending(true); setError('');
@@ -90,6 +98,13 @@ export function TrainerHome({ navigate, hostname = location.hostname }: { naviga
                 : <button className="button primary" aria-label={`${item.petName} 상담 시작`} disabled={pending} onClick={() => void act(async () => navigate(`/room/${(await startConsultation(item.id)).id}`))}>상담 시작</button>}
             </div></div>
           {invite?.caseId === item.id && <Invite token={invite.token} hostname={hostname} reissued={invite.reissued} />}
+          {item.consultations.some(consultation => consultation.state !== 'live') && <ul className="coach-history" aria-label={`${item.petName} 지난 상담`}>
+            {item.consultations.filter(consultation => consultation.state !== 'live').map(consultation => <li key={consultation.id}>
+              <span>{new Date(consultation.createdAt).toLocaleString('ko-KR', { month: 'numeric', day: 'numeric', hour: 'numeric', minute: 'numeric' })}</span>
+              <span className="review-state" data-state={consultation.state}>{STATE_LABEL[consultation.state]}</span>
+              <button className="call-link coach-link" onClick={() => navigate(`/review/${consultation.id}`)}>{consultation.state === 'review' ? '검토하기' : '열기'}</button>
+            </li>)}
+          </ul>}
         </article>;
       })}
     </section>

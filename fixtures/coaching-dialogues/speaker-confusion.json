@@ -1,0 +1,46 @@
+{
+  "id": "speaker-confusion",
+  "title": "산책 중 줄 당김, 보호자 방식과 훈련사 의견 구분",
+  "synthetic": true,
+  "petName": "모모",
+  "segments": [
+    { "id": "s01", "speaker": "trainer", "startMs": 0, "endMs": 8000, "text": "안녕하세요. 오늘은 모모 산책 이야기를 해 볼게요. 요즘 산책할 때 어떤 점이 가장 힘드세요?" },
+    { "id": "s02", "speaker": "guardian", "startMs": 8000, "endMs": 15500, "text": "모모가 앞으로 나가면서 줄을 계속 당겨요. 산책은 하루 두 번, 한 번에 삼십 분쯤 해요." },
+    { "id": "s03", "speaker": "trainer", "startMs": 15500, "endMs": 22000, "text": "산책할 때 모모를 어느 쪽에서 걷게 하세요? 그리고 줄을 당기면 어떻게 하세요?" },
+    { "id": "s04", "speaker": "guardian", "startMs": 22000, "endMs": 33000, "text": "저는 모모를 제 오른쪽에서 걷게 해요. 줄을 당기면 그 자리에서 닭고기 간식을 줘서 진정시켜요. 줄이 느슨할 때는 간식을 안 줘요." },
+    { "id": "s05", "speaker": "trainer", "startMs": 33000, "endMs": 36500, "text": "닭고기 간식은 한 번에 몇 개쯤 주세요?" },
+    { "id": "s06", "speaker": "guardian", "startMs": 36500, "endMs": 42500, "text": "개수는 세어 본 적이 없어요. 모모가 워낙 좋아해서 보면 바로 달려와요." },
+    { "id": "s07", "speaker": "trainer", "startMs": 42500, "endMs": 54000, "text": "좋은 보상이 될 수 있겠네요. 다만 저는 줄을 당길 때 닭고기 간식을 주는 건 권하지 않습니다. 당기는 행동이 보상과 연결될 수 있어서요." },
+    { "id": "s08", "speaker": "guardian", "startMs": 54000, "endMs": 58000, "text": "아, 그럼 제가 지금까지 잘못하고 있었던 건가요?" },
+    { "id": "s09", "speaker": "trainer", "startMs": 58000, "endMs": 64500, "text": "잘못이라기보다 순서를 바꾸자는 거예요. 줄이 느슨할 때 닭고기 간식을 주세요." },
+    { "id": "s10", "speaker": "trainer", "startMs": 64500, "endMs": 73000, "text": "걷는 쪽은 오른쪽이든 왼쪽이든 괜찮습니다. 저는 보통 왼쪽을 권하는데, 한쪽으로 일정하기만 하면 됩니다." },
+    { "id": "s11", "speaker": "guardian", "startMs": 73000, "endMs": 77000, "text": "저는 오른쪽이 편해서 계속 오른쪽으로 할게요." },
+    { "id": "s12", "speaker": "trainer", "startMs": 77000, "endMs": 90000, "text": "네, 그렇게 하셔도 됩니다. 그러면 과제를 정하겠습니다. 산책할 때마다 줄이 느슨하면 바로 닭고기 간식을 주는 연습을 보호자님이 다음 상담까지 해 주세요." },
+    { "id": "s13", "speaker": "guardian", "startMs": 90000, "endMs": 92500, "text": "줄이 팽팽해지면 어떻게 하죠?" },
+    { "id": "s14", "speaker": "trainer", "startMs": 92500, "endMs": 100500, "text": "그때는 간식 없이 멈춰 서서 줄이 느슨해지기를 기다려 주세요. 느슨해지면 그때 간식을 주시고요." },
+    { "id": "s15", "speaker": "guardian", "startMs": 100500, "endMs": 106500, "text": "알겠어요. 지금까지는 당길 때 간식을 줬는데, 그걸 반대로 하는 거네요." },
+    { "id": "s16", "speaker": "trainer", "startMs": 106500, "endMs": 114500, "text": "네, 맞습니다. 다음 상담에서는 산책 중에 줄이 느슨했던 시간이 어땠는지 같이 이야기해 보죠." }
+  ],
+  "expectedFacts": [
+    { "id": "pulling", "any": [["당기", "당겨", "당긴", "당길", "당겼"]] },
+    { "id": "walk-schedule", "any": [["두 번", "2번", "2회"], ["삼십 분", "30분"]] },
+    { "id": "guardian-side", "any": [["오른쪽"]] },
+    { "id": "guardian-treat", "any": [["닭고기"], ["당기", "당겨", "당긴", "당길", "당겼"]] },
+    { "id": "guardian-no-treat-when-loose", "any": [["느슨"], ["안 줘", "안 줌", "안 준다", "안 주", "주지 않", "주지는 않"]] },
+    { "id": "not-recommended", "any": [["권하지 않", "권하지는 않", "권장하지 않", "권장하지는 않", "추천하지 않", "바람직하지 않", "주지 말", "주지 않도록", "삼가", "피하"]] },
+    { "id": "loose-leash-reward", "any": [["느슨"], ["간식"]] },
+    { "id": "trainer-side", "any": [["왼쪽"]] }
+  ],
+  "expectedTasks": [
+    { "id": "loose-leash-treat-practice", "any": [["느슨"], ["간식"]], "who": ["보호자"], "frequency": ["산책할 때", "산책 때", "산책마다", "매 산책", "산책 시", "매번", "하루 두 번", "두 번", "2번", "2회"], "until": ["다음 상담"] }
+  ],
+  "unknown": ["개수"],
+  "expectedSafetyFlags": [],
+  "expectedMethodReview": false,
+  "forbiddenClaims": ["보호자가 권하지", "보호자는 권하지", "훈련사가 간식을 줬", "훈련사는 간식을 줬", "훈련사가 간식을 주었", "당길 때 간식을 주도록", "보호자는 왼쪽", "서열", "진단", "좋아졌"],
+  "attributions": [
+    { "section": "guardianReports", "any": [["오른쪽"], ["당기", "당겨", "당긴", "당길", "당겼"], ["간식"]] },
+    { "section": "guidance", "any": [["당기", "당겨", "당긴", "당길", "당겼"], ["권하지 않", "권하지는 않", "권장하지 않", "권장하지는 않", "추천하지 않", "바람직하지 않", "주지 말", "주지 않도록", "삼가", "피하"]] },
+    { "section": "guidance", "any": [["왼쪽"]] }
+  ]
+}

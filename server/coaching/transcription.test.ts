@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { setConsent } from '../../src/domain/coaching.ts';
-import type { Consultation, Speaker } from '../../src/domain/coaching.ts';
+import type { Speaker } from '../../src/domain/coaching.ts';
 import type { SpeechProvider, SpeechResult } from '../ai/speech/types.ts';
 import { createFileStore, type CoachingStore } from './store.ts';
 import { createTranscription } from './transcription.ts';
@@ -36,9 +36,8 @@ function controlledSpeech() {
 }
 function build(speech: SpeechProvider | undefined, options: { now?: () => number; graceMs?: number } = {}) {
   const broadcast = vi.fn<(id: string, message: any) => void>();
-  const notify = vi.fn<(consultation: Consultation) => void>();
-  const transcription = createTranscription({ store, speech, broadcast, notify, graceMs: options.graceMs ?? 1, now: options.now });
-  return { transcription, broadcast, notify };
+  const transcription = createTranscription({ store, speech, broadcast, graceMs: options.graceMs ?? 1, now: options.now });
+  return { transcription, broadcast };
 }
 const times = (startMs: number, endMs = startMs + 3000) => ({ startMs, endMs });
 const accept = (transcription: ReturnType<typeof build>['transcription'], speaker: Speaker, startMs: number, bytes = wav()) => transcription.accept(consultationId, speaker, times(startMs), bytes);
@@ -188,37 +187,33 @@ describe('finish', () => {
     expect(broadcast.mock.calls.at(-1)?.[1]).toEqual({ type: 'speech', status: 'ready' });
     expect(transcription.status()).toBe('ready');
   });
-  it('waits for the last windows, frees the model, then opens the review', async () => {
-    const { speech, calls } = controlledSpeech(); const { transcription, notify } = build(speech, { graceMs: 20 });
+  it('waits for the last windows, then frees the model', async () => {
+    const { speech, calls } = controlledSpeech(); const { transcription } = build(speech, { graceMs: 20 });
     await ending();
-    const finished = transcription.finish(consultationId);
+    const settled = transcription.settle(consultationId);
     await accept(transcription, 'guardian', 0); await settle();
+    expect(speech.release).not.toHaveBeenCalled();
     calls[0].resolve('마지막 구간');
-    expect(notify).not.toHaveBeenCalled();
-    await finished;
+    await settled;
     expect(speech.release).toHaveBeenCalledTimes(1);
-    expect(notify).toHaveBeenCalledTimes(1);
-    const consultation = await store.getConsultation(consultationId);
-    expect(consultation).toMatchObject({ state: 'review' });
-    expect(consultation.segments[0]).toMatchObject({ text: '마지막 구간' });
+    expect((await store.getConsultation(consultationId)).segments[0]).toMatchObject({ text: '마지막 구간' });
+    expect(transcription.status()).toBe('idle');
   });
-  it('opens the review even when freeing the model fails, and records the problem', async () => {
+  it('records the problem when the model will not go away', async () => {
     const { speech } = controlledSpeech();
     speech.release.mockRejectedValue(new Error('still running'));
     const { transcription } = build(speech);
     await ending();
-    await transcription.finish(consultationId);
-    const consultation = await store.getConsultation(consultationId);
-    expect(consultation.state).toBe('review');
-    expect(consultation.errors).toEqual([expect.objectContaining({ code: 'SPEECH_RELEASE' })]);
+    await transcription.settle(consultationId);
+    expect((await store.getConsultation(consultationId)).errors).toEqual([expect.objectContaining({ code: 'SPEECH_RELEASE' })]);
   });
-  it('leaves an unfinished consultation for recovery when the server is shutting down', async () => {
+  it('leaves the model alone when the server is shutting down', async () => {
     const { speech } = controlledSpeech(); const { transcription } = build(speech, { graceMs: 5 });
     await ending();
-    const finished = transcription.finish(consultationId);
+    const settled = transcription.settle(consultationId);
     await transcription.close();
-    await finished;
-    expect(await store.getConsultation(consultationId)).toMatchObject({ state: 'processing' });
+    await settled;
+    expect(speech.release).not.toHaveBeenCalled();
   });
   it('turns windows lost to a restart into visible failures instead of leaving them queued', async () => {
     const { speech } = controlledSpeech(); const { transcription } = build(speech);

@@ -1,0 +1,75 @@
+import { transition } from '../../src/domain/coaching.ts';
+import type { Consultation } from '../../src/domain/coaching.ts';
+import { buildNoteSource, emptyNote } from '../../src/domain/coaching-note.ts';
+import type { LlmProvider } from '../ai/llm/types.ts';
+import { createNoteService } from './note-service.ts';
+import { createSceneService } from './scene-service.ts';
+import type { CoachingStore } from './store.ts';
+import type { Transcription } from './transcription.ts';
+
+type Deps = {
+  store: CoachingStore; transcription: Pick<Transcription, 'settle' | 'close'>; llm?: LlmProvider;
+  notify?: (consultation: Consultation) => void;
+  now?: () => number;
+};
+export type PostProcess = ReturnType<typeof createPostProcess>;
+
+/** Everything after a call, in the order one GPU allows: speech model out, then scenes, then the note. */
+export function createPostProcess({ store, transcription, llm, notify, now = Date.now }: Deps) {
+  const scenes = llm && createSceneService({ llm, store });
+  const notes = llm && createNoteService({ llm, now });
+  const stopping = new AbortController();
+  const running = new Set<Promise<unknown>>();
+  const track = <T>(work: Promise<T>) => { running.add(work); void work.finally(() => running.delete(work)).catch(() => {}); return work; };
+  const addError = (id: string, code: string, message: string) => store.updateConsultation(id, current => ({ ...current, errors: [...current.errors, { code, message }] }));
+
+  async function draftNote(id: string) {
+    const consultation = await store.getConsultation(id);
+    const info = await store.getCase(consultation.caseId);
+    const note = notes ? await notes.generate(consultation, info, stopping.signal)
+      : emptyNote(buildNoteSource(consultation, info), new Date(now()).toISOString(), ['AI 기능이 꺼져 있어 빈 양식을 만들었습니다.']);
+    await store.updateConsultation(id, current => ({ ...current, note }));
+  }
+
+  /** A failure here must not hold the review back, because the transcript is still worth reading. */
+  async function organize(id: string) {
+    try {
+      if (scenes) {
+        const analyzed = await scenes.analyze(await store.getConsultation(id), stopping.signal);
+        await store.updateConsultation(id, current => ({ ...current, scenes: analyzed }));
+      }
+      await draftNote(id);
+    } catch (error) {
+      if (stopping.signal.aborted) throw error;
+      await addError(id, 'POST_PROCESS', '상담 정리 중 문제가 생겼습니다. 전사를 보고 직접 작성해 주세요.');
+    } finally { await llm?.release().catch(() => {}); }
+  }
+
+  return {
+    finish(id: string) {
+      return track((async () => {
+        await transcription.settle(id);
+        if (stopping.signal.aborted) return;
+        await organize(id);
+        const finished = await store.updateConsultation(id, current => transition(current, 'processed', now()));
+        notify?.(finished);
+      })().catch(error => { if (!stopping.signal.aborted) throw error; }));
+    },
+    /** Returns once the work has started. A draft can take minutes, longer than a tunnel will hold a request open. */
+    async regenerate(id: string) {
+      await store.updateConsultation(id, current => ({ ...current, noteGenerating: true }));
+      void track((async () => {
+        try { await draftNote(id); }
+        catch (error) { if (stopping.signal.aborted) return; await addError(id, 'NOTE_REGENERATE', '일지를 다시 만들지 못했습니다. 이전 내용을 유지합니다.'); }
+        finally { await llm?.release().catch(() => {}); }
+        await store.updateConsultation(id, ({ noteGenerating: _noteGenerating, ...current }) => current);
+      })().catch(() => {}));
+    },
+    /** Interrupted work is left for recovery, which marks it on the next start. */
+    async close() {
+      stopping.abort();
+      await transcription.close();
+      await Promise.allSettled(running);
+    },
+  };
+}

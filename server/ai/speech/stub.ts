@@ -6,8 +6,9 @@ const SAMPLE_RATE = 16000;
 const FRAME_SAMPLES = 800;
 
 export const STUB_TEXT = {
-  guardian: '[시험 전사] 보호자 마이크 신호입니다',
-  trainer: '[시험 전사] 훈련사 마이크 신호입니다',
+  // Different wording on purpose: lines this alike within three seconds would be flagged as an echo.
+  guardian: '[시험 전사] 초인종이 울리면 현관으로 뛰어가 짖어요',
+  trainer: '[시험 전사] 매트로 가서 앉으면 바로 간식을 주세요',
   unknown: '[시험 전사] 알 수 없는 신호입니다',
 };
 

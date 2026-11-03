@@ -2,8 +2,8 @@ import { useEffect, useRef, useState } from 'react';
 import { BookmarkSimpleIcon, CameraRotateIcon, MicrophoneIcon, MicrophoneSlashIcon, MonitorArrowUpIcon, PhoneDisconnectIcon, VideoCameraIcon, VideoCameraSlashIcon } from '@phosphor-icons/react';
 import type { CallSnapshot } from '../call/call-session';
 import type { Caption, MomentNotice, Speaker, SpeechStatus } from '../domain/coaching';
+import { SPEAKER_NAME } from './copy';
 
-const SPEAKER_NAME: Record<Speaker, string> = { guardian: '보호자', trainer: '훈련사' };
 const CAPTION_LINES = 3;
 const MOMENT_NOTICE_MS = 4000;
 const SPEECH_NOTE: Record<SpeechStatus, string> = { off: '받아쓰기 꺼짐', idle: '', preparing: '받아쓰기 준비 중', ready: '', failed: '받아쓰기 불가 · 통화는 계속됩니다' };

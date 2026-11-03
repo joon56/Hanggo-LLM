@@ -8,15 +8,17 @@ import type { Consultation } from '../../src/domain/coaching.ts';
 import { createApp } from '../app.ts';
 import { readConfig } from '../config.ts';
 import { encodeWav } from '../../src/call/speech-windows.ts';
+import { createStubLlm } from '../ai/llm/stub.ts';
+import type { LlmProvider } from '../ai/llm/types.ts';
 import type { SpeechProvider } from '../ai/speech/types.ts';
 
 const origin = 'http://127.0.0.1:5173';
 const password = 'long-test-password-1234';
 const homes: string[] = [];
 afterEach(() => { for (const home of homes.splice(0)) rmSync(home, { recursive: true, force: true }); });
-function setup(env: NodeJS.ProcessEnv = {}, liveSpeech?: SpeechProvider) {
+function setup(env: NodeJS.ProcessEnv = {}, liveSpeech?: SpeechProvider, llm?: LlmProvider) {
   const home = mkdtempSync(path.join(tmpdir(), 'hanggo-router-')); homes.push(home);
-  return createApp(readConfig({ HANGGO_HOME: home, APP_ACCESS_PASSWORD: password, COACHING_GRACE_MS: '1', ...env }), { generate: async () => ({}), transcribe: async () => '', liveSpeech });
+  return createApp(readConfig({ HANGGO_HOME: home, APP_ACCESS_PASSWORD: password, COACHING_GRACE_MS: '1', ...env }), { generate: async () => ({}), transcribe: async () => '', liveSpeech, llm });
 }
 type App = ReturnType<typeof setup>;
 const input = { petName: '초코', guardianName: '가상 보호자', trainerName: '가상 훈련사' };
@@ -350,5 +352,126 @@ describe('recording', () => {
     await consent(owner, id); await consent(member, id);
     await putAudio(member, id, 0, 1000, speaking(1000)).expect(503);
     expect(prepare).not.toHaveBeenCalled();
+  });
+});
+
+describe('review and delivery', () => {
+  const talk = (ms: number) => Buffer.from(encodeWav(Float32Array.from({ length: ms * 16 }, (_, index) => 0.1 * Math.sin(index / 10))));
+  type Agent = ReturnType<typeof request.agent>;
+  const words: Record<string, string> = { guardian: '초인종이 울리면 현관으로 뛰어가 짖어요', trainer: '하루 두 번 매트로 가는 연습을 해 주세요' };
+  async function reviewed(env: NodeJS.ProcessEnv = {}) {
+    let turn = 0;
+    const speech: SpeechProvider = { prepare: async () => {}, release: async () => {}, transcribe: async () => ({ text: Object.values(words)[turn++ % 2], model: 'fake', latencyMs: 1 }) };
+    const app = setup({ AI_ENABLED: 'true', AI_PROVIDER: 'stub', ...env }, speech, createStubLlm());
+    const owner = await trainer(app);
+    const created = await createCase(owner);
+    const member = await guardian(app, created.inviteToken);
+    const { id } = await start(owner, created.case.id);
+    for (const agent of [owner, member]) await agent.post(`/api/coaching/consultations/${id}/consent`).set('Origin', origin).send({ value: true }).expect(200);
+    await member.put(`/api/coaching/consultations/${id}/audio/0?endMs=1000`).set('Origin', origin).set('Content-Type', 'audio/wav').send(talk(1000)).expect(202);
+    await owner.put(`/api/coaching/consultations/${id}/audio/0?endMs=1000`).set('Origin', origin).set('Content-Type', 'audio/wav').send(talk(1000)).expect(202);
+    const frame = '00000000-0000-4000-8000-000000000001';
+    await member.put(`/api/coaching/consultations/${id}/frames/${frame}?atMs=0&source=camera`).set('Origin', origin).set('Content-Type', 'image/jpeg').send(Buffer.from([0xff, 0xd8, 0xff, 1])).expect(201);
+    await expect.poll(async () => (await owner.get(`/api/coaching/consultations/${id}`)).body.segments.filter((item: { state: string }) => item.state === 'complete').length).toBe(2);
+    await owner.post(`/api/coaching/consultations/${id}/end`).set('Origin', origin).send({}).expect(200);
+    await expect.poll(async () => (await owner.get(`/api/coaching/consultations/${id}`)).body.state).toBe('review');
+    const read = async (agent: Agent = owner) => (await agent.get(`/api/coaching/consultations/${id}`).expect(200)).body as Consultation;
+    return { app, owner, member, id, frame, read, caseId: created.case.id };
+  }
+  const url = (id: string, path: string) => `/api/coaching/consultations/${id}${path}`;
+  it('builds a draft after the call and hides it from the guardian', async () => {
+    const { owner, member, id, read, caseId } = await reviewed();
+    const consultation = await read();
+    expect(consultation.note?.guardianReports[0].evidence[0].speaker).toBe('guardian');
+    expect(consultation.scenes).toHaveLength(1);
+    for (const body of [await read(member), ((await member.get(`/api/coaching/cases/${caseId}`).expect(200)).body as { consultations: Consultation[] }).consultations[0]]) {
+      expect(body).not.toHaveProperty('note');
+      expect(body).toMatchObject({ segments: [], scenes: [], frames: [], moments: [] });
+    }
+    await member.get(url(id, '/delivery')).expect(404);
+    await owner.get(url(id, '/delivery')).expect(404);
+  });
+  it('lets only the trainer change anything in the review', async () => {
+    const { member, id, read } = await reviewed();
+    const consultation = await read();
+    const segment = consultation.segments[0].id; const scene = consultation.scenes[0];
+    await member.patch(url(id, `/segments/${segment}`)).set('Origin', origin).send({ text: '바꾸기' }).expect(403);
+    await member.patch(url(id, `/scenes/${scene.id}/observations/${scene.observations[0].id}`)).set('Origin', origin).send({ reviewed: true }).expect(403);
+    await member.put(url(id, '/note')).set('Origin', origin).send(consultation.note).expect(403);
+    await member.post(url(id, '/note')).set('Origin', origin).send({}).expect(403);
+    await member.post(url(id, '/approve')).set('Origin', origin).send({}).expect(403);
+  });
+  it('keeps the original when the trainer corrects the transcript, and updates quotes in the note', async () => {
+    const { owner, id, read } = await reviewed();
+    const before = await read();
+    const segment = before.segments.find(item => item.speaker === 'guardian')!;
+    const updated = (await owner.patch(url(id, `/segments/${segment.id}`)).set('Origin', origin).send({ text: '초인종 소리에 현관으로 뛰어가 짖어요' }).expect(200)).body as Consultation;
+    const changed = updated.segments.find(item => item.id === segment.id)!;
+    expect(changed).toMatchObject({ text: '초인종 소리에 현관으로 뛰어가 짖어요', originalText: segment.originalText });
+    expect(updated.note?.guardianReports[0].evidence[0].quote).toBe('초인종 소리에 현관으로 뛰어가 짖어요');
+    expect(updated.note?.guardianReports[0].edited).toBeUndefined();
+    await owner.patch(url(id, '/segments/missing')).set('Origin', origin).send({ text: '바꾸기' }).expect(404);
+    await owner.patch(url(id, `/segments/${segment.id}`)).set('Origin', origin).send({ text: '' }).expect(400);
+  });
+  it('rebuilds forged evidence and refuses evidence that does not exist', async () => {
+    const { owner, id, read } = await reviewed();
+    const { note } = await read();
+    const forged = structuredClone(note!);
+    forged.guardianReports[0].evidence[0].quote = '꾸며낸 인용';
+    const saved = (await owner.put(url(id, '/note')).set('Origin', origin).send(forged).expect(200)).body as Consultation;
+    expect(saved.note?.guardianReports[0].evidence[0].quote).toBe(words.guardian);
+    const missing = structuredClone(note!);
+    missing.guardianReports[0].evidence[0].id = 'missing';
+    await owner.put(url(id, '/note')).set('Origin', origin).send(missing).expect(400);
+    await owner.put(url(id, '/note')).set('Origin', origin).send({ version: 1 }).expect(400);
+  });
+  it('blocks approval on a banned expression and delivers after it is fixed', async () => {
+    const { owner, member, id, read, frame } = await reviewed();
+    const { note, scenes } = await read();
+    const blocked = structuredClone(note!);
+    blocked.guidance[0].text = '이 연습으로 반드시 좋아집니다';
+    await owner.put(url(id, '/note')).set('Origin', origin).send(blocked).expect(200);
+    const refused = await owner.post(url(id, '/approve')).set('Origin', origin).send({}).expect(409);
+    expect(refused.body.code).toBe('NOTE_BLOCKED');
+    expect((await read()).state).toBe('review');
+    await member.get(url(id, `/frames/${frame}`)).expect(403);
+    await owner.put(url(id, '/note')).set('Origin', origin).send(note).expect(200);
+    await owner.patch(url(id, `/scenes/${scenes[0].id}/observations/${scenes[0].observations[0].id}`)).set('Origin', origin).send({ reviewed: true }).expect(200);
+    const approved = (await owner.post(url(id, '/approve')).set('Origin', origin).send({}).expect(200)).body as Consultation;
+    expect(approved.state).toBe('approved');
+    expect(approved.note?.approvedAt).toBeTruthy();
+    const delivery = (await member.get(url(id, '/delivery')).expect(200)).body;
+    expect(delivery.note.tasks).toHaveLength(1);
+    expect(delivery.note).not.toHaveProperty('methodReview');
+    expect(delivery.scenes[0].frameIds).toEqual([frame]);
+    await member.get(url(id, `/frames/${frame}`)).expect(200);
+  });
+  it('keeps uncited photos from the guardian even after approval', async () => {
+    const { owner, member, id, frame } = await reviewed();
+    await owner.post(url(id, '/approve')).set('Origin', origin).send({}).expect(200);
+    expect((await member.get(url(id, '/delivery')).expect(200)).body.scenes).toEqual([]);
+    await member.get(url(id, `/frames/${frame}`)).expect(403);
+    await owner.get(url(id, `/frames/${frame}`)).expect(200);
+  });
+  it('freezes everything once approved', async () => {
+    const { owner, id, read } = await reviewed();
+    const { note, segments } = await read();
+    await owner.post(url(id, '/approve')).set('Origin', origin).send({}).expect(200);
+    await owner.put(url(id, '/note')).set('Origin', origin).send(note).expect(409);
+    await owner.patch(url(id, `/segments/${segments[0].id}`)).set('Origin', origin).send({ text: '바꾸기' }).expect(409);
+    await owner.post(url(id, '/note')).set('Origin', origin).send({}).expect(409);
+    await owner.post(url(id, '/approve')).set('Origin', origin).send({}).expect(409);
+  });
+  it('regenerates in the background and refuses edits meanwhile', async () => {
+    const { owner, id, read } = await reviewed();
+    const { note } = await read();
+    const started = await owner.post(url(id, '/note')).set('Origin', origin).send({}).expect(202);
+    expect(started.body.noteGenerating).toBe(true);
+    await expect.poll(async () => (await read()).noteGenerating).toBeUndefined();
+    expect((await read()).note?.guidance).toHaveLength(note!.guidance.length);
+  });
+  it('blocks a second call until the first is organized, then allows it', async () => {
+    const { owner, caseId } = await reviewed();
+    await owner.post(`/api/coaching/cases/${caseId}/consultations`).set('Origin', origin).send({}).expect(201);
   });
 });

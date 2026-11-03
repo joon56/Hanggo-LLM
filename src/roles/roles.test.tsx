@@ -10,7 +10,7 @@ import { PreJoin } from './PreJoin';
 import { TrainerHome } from './TrainerHome';
 import { deviceAdvice, isInAppBrowser } from './copy';
 
-const api = vi.hoisted(() => ({ getMe: vi.fn(), listCases: vi.fn(), getCase: vi.fn(), createCase: vi.fn(), reissueInvite: vi.fn(), joinWithInvite: vi.fn(), startConsultation: vi.fn(), setConsent: vi.fn() }));
+const api = vi.hoisted(() => ({ getMe: vi.fn(), listCases: vi.fn(), getCase: vi.fn(), createCase: vi.fn(), reissueInvite: vi.fn(), joinWithInvite: vi.fn(), startConsultation: vi.fn(), setConsent: vi.fn(), getDelivery: vi.fn(), frameUrl: vi.fn() }));
 vi.mock('../coaching-api', () => api);
 const login = vi.hoisted(() => vi.fn());
 vi.mock('../api', async original => ({ ...await original<typeof import('../api')>(), login }));
@@ -69,7 +69,41 @@ describe('TrainerHome', () => {
     api.startConsultation.mockRejectedValue(new ApiError('Another consultation is live.', 'ACTIVE_CONSULTATION'));
     render(<TrainerHome navigate={vi.fn()} />);
     await userEvent.click(await screen.findByRole('button', { name: '초코 상담 시작' }));
-    expect(await screen.findByRole('alert')).toHaveTextContent('진행 중인 상담');
+    expect(await screen.findByRole('alert')).toHaveTextContent('진행 중이거나 정리 중인 상담');
+  });
+});
+
+describe('TrainerHome past consultations', () => {
+  const past = (id: string, state: string) => ({ ...liveConsultation, id, state });
+  beforeEach(() => { api.getMe.mockResolvedValue({ role: 'trainer' }); api.listCases.mockResolvedValue({ cases: [aCase] }); });
+  it('opens the review for a finished consultation and names its state', async () => {
+    const navigate = vi.fn();
+    api.getCase.mockResolvedValue({ ...aCase, consultations: [past('c2', 'review'), past('c1', 'approved')] });
+    render(<TrainerHome navigate={navigate} />);
+    const list = await screen.findByRole('list', { name: '초코 지난 상담' });
+    expect(list).toHaveTextContent('검토 대기');
+    expect(list).toHaveTextContent('확정');
+    await userEvent.click(screen.getByRole('button', { name: '검토하기' }));
+    expect(navigate).toHaveBeenCalledWith('/review/c2');
+    await userEvent.click(screen.getByRole('button', { name: '열기' }));
+    expect(navigate).toHaveBeenCalledWith('/review/c1');
+  });
+  it('follows a consultation being organized until the review is ready', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      api.getCase.mockResolvedValue({ ...aCase, consultations: [past('c2', 'processing')] });
+      render(<TrainerHome navigate={vi.fn()} />);
+      expect(await screen.findByText('정리 중')).toBeInTheDocument();
+      api.getCase.mockResolvedValue({ ...aCase, consultations: [past('c2', 'review')] });
+      await vi.advanceTimersByTimeAsync(3100);
+      expect(await screen.findByRole('button', { name: '검토하기' })).toBeInTheDocument();
+    } finally { vi.useRealTimers(); }
+  });
+  it('does not list a live consultation as past', async () => {
+    api.getCase.mockResolvedValue({ ...aCase, consultations: [liveConsultation] });
+    render(<TrainerHome navigate={vi.fn()} />);
+    await screen.findByRole('button', { name: '초코 상담 다시 입장' });
+    expect(screen.queryByRole('list', { name: '초코 지난 상담' })).toBeNull();
   });
 });
 
@@ -108,6 +142,19 @@ describe('GuardianHome', () => {
     render(<GuardianHome navigate={navigate} />);
     await userEvent.click(await screen.findByRole('button', { name: '상담 입장' }));
     expect(navigate).toHaveBeenCalledWith('/room/c1');
+  });
+  it('shows the latest confirmed note, and nothing for a draft', async () => {
+    api.getMe.mockResolvedValue({ role: 'guardian', caseId: 'case-1' });
+    api.getCase.mockResolvedValue({ ...aCase, consultations: [{ ...liveConsultation, id: 'draft', state: 'review' }] });
+    const { unmount } = render(<GuardianHome navigate={vi.fn()} />);
+    await screen.findByText(/훈련사가 상담을 시작하면/);
+    expect(api.getDelivery).not.toHaveBeenCalled();
+    unmount();
+    api.getDelivery.mockResolvedValue({ note: { summary: [], concerns: [], behaviors: [], guardianReports: [], trainerObservations: [], aiObservations: [], guidance: [], tasks: [], followUps: [], safetyFlags: [], approvedAt: 'x' }, scenes: [] });
+    api.getCase.mockResolvedValue({ ...aCase, consultations: [{ ...liveConsultation, id: 'new', state: 'approved' }, { ...liveConsultation, id: 'old', state: 'approved' }] });
+    render(<GuardianHome navigate={vi.fn()} />);
+    expect(await screen.findByRole('article', { name: '확정된 상담일지' })).toBeInTheDocument();
+    expect(api.getDelivery).toHaveBeenCalledWith('new');
   });
 });
 

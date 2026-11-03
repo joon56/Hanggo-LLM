@@ -140,3 +140,21 @@ it('reads consultation records written before transcription existed', async () =
   writeFileSync(file, JSON.stringify(earlier));
   await expect(store.getConsultation(id)).resolves.toMatchObject({ segments: [], moments: [], frames: [] });
 });
+it('clears a note job that a restart left behind', async () => {
+  const store = createFileStore(directory());
+  const { case: created } = await store.createCase(input);
+  const { id } = await store.createConsultation(created.id);
+  await store.updateConsultation(id, current => ({ ...current, state: 'review', noteGenerating: true }));
+  await store.recoverInterrupted();
+  await expect(store.getConsultation(id)).resolves.not.toHaveProperty('noteGenerating');
+  await expect(store.getConsultation(id)).resolves.toMatchObject({ state: 'review' });
+});
+it('refuses a new consultation while the last one is still being organized', async () => {
+  const store = createFileStore(directory());
+  const { case: created } = await store.createCase(input);
+  const { id } = await store.startConsultation(created.id);
+  await store.updateConsultation(id, current => ({ ...current, state: 'processing' }));
+  await expect(store.startConsultation(created.id)).rejects.toMatchObject({ code: 'ACTIVE_CONSULTATION' });
+  await store.updateConsultation(id, current => ({ ...current, state: 'review' }));
+  await expect(store.startConsultation(created.id)).resolves.toMatchObject({ state: 'live' });
+});

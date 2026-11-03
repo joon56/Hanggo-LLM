@@ -4,20 +4,23 @@ import type { ErrorRequestHandler, Request, Response } from 'express';
 import rateLimit from 'express-rate-limit';
 import { z } from 'zod';
 import { setConsent, transition, TransitionError } from '../../src/domain/coaching.ts';
+import { approvalProblems, deliveryOf, normalizeEditedNote, reviewedObservationClaims } from '../../src/domain/coaching-note.ts';
 import type { CoachingCase, Consultation, Moment, Speaker } from '../../src/domain/coaching.ts';
 import { can } from '../../src/domain/permissions.ts';
 import type { Action, Actor } from '../../src/domain/permissions.ts';
 import { iceConfig, type TurnConfig } from '../turn.ts';
 import type { GuardianSessions } from './guardian-session.ts';
 import { StoreError, type CoachingStore } from './store.ts';
+import type { PostProcess } from './post-process.ts';
 import type { Transcription } from './transcription.ts';
+import { noteSchema } from './note-schema.ts';
 import { isSilentWav } from './wav.ts';
 
 export const GUARDIAN_COOKIE = 'hanggo_guardian';
 type Headers = { cookie?: string };
 
 export type CoachingDeps = {
-  store: CoachingStore; sessions: GuardianSessions; turn: TurnConfig; secureCookies: boolean; transcription: Transcription;
+  store: CoachingStore; sessions: GuardianSessions; turn: TurnConfig; secureCookies: boolean; transcription: Transcription; postProcess: PostProcess;
   /** How long after the end to accept what browsers still hold. */
   graceMs: number;
   /** Password session check owned by the app. */
@@ -41,11 +44,22 @@ const time = z.string().regex(/^\d{1,8}$/).transform(Number).pipe(z.number().max
 const AudioParams = z.object({ startMs: time, endMs: time }).strict();
 const FrameParams = z.object({ frameId: z.uuid(), atMs: time, source: z.enum(['camera', 'screen']), moment: z.uuid().optional() }).strict();
 const MemoInput = z.object({ text: z.string().trim().max(500) }).strict();
+const SegmentEdit = z.object({ text: z.string().trim().min(1).max(8000).optional(), echoSuspect: z.boolean().optional() }).strict();
+const ObservationEdit = z.object({ text: z.string().trim().min(1).max(1000).optional(), reviewed: z.boolean().optional() }).strict();
 const isJpeg = (bytes: unknown) => Buffer.isBuffer(bytes) && bytes.length > 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff;
 
 const publicCase = ({ inviteHash: _inviteHash, inviteExpiresAt: _inviteExpiresAt, guardianGeneration: _generation, ...shared }: CoachingCase) => shared;
-/** Scenes and memos stay with the trainer until a confirmed note cites them. */
-const viewFor = (actor: Actor, consultation: Consultation): Consultation => actor.role === 'trainer' ? consultation : { ...consultation, frames: [], moments: [] };
+/** The guardian's copy comes from the delivery route. Drafts, edits, scenes, and memos stay with the trainer. */
+const viewFor = (actor: Actor, consultation: Consultation): Consultation => {
+  if (actor.role === 'trainer') return consultation;
+  const { note: _note, noteGenerating: _noteGenerating, ...shared } = consultation;
+  return { ...shared, segments: [], frames: [], moments: [], scenes: [], errors: [] };
+};
+/** Photos the confirmed note cites, which are the only ones a guardian may open. */
+const citedScenes = (consultation: Consultation) => {
+  const cited = new Set((consultation.note?.aiObservations ?? []).flatMap(claim => claim.evidence).filter(item => item.kind === 'scene').map(item => item.id));
+  return consultation.scenes.filter(scene => cited.has(scene.id)).map(({ id, atMs, frameIds }) => ({ id, atMs, frameIds }));
+};
 const readCookie = (headers: Headers, key: string) => headers.cookie?.split(';').map(part => part.trim()).find(part => part.startsWith(`${key}=`))?.slice(key.length + 1);
 
 /** Shared with the signaling server so REST and WebSocket apply the same identity rules. */
@@ -62,7 +76,7 @@ export function createActorResolver({ store, sessions, isTrainer }: Pick<Coachin
 }
 
 export function createCoachingRouter(deps: CoachingDeps) {
-  const { store, sessions, notify, transcription, graceMs, broadcast, now = Date.now } = deps;
+  const { store, sessions, notify, transcription, postProcess, graceMs, broadcast, now = Date.now } = deps;
   const router = express.Router();
   const resolveActor = createActorResolver(deps);
   const joinLimit = rateLimit({ windowMs: 60_000, limit: 10, keyGenerator: () => 'join', standardHeaders: 'draft-8', legacyHeaders: false,
@@ -142,7 +156,7 @@ export function createCoachingRouter(deps: CoachingDeps) {
     if (!consultation) return;
     const updated = await store.updateConsultation(consultation.id, current => transition(current, 'end', now()));
     notify?.(updated); res.json(updated);
-    void transcription.finish(updated.id).catch(() => { console.error('상담 마무리 처리에 실패했습니다.'); });
+    void postProcess.finish(updated.id).catch(() => { console.error('상담 마무리 처리에 실패했습니다.'); });
   });
 
   /** The browser's last window arrives after the end, but only if both sides were still consenting then. */
@@ -184,8 +198,12 @@ export function createCoachingRouter(deps: CoachingDeps) {
     res.status(201).json({ id: frameId });
   });
   router.get('/consultations/:id/frames/:frameId', async (req, res) => {
-    const consultation = await consultationFor(req, res, 'frame:read-all');
-    if (consultation) res.type('image/jpeg').send(await store.readFrame(consultation.id, param(req, 'frameId')));
+    const consultation = await consultationFor(req, res, 'frame:read-cited');
+    if (!consultation) return;
+    const frameId = param(req, 'frameId');
+    const readable = can(actorOf(req), 'frame:read-all', consultation.caseId) || (consultation.state === 'approved' && citedScenes(consultation).some(scene => scene.frameIds.includes(frameId)));
+    if (!readable) { res.status(403).json({ error: '권한이 없습니다.', code: 'FORBIDDEN' }); return; }
+    res.type('image/jpeg').send(await store.readFrame(consultation.id, frameId));
   });
   router.post('/consultations/:id/moments', async (req, res) => {
     const consultation = await consultationFor(req, res, 'moment:create');
@@ -212,6 +230,69 @@ export function createCoachingRouter(deps: CoachingDeps) {
     if (!consultation.moments.some(item => item.id === momentId)) throw new StoreError('NOT_FOUND', '캐치를 찾을 수 없습니다.', 404);
     const updated = await store.updateConsultation(consultation.id, current => ({ ...current, moments: current.moments.map(item => item.id === momentId ? { ...item, text } : item) }));
     res.json(updated.moments.find(item => item.id === momentId));
+  });
+
+  async function reviewable(req: Request, res: Response, action: Action) {
+    const consultation = await consultationFor(req, res, action);
+    if (!consultation) return null;
+    if (consultation.state !== 'review') throw new StoreError('STATE', '검토 중인 상담이 아닙니다.', 409);
+    return consultation;
+  }
+  async function editable(req: Request, res: Response, action: Action) {
+    const consultation = await reviewable(req, res, action);
+    if (consultation?.noteGenerating) throw new StoreError('NOTE_BUSY', '일지를 다시 만드는 중입니다. 잠시 후 다시 시도해 주세요.', 409);
+    return consultation;
+  }
+  const refreshed = (current: Consultation, info: CoachingCase) => current.note ? { ...current, note: normalizeEditedNote(current.note, current.note, current, info).note } : current;
+  router.patch('/consultations/:id/segments/:segmentId', async (req, res) => {
+    const consultation = await editable(req, res, 'transcript:edit');
+    if (!consultation) return;
+    const change = SegmentEdit.parse(req.body);
+    const segmentId = param(req, 'segmentId');
+    if (!consultation.segments.some(item => item.id === segmentId)) throw new StoreError('NOT_FOUND', '전사 구간을 찾을 수 없습니다.', 404);
+    const info = await store.getCase(consultation.caseId);
+    // Quotes in the note follow the corrected transcript, and an echo stops being citable.
+    res.json(await store.updateConsultation(consultation.id, current => refreshed({ ...current, segments: current.segments.map(item => item.id === segmentId ? { ...item, ...change } : item) }, info)));
+  });
+  router.patch('/consultations/:id/scenes/:sceneId/observations/:observationId', async (req, res) => {
+    const consultation = await editable(req, res, 'scene:review');
+    if (!consultation) return;
+    const change = ObservationEdit.parse(req.body);
+    const sceneId = param(req, 'sceneId'); const observationId = param(req, 'observationId');
+    if (!consultation.scenes.some(scene => scene.id === sceneId && scene.observations.some(item => item.id === observationId))) throw new StoreError('NOT_FOUND', '장면 관찰을 찾을 수 없습니다.', 404);
+    res.json(await store.updateConsultation(consultation.id, current => ({ ...current, scenes: current.scenes.map(scene => scene.id !== sceneId ? scene : { ...scene, observations: scene.observations.map(item => item.id === observationId ? { ...item, ...change } : item) }) })));
+  });
+  router.post('/consultations/:id/note', async (req, res) => {
+    const consultation = await editable(req, res, 'note:draft');
+    if (!consultation) return;
+    if (['preparing', 'ready'].includes(transcription.status())) throw new StoreError('GPU_BUSY', '다른 상담을 기록하는 중에는 일지를 다시 만들 수 없습니다.', 409);
+    await postProcess.regenerate(consultation.id);
+    res.status(202).json(await store.getConsultation(consultation.id));
+  });
+  router.put('/consultations/:id/note', async (req, res) => {
+    const consultation = await editable(req, res, 'note:draft');
+    if (!consultation) return;
+    if (!consultation.note) throw new StoreError('NOT_FOUND', '일지가 없습니다.', 404);
+    const edited = noteSchema.parse(req.body);
+    const { note, problems } = normalizeEditedNote(edited, consultation.note, consultation, await store.getCase(consultation.caseId));
+    if (problems.length) throw new StoreError('NOTE_EVIDENCE', problems.join(' '));
+    res.json(await store.updateConsultation(consultation.id, current => ({ ...current, note })));
+  });
+  router.post('/consultations/:id/approve', async (req, res) => {
+    const consultation = await editable(req, res, 'note:draft');
+    if (!consultation) return;
+    if (!consultation.note) throw new StoreError('NOT_FOUND', '일지가 없습니다.', 404);
+    const note = { ...consultation.note, aiObservations: reviewedObservationClaims(consultation.scenes), approvedAt: new Date(now()).toISOString() };
+    const problems = approvalProblems(note);
+    if (problems.length) throw new StoreError('NOTE_BLOCKED', problems.join(' '), 409);
+    const updated = await store.updateConsultation(consultation.id, current => ({ ...transition(current, 'approve', now()), note }));
+    notify?.(updated); res.json(updated);
+  });
+  router.get('/consultations/:id/delivery', async (req, res) => {
+    const consultation = await consultationFor(req, res, 'delivery:read');
+    if (!consultation) return;
+    if (consultation.state !== 'approved' || !consultation.note) throw new StoreError('NOT_FOUND', '아직 확정된 상담일지가 없습니다.', 404);
+    res.json({ note: deliveryOf(consultation.note), scenes: citedScenes(consultation) });
   });
 
   const errors: ErrorRequestHandler = (error, _req, res, next) => {

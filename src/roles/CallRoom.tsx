@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useCall } from '../call/useCall';
 import { openDevices, type DevicePreference } from '../call/devices';
 import { createMoment, endConsultation, getCase, getConsultation, getIce, getMe, setConsent, setMomentMemo } from '../coaching-api';
@@ -15,10 +15,13 @@ type Room = { role: Speaker; petName: string; ice: IceConfig; home: string };
 
 function LiveCall({ consultationId, room, choice, forceRelay, navigate }: { consultationId: string; room: Room; choice: JoinChoice; forceRelay: boolean; navigate: (path: string) => void }) {
   const [notice, setNotice] = useState('');
+  // Ending the call reaches here twice, from the request and from the socket closing. A second navigation would abort the first.
+  const left = useRef(false);
+  const goHome = useCallback(() => { if (!left.current) { left.current = true; navigate(room.home); } }, [navigate, room.home]);
   const onClosedForGood = useCallback((code: number) => {
     if (code === 4001) setNotice('다른 탭이나 기기에서 입장해 이 화면의 연결을 닫았습니다.');
-    else navigate(room.home);
-  }, [navigate, room.home]);
+    else goHome();
+  }, [goHome]);
   const { session, ...call } = useCall({ consultationId, role: room.role, iceServers: room.ice.iceServers, localStream: choice.stream, forceRelay, onClosedForGood });
   const [facing, setFacing] = useState<'user' | 'environment'>(choice.preference.facingMode ?? 'user');
   useEffect(() => { if (choice.consent) void setConsent(consultationId, true); }, [choice.consent, consultationId]);
@@ -30,8 +33,8 @@ function LiveCall({ consultationId, room, choice, forceRelay, navigate }: { cons
       if (track) { setFacing(next); void session.replaceCamera(track); }
     }); }}
     onStartShare={() => void session.startScreenShare()} onStopShare={() => session.stopScreenShare()}
-    onLeave={() => navigate(room.home)}
-    onEnd={() => { if (window.confirm('상담을 종료할까요? 양쪽 통화가 끝납니다.')) void endConsultation(consultationId).then(() => navigate(room.home)); }}
+    onLeave={goHome}
+    onEnd={() => { if (window.confirm('상담을 종료할까요? 양쪽 통화가 끝납니다.')) void endConsultation(consultationId).then(goHome); }}
     onConsent={value => void setConsent(consultationId, value)}
     onCatch={() => void createMoment(consultationId).catch(() => session.noteUploadLost())}
     onMemo={(momentId, text) => void setMomentMemo(consultationId, momentId, text).catch(() => session.noteUploadLost())} />;

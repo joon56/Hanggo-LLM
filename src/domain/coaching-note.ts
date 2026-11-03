@@ -1,0 +1,209 @@
+import type { Consultation, Speaker } from './coaching.ts';
+import { numbersSupported } from './korean-numbers.ts';
+import { flagsFromSource, methodPattern, SAFETY_LABELS } from './notes.ts';
+
+export type Evidence = { kind: 'segment' | 'moment' | 'scene'; id: string; quote: string; startMs: number; endMs: number; speaker?: Speaker };
+export type Claim = { id: string; text: string; evidence: Evidence[]; edited?: boolean };
+export type UnknownField = 'trigger' | 'frequency' | 'duration' | 'response';
+export type BehaviorEntry = { id: string; title: string; context: Claim[]; behavior: Claim[]; response: Claim[]; unknown: UnknownField[] };
+export type CoachingTask = { id: string; text: string; who: string | null; frequency: string | null; until: string | null; successCriteria: string | null; evidence: Evidence[]; edited?: boolean };
+export type CoachingNote = {
+  version: 2; summary: Claim[]; concerns: Claim[]; behaviors: BehaviorEntry[]; guardianReports: Claim[]; trainerObservations: Claim[]; aiObservations: Claim[]; guidance: Claim[]; tasks: CoachingTask[]; followUps: Claim[];
+  safetyFlags: string[]; methodReview: boolean; uncitedSegmentIds: string[]; createdAt: string; approvedAt?: string; fallbackUsed?: boolean; warnings: string[];
+};
+export type Observation = { id: string; text: string; originalText: string; reviewed: boolean };
+export type Scene = { id: string; atMs: number; frameIds: string[]; observations: Observation[]; state: 'complete' | 'failed' };
+
+export type RawClaim = { text: string; evidence: string[] };
+export type RawTask = { text: string; who: string | null; frequency: string | null; until: string | null; successCriteria: string | null; evidence: string[] };
+export type RawBehavior = { title: string; context: RawClaim[]; behavior: RawClaim[]; response: RawClaim[]; unknown: UnknownField[] };
+export type RawNote = { summary: RawClaim[]; concerns: RawClaim[]; behaviors: RawBehavior[]; guardianReports: RawClaim[]; trainerObservations: RawClaim[]; guidance: RawClaim[]; tasks: RawTask[]; followUps: RawClaim[]; safetyFlags: string[]; methodReview: boolean };
+export type NoteLine = { alias: string; evidence: Evidence };
+export type NoteSource = { lines: NoteLine[]; names: string[] };
+export type NoteViolation = { section: string; text: string; reasons: string[] };
+type CaseInfo = { petName: string; guardianName: string; trainerName: string };
+
+const CLAIM_SECTIONS = ['summary', 'concerns', 'guardianReports', 'trainerObservations', 'aiObservations', 'guidance', 'followUps'] as const;
+const REQUIRED_SPEAKER: Partial<Record<string, { speaker: Speaker; name: string }>> = {
+  guardianReports: { speaker: 'guardian', name: '보호자' }, guidance: { speaker: 'trainer', name: '훈련사' },
+  trainerObservations: { speaker: 'trainer', name: '훈련사' }, tasks: { speaker: 'trainer', name: '훈련사' },
+};
+const BANNED = /진단|치료|완치|처방|증상\s*판정|정확도|효과\s*보장|반드시\s*(?:좋아|낫|나아)|확실히|문제견|나쁜\s*개|공격견|사나운\s*개|좋아졌|개선됐|개선되었|나아졌|이\s*품종은\s*원래|분리불안|관절염|슬개골|골절|디스크|치매|피부염|장염|췌장염|강박증|불안장애/g;
+const NAME = /([가-힣]{2,4})\s?(?:님|씨)/g;
+// Titles and everyday words that end the way a name with an honorific does.
+const NOT_A_NAME = /(?:보호자|훈련사|선생|기사|수의사|원장|사장|고객|손|어머|아버|남편|아내|따|아드|아저|아가|날|솜|말|맵|글|마음|시|사모)$/;
+const ALIAS_MARKER = /\s*[[(]\s*[sm]\d{1,3}(?:\s*,\s*[sm]\d{1,3})*\s*[\])]/g;
+const MIN_CLAIM_SUPPORT = 0.3;
+const MIN_FIELD_SUPPORT = 0.6;
+const newId = () => crypto.randomUUID();
+
+const pairsOf = (text: string) => {
+  const clean = text.replace(/[^\p{L}]/gu, '');
+  return Array.from({ length: Math.max(0, clean.length - 1) }, (_, index) => clean.slice(index, index + 2));
+};
+/** How much of a sentence comes from its evidence. A rewritten sentence reuses the words; an invented one does not. */
+function supportOf(text: string, sources: string[]) {
+  const pairs = pairsOf(text);
+  if (pairs.length < 3) return 1;
+  const known = new Set(sources.flatMap(pairsOf));
+  return pairs.filter(pair => known.has(pair)).length / pairs.length;
+}
+export const bannedIn = (text: string) => [...new Set(text.match(BANNED) ?? [])];
+
+export function buildNoteSource(consultation: Pick<Consultation, 'segments' | 'moments'>, info: CaseInfo): NoteSource {
+  const spoken = consultation.segments.filter(segment => segment.state === 'complete' && !segment.echoSuspect && segment.text.trim());
+  const memos = consultation.moments.filter(moment => moment.text?.trim());
+  const alias = (prefix: string, index: number) => `${prefix}${String(index + 1).padStart(2, '0')}`;
+  return { names: [info.petName, info.guardianName, info.trainerName], lines: [
+    ...spoken.map((segment, index): NoteLine => ({ alias: alias('s', index), evidence: { kind: 'segment', id: segment.id, quote: segment.text, startMs: segment.startMs, endMs: segment.endMs, speaker: segment.speaker } })),
+    ...memos.map((moment, index): NoteLine => ({ alias: alias('m', index), evidence: { kind: 'moment', id: moment.id, quote: moment.text!, startMs: moment.atMs, endMs: moment.atMs, speaker: 'trainer' } })),
+  ] };
+}
+
+function problemsWith(section: string, text: string, evidence: Evidence[], source: NoteSource) {
+  if (!evidence.length) return ['근거 발화가 없습니다.'];
+  const quotes = evidence.map(item => item.quote);
+  const reasons: string[] = [];
+  const numbers = numbersSupported(text, quotes);
+  if (numbers.length) reasons.push(`근거에 없는 숫자입니다: ${numbers.join(', ')}`);
+  const names = [...text.matchAll(NAME)].map(match => match[1]).filter(name => !NOT_A_NAME.test(name) && ![...quotes, ...source.names].some(known => known.includes(name)));
+  if (names.length) reasons.push(`근거에 없는 이름입니다: ${names.join(', ')}`);
+  // A guardian may relay what someone told them. Anywhere else the note would be making the claim itself.
+  const banned = bannedIn(text).filter(word => section !== 'guardianReports' || !quotes.some(quote => quote.includes(word)));
+  if (banned.length) reasons.push(`금지 표현입니다: ${banned.join(', ')}`);
+  if (supportOf(text, [...quotes, ...source.names]) < MIN_CLAIM_SUPPORT) reasons.push('문장이 근거와 거의 겹치지 않습니다.');
+  return reasons;
+}
+
+function evidenceFor(section: string, aliases: string[], source: NoteSource) {
+  const found = aliases.map(alias => source.lines.find(line => line.alias === alias)?.evidence).filter((item): item is Evidence => !!item);
+  const required = REQUIRED_SPEAKER[section];
+  const allowed = required ? found.filter(item => item.speaker === required.speaker) : found;
+  return { evidence: allowed, wrongSpeaker: !!required && found.length > 0 && !allowed.length ? required.name : '' };
+}
+
+function supportedField(value: string | null, quotes: string[]) {
+  const text = value?.trim();
+  if (!text) return null;
+  if (numbersSupported(text, quotes).length) return null;
+  // Numbers are spelled differently from the transcript, so a supported count is enough on its own.
+  return /\d/.test(text) || supportOf(text, quotes) >= MIN_FIELD_SUPPORT ? text : null;
+}
+
+function citedSegmentIds(note: Pick<CoachingNote, typeof CLAIM_SECTIONS[number] | 'behaviors' | 'tasks'>) {
+  const claims = [...CLAIM_SECTIONS.flatMap(section => note[section]), ...note.behaviors.flatMap(item => [...item.context, ...item.behavior, ...item.response]), ...note.tasks];
+  return new Set(claims.flatMap(claim => claim.evidence).filter(item => item.kind === 'segment').map(item => item.id));
+}
+export const uncited = (note: Parameters<typeof citedSegmentIds>[0], source: NoteSource) => {
+  const cited = citedSegmentIds(note);
+  return source.lines.filter(line => line.evidence.kind === 'segment' && !cited.has(line.evidence.id)).map(line => line.evidence.id);
+};
+const ruleSafetyFlags = (source: NoteSource) => flagsFromSource(source.lines.map(line => line.evidence.quote).join('\n'));
+const ruleMethodReview = (source: NoteSource) => source.lines.some(line => methodPattern.test(line.evidence.quote));
+
+/** Sentences come from the model, but citations and times always come from the record, and anything unsupported is left out. */
+export function assembleNote(raw: RawNote, source: NoteSource, createdAt: string) {
+  const violations: NoteViolation[] = [];
+  const reject = (section: string, text: string, reasons: string[]) => { violations.push({ section, text, reasons }); };
+  const claims = (section: string, items: RawClaim[]): Claim[] => items.flatMap(item => {
+    const text = item.text.replace(ALIAS_MARKER, '').trim();
+    if (!text) return [];
+    const { evidence, wrongSpeaker } = evidenceFor(section, item.evidence, source);
+    const reasons = wrongSpeaker ? [`${wrongSpeaker} 발화를 근거로 써야 합니다.`] : problemsWith(section, text, evidence, source);
+    if (reasons.length) { reject(section, text, reasons); return []; }
+    return [{ id: newId(), text, evidence }];
+  });
+  const behaviors = raw.behaviors.flatMap((item): BehaviorEntry[] => {
+    const entry = { id: newId(), title: item.title.trim(), context: claims('behaviors.context', item.context), behavior: claims('behaviors.behavior', item.behavior), response: claims('behaviors.response', item.response), unknown: item.unknown };
+    const banned = bannedIn(entry.title);
+    if (banned.length) { reject('behaviors.title', entry.title, [`금지 표현입니다: ${banned.join(', ')}`]); return []; }
+    return entry.context.length || entry.behavior.length || entry.response.length ? [entry] : [];
+  });
+  const tasks = raw.tasks.flatMap((item): CoachingTask[] => {
+    const text = item.text.replace(ALIAS_MARKER, '').trim();
+    if (!text) return [];
+    const { evidence, wrongSpeaker } = evidenceFor('tasks', item.evidence, source);
+    const reasons = wrongSpeaker ? [`${wrongSpeaker} 발화를 근거로 써야 합니다.`] : problemsWith('tasks', text, evidence, source);
+    if (reasons.length) { reject('tasks', text, reasons); return []; }
+    const quotes = evidence.map(entry => entry.quote);
+    return [{ id: newId(), text, who: supportedField(item.who, quotes), frequency: supportedField(item.frequency, quotes), until: supportedField(item.until, quotes), successCriteria: supportedField(item.successCriteria, quotes), evidence }];
+  });
+  const sections = { summary: claims('summary', raw.summary), concerns: claims('concerns', raw.concerns), behaviors, guardianReports: claims('guardianReports', raw.guardianReports),
+    trainerObservations: claims('trainerObservations', raw.trainerObservations), aiObservations: [] as Claim[], guidance: claims('guidance', raw.guidance), tasks, followUps: claims('followUps', raw.followUps) };
+  const note: CoachingNote = { version: 2, ...sections,
+    // Rules and the model can each raise a flag. Neither can lower one.
+    safetyFlags: [...new Set([...ruleSafetyFlags(source), ...raw.safetyFlags.filter(flag => SAFETY_LABELS.includes(flag))])],
+    methodReview: raw.methodReview || ruleMethodReview(source),
+    uncitedSegmentIds: uncited(sections, source), createdAt, warnings: [] };
+  return { note, violations };
+}
+
+export function emptyNote(source: NoteSource, createdAt: string, warnings: string[]): CoachingNote {
+  const sections = { summary: [], concerns: [], behaviors: [], guardianReports: [], trainerObservations: [], aiObservations: [], guidance: [], tasks: [], followUps: [] };
+  return { version: 2, ...sections, safetyFlags: ruleSafetyFlags(source), methodReview: ruleMethodReview(source), uncitedSegmentIds: uncited(sections, source), createdAt, fallbackUsed: true, warnings };
+}
+
+/** A person's edit is trusted for wording, but evidence is looked up again so a request cannot forge a quote or a time. */
+export function normalizeEditedNote(edited: CoachingNote, before: CoachingNote, consultation: Pick<Consultation, 'segments' | 'moments' | 'scenes'>, info: CaseInfo) {
+  const source = buildNoteSource(consultation, info);
+  const known = new Map(source.lines.map(line => [`${line.evidence.kind}:${line.evidence.id}`, line.evidence]));
+  for (const scene of consultation.scenes) for (const observation of scene.observations) known.set(`scene:${scene.id}`, { kind: 'scene', id: scene.id, quote: observation.text, startMs: scene.atMs, endMs: scene.atMs });
+  const problems: string[] = [];
+  const earlier = new Map([...CLAIM_SECTIONS.flatMap(section => before[section]), ...before.behaviors.flatMap(item => [...item.context, ...item.behavior, ...item.response]), ...before.tasks].map(item => [item.id, item]));
+  const lookup = (evidence: Evidence[]) => evidence.flatMap(item => {
+    const found = known.get(`${item.kind}:${item.id}`);
+    if (!found) problems.push(`근거를 찾을 수 없습니다: ${item.id}`);
+    return found ? [found] : [];
+  });
+  const evidenceKey = (evidence: Evidence[]) => evidence.map(item => `${item.kind}:${item.id}`).sort().join();
+  const changed = (item: { id: string; text: string; evidence: Evidence[] }, extra = false) => {
+    const previous = earlier.get(item.id);
+    return !previous || previous.text !== item.text || evidenceKey(previous.evidence) !== evidenceKey(item.evidence) || extra;
+  };
+  const claim = (item: Claim): Claim => {
+    const previous = earlier.get(item.id);
+    const edited_ = changed(item) || previous?.edited;
+    return { id: previous ? item.id : newId(), text: item.text.trim(), evidence: lookup(item.evidence), ...(edited_ ? { edited: true } : {}) };
+  };
+  const claims = (items: Claim[]) => items.filter(item => item.text.trim()).map(claim);
+  const behaviors = edited.behaviors.filter(item => item.title.trim()).map((item): BehaviorEntry => ({ id: before.behaviors.some(entry => entry.id === item.id) ? item.id : newId(), title: item.title.trim(), context: claims(item.context), behavior: claims(item.behavior), response: claims(item.response), unknown: item.unknown }));
+  const tasks = edited.tasks.filter(item => item.text.trim()).map((item): CoachingTask => {
+    const previous = earlier.get(item.id) as CoachingTask | undefined;
+    const fieldsChanged = !!previous && (['who', 'frequency', 'until', 'successCriteria'] as const).some(field => previous[field] !== item[field]);
+    const edited_ = changed(item, fieldsChanged) || previous?.edited;
+    return { id: previous ? item.id : newId(), text: item.text.trim(), who: item.who, frequency: item.frequency, until: item.until, successCriteria: item.successCriteria, evidence: lookup(item.evidence), ...(edited_ ? { edited: true } : {}) };
+  });
+  const sections = { summary: claims(edited.summary), concerns: claims(edited.concerns), behaviors, guardianReports: claims(edited.guardianReports), trainerObservations: claims(edited.trainerObservations),
+    aiObservations: before.aiObservations, guidance: claims(edited.guidance), tasks, followUps: claims(edited.followUps) };
+  const { approvedAt: _approvedAt, ...kept } = before;
+  const note: CoachingNote = { ...kept, ...sections, uncitedSegmentIds: uncited(sections, source) };
+  return { note, problems };
+}
+
+/** A guardian may relay what someone told them, so their reports only count when the evidence used the same word. */
+export function approvalProblems(note: CoachingNote) {
+  const problems: string[] = [];
+  const check = (text: string, quotes: string[] = []) => {
+    const banned = bannedIn(text).filter(word => !quotes.some(quote => quote.includes(word)));
+    if (banned.length) problems.push(`금지 표현을 고쳐 주세요: ${banned.join(', ')} (${text})`);
+  };
+  for (const section of CLAIM_SECTIONS) for (const claim of note[section]) check(claim.text, section === 'guardianReports' ? claim.evidence.map(item => item.quote) : []);
+  for (const entry of note.behaviors) { check(entry.title); for (const claim of [...entry.context, ...entry.behavior, ...entry.response]) check(claim.text); }
+  for (const task of note.tasks) for (const text of [task.text, task.who, task.frequency, task.until, task.successCriteria]) if (text) check(text);
+  return problems;
+}
+
+export function reviewedObservationClaims(scenes: Scene[]): Claim[] {
+  return scenes.flatMap(scene => scene.observations.filter(item => item.reviewed && item.text.trim()).map((item): Claim => ({ id: item.id, text: item.text, evidence: [{ kind: 'scene', id: scene.id, quote: item.text, startMs: scene.atMs, endMs: scene.atMs }] })));
+}
+
+export type NoteDelivery = Pick<CoachingNote, 'summary' | 'concerns' | 'behaviors' | 'guardianReports' | 'trainerObservations' | 'aiObservations' | 'guidance' | 'tasks' | 'followUps' | 'safetyFlags'> & { approvedAt: string };
+
+/** What the guardian receives. Method concerns and the trainer's private memos stay out, including inside quotes. */
+export function deliveryOf(note: CoachingNote): NoteDelivery {
+  const evidence = (items: Evidence[]) => items.filter(item => item.kind !== 'moment' && !methodPattern.test(item.quote));
+  const claims = (items: Claim[]) => items.filter(item => !methodPattern.test(item.text)).map(item => ({ ...item, evidence: evidence(item.evidence) }));
+  const behaviors = note.behaviors.map(item => ({ ...item, context: claims(item.context), behavior: claims(item.behavior), response: claims(item.response) })).filter(item => !methodPattern.test(item.title) && (item.context.length || item.behavior.length || item.response.length));
+  const tasks = note.tasks.filter(item => !methodPattern.test(item.text)).map(item => ({ ...item, evidence: evidence(item.evidence) }));
+  return { summary: claims(note.summary), concerns: claims(note.concerns), behaviors, guardianReports: claims(note.guardianReports), trainerObservations: claims(note.trainerObservations), aiObservations: claims(note.aiObservations), guidance: claims(note.guidance), tasks, followUps: claims(note.followUps), safetyFlags: note.safetyFlags, approvedAt: note.approvedAt! };
+}

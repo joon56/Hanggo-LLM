@@ -1,0 +1,45 @@
+{
+  "id": "numbers-feeding-routine",
+  "title": "급여 루틴 숫자 확인과 식사 전 기다리기",
+  "synthetic": true,
+  "petName": "콩이",
+  "segments": [
+    { "id": "s01", "speaker": "trainer", "startMs": 0, "endMs": 9500, "text": "안녕하세요. 오늘은 콩이가 밥 시간마다 너무 보챈다고 하셨죠? 먼저 지금 식사를 어떻게 주고 계신지 말씀해 주세요." },
+    { "id": "s02", "speaker": "guardian", "startMs": 9500, "endMs": 19000, "text": "아침은 7시, 점심은 열두 시, 저녁은 6시에 줘요. 하루 세 번이고, 한 번에 오십 그램씩 저울로 재서 줘요." },
+    { "id": "s03", "speaker": "trainer", "startMs": 19000, "endMs": 25000, "text": "한 번에 오십 그램씩 하루 세 번이군요. 콩이 몸무게는 얼마나 되나요?" },
+    { "id": "s04", "speaker": "guardian", "startMs": 25000, "endMs": 32000, "text": "병원에서 잰 지 오래돼서 정확한 몸무게는 모르겠어요. 그릇은 이십 분 지나면 치워요." },
+    { "id": "s05", "speaker": "trainer", "startMs": 32000, "endMs": 37000, "text": "알겠습니다. 그릇을 내려놓을 때 콩이는 어떻게 행동하나요?" },
+    { "id": "s06", "speaker": "guardian", "startMs": 37000, "endMs": 46500, "text": "제 발밑을 계속 돌면서 뛰어올라요. 주방 입구에서 그릇 놓는 자리까지가 3미터쯤인데, 입구부터 졸졸 따라 들어와요." },
+    { "id": "s07", "speaker": "trainer", "startMs": 46500, "endMs": 56000, "text": "지금 화면으로 보니까 콩이가 주방 입구에 앉아서 그릇 쪽을 계속 쳐다보고 있네요. 꼬리는 빠르게 흔들고 있고요." },
+    { "id": "s08", "speaker": "guardian", "startMs": 56000, "endMs": 61500, "text": "네, 앉기는 잘해요. 그런데 그릇을 들면 바로 일어나서 달려와요." },
+    { "id": "s09", "speaker": "trainer", "startMs": 61500, "endMs": 72500, "text": "그러면 식사 전에 매트에서 기다리는 연습을 하겠습니다. 입구에 매트를 두고, 콩이가 매트에서 오 초 기다리면 그릇을 내려놓아 주세요." },
+    { "id": "s10", "speaker": "guardian", "startMs": 72500, "endMs": 75500, "text": "기다리지 못하고 일어나면 어떻게 하죠?" },
+    { "id": "s11", "speaker": "trainer", "startMs": 75500, "endMs": 86000, "text": "그릇을 다시 들어 올리고 처음부터 다시 하세요. 화내지는 마시고요. 그릇 자리는 지금처럼 입구에서 3미터 거리를 유지해 주세요." },
+    { "id": "s12", "speaker": "trainer", "startMs": 86000, "endMs": 99000, "text": "과제는 보호자님이 식사 때마다, 그러니까 하루 세 번, 두 주 동안 해 주세요. 간식은 따로 주지 말고 한 끼 오십 그램 안에서 보상으로 쓰시면 됩니다." },
+    { "id": "s13", "speaker": "guardian", "startMs": 99000, "endMs": 104500, "text": "알겠어요. 그릇을 이십 분 뒤에 치우는 것도 그대로 하면 되죠?" },
+    { "id": "s14", "speaker": "trainer", "startMs": 104500, "endMs": 109500, "text": "네, 그대로 하세요. 점심은 열두 시에 하던 대로 주시고요." },
+    { "id": "s15", "speaker": "guardian", "startMs": 109500, "endMs": 113500, "text": "네. 매트부터 사야겠네요. 이번 주말에 사 올게요." },
+    { "id": "s16", "speaker": "trainer", "startMs": 113500, "endMs": 120500, "text": "좋습니다. 두 주 뒤에 콩이가 매트에서 몇 초까지 기다리는지 같이 확인해 보겠습니다." }
+  ],
+  "expectedFacts": [
+    { "id": "meal-amount", "any": [["오십 그램", "50그램", "50g"]] },
+    { "id": "meals-per-day", "any": [["하루"], ["세 번", "3번", "3회", "세 끼", "3끼"]] },
+    { "id": "noon-meal-time", "any": [["열두 시", "12시"]] },
+    { "id": "bowl-removal", "any": [["이십 분", "20분"]] },
+    { "id": "bowl-distance", "any": [["3미터", "삼 미터", "3m"]] },
+    { "id": "mat-wait", "any": [["오 초", "5초"]] },
+    { "id": "behavior", "any": [["발밑", "뛰어오", "뛰어올", "따라", "보챈", "보채"]] },
+    { "id": "guidance", "any": [["매트"], ["기다"]] }
+  ],
+  "expectedTasks": [
+    { "id": "mat-wait-before-meal", "any": [["매트"], ["기다"]], "who": ["보호자"], "frequency": ["식사 때", "식사할 때", "식사마다", "하루 세 번", "세 번", "3번", "3회", "세 끼", "3끼", "끼니", "매끼"], "until": ["두 주", "2주", "이 주", "이주", "14일"] }
+  ],
+  "unknown": ["몸무게"],
+  "expectedSafetyFlags": [],
+  "expectedMethodReview": false,
+  "forbiddenClaims": ["50kg", "30미터", "20초", "50분", "하루 5번", "하루 다섯 번", "하루 두 번", "식탐", "진단", "분리불안"],
+  "attributions": [
+    { "section": "guardianReports", "any": [["오십 그램", "50그램", "50g"], ["열두 시", "12시"]] },
+    { "section": "guidance", "any": [["매트"], ["오 초", "5초"]] }
+  ]
+}

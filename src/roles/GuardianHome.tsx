@@ -3,6 +3,7 @@ import { PawPrintIcon } from '@phosphor-icons/react';
 import { getCase, getMe } from '../coaching-api';
 import type { CaseDetail } from '../coaching-api';
 import { apiMessage } from './copy';
+import { GuardianDelivery } from './GuardianDelivery';
 import './call.css';
 
 const POLL_MS = 3000;
@@ -26,6 +27,8 @@ export function GuardianHome({ navigate }: { navigate: (path: string) => void })
     return () => { stopped = true; clearTimeout(timer); };
   }, [navigate]);
   const live = detail?.consultations.find(consultation => consultation.state === 'live');
+  // Consultations come newest first, so this is the latest note the trainer confirmed.
+  const approved = detail?.consultations.find(consultation => consultation.state === 'approved');
   return <main className="coach-page"><section className="coach-card coach-narrow">
     <PawPrintIcon weight="fill" size={28} />
     <h1>{detail ? `${detail.petName} 상담` : '행고 화상 상담'}</h1>
@@ -33,5 +36,7 @@ export function GuardianHome({ navigate }: { navigate: (path: string) => void })
     {detail && <p className="coach-hint">{detail.trainerName} 훈련사</p>}
     {live ? <button className="button primary" onClick={() => navigate(`/room/${live.id}`)}>상담 입장</button>
       : detail && <p role="status" className="coach-hint">훈련사가 상담을 시작하면 이 화면에서 입장할 수 있습니다.</p>}
-  </section></main>;
+  </section>
+  {approved && <section className="coach-card coach-narrow"><GuardianDelivery key={approved.id} consultationId={approved.id} /></section>}
+  </main>;
 }

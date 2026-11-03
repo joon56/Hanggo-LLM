@@ -15,19 +15,20 @@ const safetyPatterns: [string, RegExp][] = [
   ['구토', /구토|토했|토함|토해|vomit/i],
   ['출혈', /출혈|피가\s*나|bleed/i],
   ['절뚝거림', /절뚝|다리를\s*절|limp/i],
-  ['갑작스러운 공격성', /갑자기\s*(?:공격|물었|물려)|갑작스러운\s*공격|sudden aggression/i],
+  ['갑작스러운 공격성', /갑자기\s*(?:공격|물었|물려|으르렁)|갑작스러운\s*공격|원래[^.?!\n]*으르렁|sudden aggression/i],
   ['호흡 곤란', /호흡\s*곤란|숨(?:을)?\s*(?:못\s*쉬|가쁘)|breath(?:ing)?\s*(?:difficulty|problem)/i],
   ['발작', /발작|경련|seizure/i],
   ['설사', /설사|diarrh(?:ea|ea)/i],
-  ['식욕 저하', /안\s*먹|먹지\s*않|식욕\s*(?:저하|없)|not\s*eat/i],
+  ['식욕 저하', /안\s*먹|먹지\s*않|식욕\s*(?:저하|없)|절반만\s*먹|not\s*eat/i],
   ['물림', /물렸|물었|물린|깨물|bite|bitten/i],
 ];
-const methodPattern = /강압|체벌|때리|혼내|목줄을?\s*(?:강하게|세게|확)\s*당(?:기|겨)|억지로|coercive|aversive/i;
+export const methodPattern = /강압|체벌|때(?:리|렸|린|려)(?!지\s*(?:는|도)?\s*(?:말|않|마))|혼(?:내|냈)(?!지\s*(?:는|도)?\s*(?:말|않|마))|목줄을?\s*(?:강하게|세게|확)\s*당(?:기|겨)|억지로|coercive|aversive/i;
+export const SAFETY_LABELS = safetyPatterns.map(([label]) => label);
 const bannedClaim = /확진|진단(?:입니다|이다|됨|됐)|반드시\s*(?:낫|완치)|100\s*%\s*(?:치료|완치|해결)|완치됩니다/i;
 const isObject = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
 const newId = () => crypto.randomUUID();
 
-function flagsFromSource(source: string): string[] {
+export function flagsFromSource(source: string): string[] {
   return safetyPatterns.filter(([, pattern]) => pattern.test(source)).map(([label]) => label);
 }
 

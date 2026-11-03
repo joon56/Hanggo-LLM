@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { setTimeout as delay } from 'node:timers/promises';
-import { captionOf, findEchoSource, transition } from '../../src/domain/coaching.ts';
+import { captionOf, findEchoSource } from '../../src/domain/coaching.ts';
 import type { Consultation, Segment, Speaker, SpeechStatus } from '../../src/domain/coaching.ts';
 import type { SpeechProvider, SpeechResult } from '../ai/speech/types.ts';
 import { StoreError, type CoachingStore } from './store.ts';
@@ -12,7 +12,6 @@ type Item = { consultationId: string; segmentId: string; wav: Buffer };
 type Deps = {
   store: CoachingStore; speech?: SpeechProvider;
   broadcast: (consultationId: string, message: unknown) => void;
-  notify?: (consultation: Consultation) => void;
   /** How long after the end to accept what browsers still hold. */
   graceMs: number;
   now?: () => number;
@@ -20,7 +19,7 @@ type Deps = {
 export type Transcription = ReturnType<typeof createTranscription>;
 
 /** Audio stays in memory for this queue only. One GPU serves one window at a time, and the model cannot take a second request. */
-export function createTranscription({ store, speech, broadcast, notify, graceMs, now = Date.now }: Deps) {
+export function createTranscription({ store, speech, broadcast, graceMs, now = Date.now }: Deps) {
   const waiting: Item[] = [];
   let status: SpeechStatus = speech ? 'idle' : 'off';
   let running: Promise<void> | undefined;
@@ -120,15 +119,13 @@ export function createTranscription({ store, speech, broadcast, notify, graceMs,
       return segment;
     },
     /** GPU order from the design: the speech model leaves before anything else needs the card. */
-    async finish(consultationId: string) {
+    async settle(consultationId: string) {
       await delay(graceMs, undefined, { ref: false });
       await drain();
       if (closed) return;
-      const errors: Consultation['errors'] = [];
-      try { await speech?.release(); } catch { errors.push({ code: 'SPEECH_RELEASE', message: '음성 모델을 내리지 못했습니다.' }); }
+      try { await speech?.release(); }
+      catch { await store.updateConsultation(consultationId, current => ({ ...current, errors: [...current.errors, { code: 'SPEECH_RELEASE', message: '음성 모델을 내리지 못했습니다.' }] })); }
       if (speech) status = 'idle';
-      const finished = await store.updateConsultation(consultationId, current => ({ ...transition(current, 'processed', now()), errors: [...current.errors, ...errors] }));
-      notify?.(finished);
     },
     async close() {
       closed = true;

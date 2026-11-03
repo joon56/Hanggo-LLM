@@ -62,8 +62,8 @@ test('sends nothing before both people consent, then labels each speaker from th
   const spoken = segments.filter(item => item.state === 'complete');
   expect(spoken.filter(item => item.speaker === 'guardian').length).toBeGreaterThan(0);
   expect(spoken.filter(item => item.speaker === 'trainer').length).toBeGreaterThan(0);
-  for (const segment of spoken) expect(segment.text).toBe(STUB_TEXT[segment.speaker]);
-  await expect(guardian.page.getByRole('log', { name: '자막' })).toContainText(/훈련사 \[시험 전사\] 훈련사 마이크|보호자 \[시험 전사\] 보호자 마이크/);
+  for (const segment of spoken) { expect(segment.text).toBe(STUB_TEXT[segment.speaker]); expect(segment.echoSuspect).toBeUndefined(); }
+  await expect(guardian.page.getByRole('log', { name: '자막' })).toContainText(/(?:훈련사|보호자) \[시험 전사\]/);
   expect(Number(await room(trainer.page).getAttribute('data-caption-latency-ms'))).toBeLessThan(5000);
 });
 
