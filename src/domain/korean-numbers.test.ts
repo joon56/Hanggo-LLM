@@ -46,3 +46,17 @@ describe('numbersSupported', () => {
     expect(numbersSupported('2번, 3분', ['두 번', '삼 분'])).toEqual([]);
   });
 });
+
+describe('한 번 used as "once" rather than a count', () => {
+  it('does not read it as a number when it means once something starts', () => {
+    expect(extractNumbers('한 번 짖기 시작하면 오래 짖어요')).toEqual([]);
+    expect(extractNumbers('한 번 흥분하면 멈추지 않아요')).toEqual([]);
+    expect(extractNumbers('한 번 짖으면 계속 짖어요')).toEqual([]);
+  });
+  it('still reads a real count', () => {
+    expect(extractNumbers('하루에 한 번 연습해요')).toEqual([1]);
+    expect(extractNumbers('한 번에 삼 분씩 해요')).toEqual([1, 3]);
+    expect(extractNumbers('한 번 짖었어요')).toEqual([1]);
+    expect(extractNumbers('한 번 산책했어요')).toEqual([1]);
+  });
+});

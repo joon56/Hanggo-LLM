@@ -10,7 +10,7 @@ const native = new RegExp(`(?<![가-힣])(?:(열|스무|스물|서른|마흔|쉰
 const sino = new RegExp(`(?<![가-힣])([일이삼사오육칠팔구십백천]+)\\s?(?=${SINO_COUNTERS})`, 'g');
 const digits = /\d[\d,]*(?:\.\d+)?/g;
 // 한번 and 두어 번 style idioms mean "once, casually" rather than a count.
-const idiom = /(?<![가-힣])(한번|한 번쯤)(?![가-힣]*\d)/g;
+const idiom = /(?<![가-힣])(한번|한 번쯤|한 번(?=\s[가-힣]+(?:으면|하면|기\s*시작)))(?![가-힣]*\d)/g;
 const ordinaryWords = /(?<![가-힣])(일단|이번|이미|오늘|오전|구석|사료|삼키|일어나|이동|일부|이후|이상|이때|일찍|오래|구체)/g;
 
 function readSino(word: string): number | null {
