@@ -9,6 +9,7 @@
     "demo:tunnel": "node --env-file-if-exists=.env scripts/demo-tunnel.ts",
     "check:tunnel": "node --env-file-if-exists=.env e2e/check-tunnel.ts",
     "check:turn": "node --env-file-if-exists=.env scripts/check-turn.ts",
+    "verify:real-speech": "node --env-file-if-exists=.env e2e/verify-real-speech.ts",
     "local:check": "node --env-file-if-exists=.env scripts/check-local.ts",
     "beta:check": "node --env-file-if-exists=.env scripts/beta-check.ts",
     "llm:eval:local": "node --env-file-if-exists=.env scripts/eval-local.ts",

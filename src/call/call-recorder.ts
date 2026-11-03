@@ -13,6 +13,8 @@ type Options = {
   uploadFrame: (frame: BufferedFrame, momentId?: string) => Promise<unknown>;
   isPermanent: (error: unknown) => boolean;
   onLost: () => void;
+  /** False when the server has no speech model, so windows would only be refused. */
+  transcribes?: () => boolean;
   createId?: () => string;
 };
 
@@ -103,6 +105,7 @@ export class CallRecorder {
       this.tap = tap;
       this.base = this.clock!();
       this.windows = new SpeechWindows(tap.sampleRate, window => {
+        if (this.options.transcribes?.() === false) return;
         const offset = Math.max(0, Math.round(this.base));
         this.audio.add({ bytes: window.bytes, startMs: offset + window.startMs, endMs: offset + window.endMs });
       });

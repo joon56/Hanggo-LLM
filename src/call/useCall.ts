@@ -22,7 +22,8 @@ export function useCall(options: Options) {
     const recorder = new CallRecorder({ role, localStream, tapMicrophone, createGrabber, isPermanent,
       uploadAudio: window => uploadAudio(consultationId, window),
       uploadFrame: (frame, momentId) => uploadFrame(consultationId, frame, momentId),
-      onLost: () => session.current?.noteUploadLost() });
+      onLost: () => session.current?.noteUploadLost(),
+      transcribes: () => session.current?.snapshot().speech !== 'off' });
     session.current = new CallSession({ ...options, recorder,
       openSignal: handler => openSignal(consultationId, call, handler, code => {
         // A newer tab now owns this seat, so this one must let go of the microphone and stop recording.

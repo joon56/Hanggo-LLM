@@ -8,7 +8,7 @@ afterEach(() => { vi.useRealTimers(); });
 const voice = (ms: number) => Float32Array.from({ length: ms * 16 }, (_, index) => 0.1 * Math.sin(index / 5));
 const silence = (ms: number) => new Float32Array(ms * 16);
 
-function build(role: 'guardian' | 'trainer' = 'guardian', options: { hasMicrophone?: boolean; hasCamera?: boolean; tapError?: Error } = {}) {
+function build(role: 'guardian' | 'trainer' = 'guardian', options: { hasMicrophone?: boolean; hasCamera?: boolean; tapError?: Error; transcribes?: () => boolean } = {}) {
   const audio = { getAudioTracks: () => options.hasMicrophone === false ? [] : [{ kind: 'audio' }], getVideoTracks: () => options.hasCamera === false ? [] : [{ kind: 'video' }] };
   let onSamples: (samples: Float32Array) => void = () => {};
   const tap = { sampleRate: 16000, stop: vi.fn() };
@@ -19,7 +19,7 @@ function build(role: 'guardian' | 'trainer' = 'guardian', options: { hasMicropho
   const uploadFrame = vi.fn(async (_frame: { atMs: number; source: string; id: string }, _moment?: string) => {});
   const onLost = vi.fn();
   let nextId = 0;
-  const recorder = new CallRecorder({ role, localStream: audio as unknown as MediaStream, tapMicrophone, createGrabber, uploadAudio, uploadFrame, isPermanent: () => true, onLost, createId: () => `frame-${nextId++}` });
+  const recorder = new CallRecorder({ role, localStream: audio as unknown as MediaStream, tapMicrophone, createGrabber, uploadAudio, uploadFrame, isPermanent: () => true, onLost, transcribes: options.transcribes, createId: () => `frame-${nextId++}` });
   let time = 100000;
   const clock = () => time;
   return { recorder, tap, tapMicrophone, createGrabber, grabbers, uploadAudio, uploadFrame, onLost, clock, speak: (samples: Float32Array) => onSamples(samples), advance: async (ms: number) => { for (let elapsed = 0; elapsed < ms; elapsed += 100) { time += 100; await vi.advanceTimersByTimeAsync(100); } }, setTime: (value: number) => { time = value; } };
@@ -75,6 +75,13 @@ describe('speech', () => {
     recorder.start(clock); await advance(1100);
     expect(onLost).toHaveBeenCalled();
     expect(uploadFrame).toHaveBeenCalled();
+  });
+  it('sends no speech when the server has no speech model, and does not call that a loss', async () => {
+    const { recorder, clock, speak, uploadAudio, onLost } = build('guardian', { transcribes: () => false });
+    recorder.start(clock); await flush();
+    speak(voice(1000)); recorder.stop({ flush: true }); await flush();
+    expect(uploadAudio).not.toHaveBeenCalled();
+    expect(onLost).not.toHaveBeenCalled();
   });
   it('sends what is still buffered when the call ends', async () => {
     const { recorder, clock, speak, tap, uploadAudio } = build();
