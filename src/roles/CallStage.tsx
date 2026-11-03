@@ -101,6 +101,7 @@ export function CallStage({ caseId, relayAvailable, onRetry, role, petName, canS
       <button className="call-link" onClick={() => onConsent(!ownConsent)}>{ownConsent ? '기록 동의 철회' : '기록 동의'}</button>
       {role === 'trainer' && caseId && <button className="call-link" aria-expanded={briefOpen} onClick={() => setBriefOpen(value => !value)}>브리핑</button>}
       {speechNote && <span className="call-chip">{speechNote}</span>}
+      {call.recordingLeftMinutes !== null && <span className="call-chip">{call.recordingLeftMinutes ? `기록 ${call.recordingLeftMinutes}분 남음` : '기록 60분 도달 · 통화는 계속됩니다'}</span>}
       {call.uploadLost && <span className="call-chip is-recording">일부 기록을 보내지 못했습니다</span>}
       {call.stats.relayed && <span className="call-chip">중계 연결</span>}
       {call.stats.roundTripMs !== null && <span className="call-chip">지연 {call.stats.roundTripMs}ms</span>}

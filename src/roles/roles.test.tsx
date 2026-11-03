@@ -325,13 +325,19 @@ describe('PreJoin', () => {
 describe('CallStage checklist', () => {
   const caption = (speaker: 'guardian' | 'trainer', text: string) => ({ id: text, speaker, startMs: 0, endMs: 1, text, state: 'complete' as const });
   const actions = { onToggleMicrophone: vi.fn(), onToggleCamera: vi.fn(), onSwitchCamera: vi.fn(), onStartShare: vi.fn(), onStopShare: vi.fn(), onLeave: vi.fn(), onEnd: vi.fn(), onConsent: vi.fn(), onCatch: vi.fn(), onMemo: vi.fn() };
-  const call = (change: Partial<CallSnapshot>): CallSnapshot => ({ status: 'connected', peerOnline: true, peerMedia: { camera: true, microphone: true, screen: false }, stats: { inboundVideoFrames: 0, inboundAudioBytes: 0, inboundAudioEnergy: 0, relayed: false, roundTripMs: null }, consent: { guardian: true, trainer: true }, recording: true, localStream: null, remoteStream: null, localScreen: null, remoteScreen: null, microphoneOn: true, cameraOn: true, hasCamera: true, hasMicrophone: true, error: null, captions: [], speech: 'ready', lastMoment: null, captionLatencyMs: null, uploadLost: false, ...change }) as CallSnapshot;
+  const call = (change: Partial<CallSnapshot>): CallSnapshot => ({ status: 'connected', peerOnline: true, peerMedia: { camera: true, microphone: true, screen: false }, stats: { inboundVideoFrames: 0, inboundAudioBytes: 0, inboundAudioEnergy: 0, relayed: false, roundTripMs: null }, consent: { guardian: true, trainer: true }, recording: true, localStream: null, remoteStream: null, localScreen: null, remoteScreen: null, microphoneOn: true, cameraOn: true, hasCamera: true, hasMicrophone: true, error: null, captions: [], speech: 'ready', lastMoment: null, captionLatencyMs: null, uploadLost: false, recordingLeftMinutes: null, ...change }) as CallSnapshot;
   it('shows the trainer what is still unasked while recording, and a safety signal as soon as it is heard', () => {
     render(<CallStage role="trainer" petName="초코" canShare call={call({ captions: [caption('guardian', '하루에 세 번쯤 그래요. 어제 구토도 했어요')] })} {...actions} />);
     const list = screen.getByRole('list', { name: '상담에서 확인할 것' });
     expect(within(list).getByText('빈도')).toHaveAttribute('data-covered', 'true');
     expect(within(list).getByText('언제')).toHaveAttribute('data-covered', 'false');
     expect(screen.getByRole('alert')).toHaveTextContent('구토');
+  });
+  it('tells both people when recording is about to stop and when it has', () => {
+    const { rerender } = render(<CallStage role="guardian" petName="초코" canShare call={call({ recordingLeftMinutes: 4 })} {...actions} />);
+    expect(screen.getByText('기록 4분 남음')).toBeInTheDocument();
+    rerender(<CallStage role="guardian" petName="초코" canShare call={call({ recording: true, recordingLeftMinutes: 0 })} {...actions} />);
+    expect(screen.getByText('기록 60분 도달 · 통화는 계속됩니다')).toBeInTheDocument();
   });
   it('is a tool for the trainer, so the guardian does not see it', () => {
     render(<CallStage role="guardian" petName="초코" canShare call={call({ captions: [caption('guardian', '어제 구토도 했어요')] })} {...actions} />);
@@ -347,7 +353,7 @@ describe('CallStage checklist', () => {
 describe('CallStage', () => {
   const liveStream = (id: string) => ({ id, getTracks: () => [], getVideoTracks: () => [], getAudioTracks: () => [] }) as unknown as MediaStream;
   const snapshot = (change: Partial<CallSnapshot> = {}): CallSnapshot => ({ status: 'connected', peerOnline: true, peerMedia: { camera: true, microphone: true, screen: false }, stats: { inboundVideoFrames: 7, inboundAudioBytes: 90, inboundAudioEnergy: 0.5, roundTripMs: 40, relayed: false }, error: '',
-    microphoneOn: true, cameraOn: true, hasCamera: true, hasMicrophone: true, localStream: liveStream('local'), localScreen: null, remoteStream: liveStream('remote'), remoteScreen: null, consent: { guardian: false, trainer: false }, recording: false, consultationState: 'live', captions: [], speech: 'off', lastMoment: null, captionLatencyMs: null, uploadLost: false, ...change });
+    microphoneOn: true, cameraOn: true, hasCamera: true, hasMicrophone: true, localStream: liveStream('local'), localScreen: null, remoteStream: liveStream('remote'), remoteScreen: null, consent: { guardian: false, trainer: false }, recording: false, consultationState: 'live', captions: [], speech: 'off', lastMoment: null, captionLatencyMs: null, uploadLost: false, recordingLeftMinutes: null, ...change });
   const handlers = () => ({ onCatch: vi.fn(), onMemo: vi.fn(), onToggleMicrophone: vi.fn(), onToggleCamera: vi.fn(), onSwitchCamera: vi.fn(), onStartShare: vi.fn(), onStopShare: vi.fn(), onLeave: vi.fn(), onEnd: vi.fn(), onConsent: vi.fn() });
   const setup = (change: Partial<CallSnapshot> = {}, options: { canShare?: boolean; role?: 'trainer' | 'guardian' } = {}) => {
     const actions = handlers();

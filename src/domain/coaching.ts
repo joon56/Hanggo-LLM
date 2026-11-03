@@ -19,6 +19,8 @@ export type MomentNotice = Pick<Moment, 'id' | 'atMs' | 'createdBy'>;
 export type Caption = Pick<Segment, 'id' | 'speaker' | 'startMs' | 'endMs' | 'text' | 'state' | 'echoSuspect'>;
 export type Moment = { id: string; atMs: number; createdBy: Speaker; text?: string; frameIds: string[] };
 export type FrameRef = { id: string; atMs: number; source: 'camera' | 'screen'; speaker: Speaker; bytes: number };
+/** How long one consultation is recorded. Calls can go on past it. */
+export const MAX_RECORDING_MS = 60 * 60 * 1000;
 export type OrganizingProgress = { stage: 'scenes' | 'note'; done: number; total: number };
 export type Consultation = {
   id: string; caseId: string; createdAt: string; state: ConsultationState;
