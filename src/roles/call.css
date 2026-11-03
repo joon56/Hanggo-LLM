@@ -1,0 +1,49 @@
+.coach-page { min-height: 100dvh; padding: 24px 16px 48px; max-width: 880px; margin: 0 auto; display: grid; gap: 16px; align-content: start; }
+.coach-header { display: flex; align-items: center; gap: 8px; }
+.coach-header .text-button { margin-left: auto; }
+.coach-card { background: #fff; border: 1px solid var(--line); border-radius: 14px; padding: 20px; display: grid; gap: 12px; }
+.coach-card h1 { font-size: 20px; }
+.coach-card h2 { font-size: 16px; }
+.coach-card label { display: grid; gap: 6px; font-size: 14px; font-weight: 500; }
+.coach-card input:not([type="checkbox"]), .coach-card select { width: 100%; min-height: 44px; padding: 0 12px; border: 1px solid var(--line); border-radius: 10px; background: #fff; font-weight: 400; }
+.coach-narrow { max-width: 460px; width: 100%; margin: 0 auto; }
+.coach-form { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); align-items: end; }
+.coach-list { display: grid; gap: 12px; }
+.coach-row { display: flex; flex-wrap: wrap; gap: 12px; justify-content: space-between; align-items: center; }
+.coach-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.coach-hint { color: var(--muted); font-size: 13px; line-height: 1.5; }
+.coach-warning { background: #fbf4e4; color: #6a5420; border-radius: 10px; padding: 10px 12px; font-size: 13px; line-height: 1.5; }
+.coach-warning code { font-size: 12px; }
+.coach-error { background: #fbeae6; color: #8a2f1f; border-radius: 10px; padding: 10px 12px; font-size: 13px; }
+.coach-invite { display: grid; gap: 8px; border-top: 1px solid var(--line); padding-top: 12px; }
+.coach-check.coach-check { display: flex; gap: 8px; align-items: flex-start; font-weight: 400; font-size: 13px; line-height: 1.5; }
+.coach-check input { margin-top: 3px; flex-shrink: 0; }
+.prejoin-preview { width: 100%; aspect-ratio: 16 / 9; object-fit: cover; background: #1c1f1c; border-radius: 10px; }
+
+.call-room { position: fixed; inset: 0; display: flex; flex-direction: column; background: #171a17; color: #f3f4f0; }
+.call-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 10px 14px; font-size: 13px; }
+.call-chip { padding: 3px 8px; border-radius: 999px; background: rgba(255, 255, 255, .1); font-size: 12px; }
+.call-chip.is-recording { background: #7a2b20; }
+.call-link { color: #cfd8c4; font-size: 12px; text-decoration: underline; padding: 2px 4px; }
+.call-status { padding: 6px 14px; font-size: 13px; background: rgba(255, 255, 255, .08); }
+.call-status.is-error { background: #7a2b20; }
+.call-stage { flex: 1; position: relative; min-height: 0; padding: 0 10px; display: grid; grid-template-columns: minmax(0, 1fr) 200px; grid-auto-rows: minmax(0, 1fr); gap: 8px; }
+.call-tile { position: relative; margin: 0; min-height: 0; min-width: 0; border-radius: 10px; overflow: hidden; background: #0e100e; aspect-ratio: 16 / 9; }
+.call-tile.is-main { grid-column: 1; grid-row: 1 / span 4; aspect-ratio: auto; }
+.call-tile video { width: 100%; height: 100%; object-fit: cover; display: block; }
+.call-tile.is-main video { object-fit: contain; }
+.call-tile video.is-mirrored { transform: scaleX(-1); }
+.call-tile figcaption { position: absolute; left: 6px; bottom: 6px; padding: 2px 6px; border-radius: 6px; background: rgba(0, 0, 0, .55); font-size: 11px; }
+.call-tile-off { position: absolute; inset: 0; display: grid; place-items: center; background: #0e100e; color: #a9afa2; font-size: 13px; text-align: center; padding: 8px; }
+.call-sound { position: absolute; top: 8px; right: 8px; background: #fff; color: var(--ink); }
+.call-controls { display: flex; justify-content: center; gap: 10px; padding: 12px; padding-bottom: max(12px, env(safe-area-inset-bottom)); }
+.call-control { width: 48px; height: 48px; display: grid; place-items: center; border-radius: 50%; background: rgba(255, 255, 255, .14); color: #fff; }
+.call-control[data-off="true"] { background: #fff; color: var(--ink); }
+.call-control[data-active="true"] { background: var(--green); }
+.call-control.is-end { background: #b23a28; }
+
+@media (max-width: 720px) {
+  .call-stage { grid-template-columns: repeat(3, minmax(0, 1fr)); grid-template-rows: minmax(0, 1fr) auto; }
+  .call-tile.is-main { grid-column: 1 / -1; grid-row: 1; }
+  .call-tile:not(.is-main) { grid-row: 2; }
+}

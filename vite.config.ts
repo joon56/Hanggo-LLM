@@ -5,8 +5,8 @@ export default defineConfig({
   plugins: [react()],
   server: {
     host: '127.0.0.1', port: 5173, strictPort: true,
-    proxy: { '/api': 'http://127.0.0.1:3001' },
-    watch: { ignored: ['**/.tmp/**', '**/.local-ai/**', '**/test-output/**', '**/test-audio/**'] },
+    proxy: { '/api': { target: 'http://127.0.0.1:3001', ws: true } },
+    watch: { ignored: ['**/.tmp/**', '**/.hanggo/**', '**/test-output/**', '**/test-audio/**'] },
   },
   preview: { host: '127.0.0.1', port: 4173, strictPort: true },
   test: {

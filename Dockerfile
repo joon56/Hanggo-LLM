@@ -10,7 +10,7 @@ RUN npm run build
 
 FROM node:24-bookworm-slim
 RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg && rm -rf /var/lib/apt/lists/*
-ENV NODE_ENV=production HOST=0.0.0.0 PORT=3001
+ENV NODE_ENV=production HOST=0.0.0.0 PORT=3001 HANGGO_HOME=/tmp/hanggo
 WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci --omit=dev --no-audit --no-fund && npm cache clean --force

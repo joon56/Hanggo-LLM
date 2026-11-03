@@ -13,7 +13,7 @@ vi.mock('./hooks/useRecorder', () => ({ useRecorder: () => mocks.recorder }));
 
 const demoSession = { authenticated: true, requirePassword: false, aiEnabled: false, configured: false, textModel: '', sttModel: '' };
 const aiSession = { ...demoSession, aiEnabled: true, configured: true, textModel: 'text-test', sttModel: 'stt-test' };
-const localSession = { ...aiSession, provider: 'ollama' as const, textModel: 'qwen3.5:4b', sttModel: 'whisper-large-v3', sttReady: true };
+const localSession = { ...aiSession, provider: 'local' as const, textModel: 'qwen3.5:4b', sttModel: 'whisper-large-v3', sttReady: true };
 afterEach(() => vi.unstubAllEnvs());
 beforeEach(() => {
   localStorage.clear(); vi.clearAllMocks(); mocks.getSession.mockResolvedValue(demoSession); mocks.verifyAudibleAudio.mockResolvedValue(undefined);

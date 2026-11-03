@@ -6,7 +6,9 @@
   "scripts": {
     "dev": "node scripts/dev.mjs",
     "dev:local": "node --env-file-if-exists=.env scripts/dev.mjs --local",
-    "local:configure": "node scripts/configure-local.mjs",
+    "demo:tunnel": "node --env-file-if-exists=.env scripts/demo-tunnel.ts",
+    "check:tunnel": "node --env-file-if-exists=.env e2e/check-tunnel.ts",
+    "check:turn": "node --env-file-if-exists=.env scripts/check-turn.ts",
     "local:check": "node --env-file-if-exists=.env scripts/check-local.ts",
     "beta:check": "node --env-file-if-exists=.env scripts/beta-check.ts",
     "llm:eval:local": "node --env-file-if-exists=.env scripts/eval-local.ts",
@@ -33,6 +35,7 @@
     "multer": "^2.4.0",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
+    "ws": "8.22.1",
     "zod": "^4.6.5"
   },
   "devDependencies": {
@@ -46,6 +49,7 @@
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
     "@types/supertest": "^7.2.1",
+    "@types/ws": "8.18.2",
     "@vitejs/plugin-react": "^6.1.1",
     "jsdom": "^29.1.1",
     "supertest": "^7.3.0",

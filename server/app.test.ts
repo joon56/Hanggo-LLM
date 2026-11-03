@@ -14,7 +14,7 @@ const make = (extra = {}) => {
 it('allows local text generation without any external API key', async () => {
   const { app, generate } = make();
   const session = await request(app).get('/api/session').expect(200);
-  expect(session.body).toMatchObject({ provider: 'ollama', configured: true });
+  expect(session.body).toMatchObject({ provider: 'local', configured: true });
   await request(app).post('/api/notes').set('Origin', origin).send({ text: '관찰했습니다.', sourceKind: 'trainer_summary_text', consent: true }).expect(200);
   expect(generate).toHaveBeenCalledOnce();
 });
@@ -156,4 +156,9 @@ it('exposes idempotent application shutdown and rejects subsequent consultation 
 it('rejects new AI requests after application shutdown begins',async()=>{
  const {app,generate}=make();await app.shutdown();
  await request(app).post('/api/notes').set('Origin',origin).send({text:'Source',sourceKind:'trainer_summary_text',consent:true}).expect(503);expect(generate).not.toHaveBeenCalled();
+});
+it('allows camera, microphone, and screen capture only for this origin', async () => {
+  const { app } = make();
+  const response = await request(app).get('/api/health').expect(200);
+  expect(response.headers['permissions-policy']).toBe('camera=(self), microphone=(self), display-capture=(self)');
 });

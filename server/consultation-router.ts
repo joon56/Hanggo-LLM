@@ -10,13 +10,13 @@ import { z } from 'zod';
 import { validateConsultationNote } from '../src/domain/consultation.ts';
 import type { ConsultationSession, ConsultationNote } from '../src/domain/consultation.ts';
 import type { SourceKind } from '../src/domain/notes.ts';
-import type { LiveSpeechService } from './live-speech.ts';
+import type { SpeechProvider } from './ai/speech/types.ts';
 import { ConsultationError, ConsultationStore, consultationNoteRevision, MAX_SESSION_MS, MAX_SESSION_BYTES } from './consultation-store.ts';
 import { generateConsultationNote } from './consultation-notes.ts';
 import { recordingHandler } from './consultation-media.ts';
 import { briefConsultationChoice, resolveBriefConsultation } from './brief-consultation.ts';
 
-type Options = { vision?: VisionService; enabled: boolean; directory: string; ffmpegPath?: string; speech?: LiveSpeechService; generate: (text: string, sourceKind: SourceKind, signal?: AbortSignal) => Promise<unknown>; acquireAi: (charge: boolean) => () => void };
+type Options = { vision?: VisionService; enabled: boolean; directory: string; ffmpegPath?: string; speech?: SpeechProvider; generate: (text: string, sourceKind: SourceKind, signal?: AbortSignal) => Promise<unknown>; acquireAi: (charge: boolean) => () => void };
 const integerTime = z.number().int().min(0).max(MAX_SESSION_MS);
 const metadataSchema = z.object({ petName: z.string().trim().min(1).max(200), trainerName: z.string().trim().min(1).max(200), sessionDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).refine(value => { const date = new Date(`${value}T00:00:00Z`); return Number.isFinite(date.getTime()) && date.toISOString().slice(0, 10) === value; }) }).strict();
 function parse<T>(schema: z.ZodType<T>, value: unknown): T { const result = schema.safeParse(value); if (!result.success) throw new ConsultationError('INPUT', 'Check request fields.'); return result.data; }

@@ -2,7 +2,7 @@
 import { EventEmitter } from 'node:events';
 import { PassThrough } from 'node:stream';
 import { afterEach, expect, it, vi } from 'vitest';
-import { readConfig } from './config.ts';
+import { readConfig } from '../../config.ts';
 import { buildSpeechCommand, createLiveSpeech, parseSpeechResponse } from './live-speech.ts';
 
 const mocks = vi.hoisted(() => ({ spawn: vi.fn(), stat: vi.fn(() => ({ isFile: () => true, size: 10 })) }));
@@ -10,10 +10,13 @@ vi.mock('node:child_process', () => ({ spawn: mocks.spawn }));
 vi.mock('node:fs', () => ({ statSync: mocks.stat }));
 afterEach(() => { vi.unstubAllGlobals(); vi.clearAllMocks(); });
 
-it('keeps live consultation disabled until a model is explicitly selected', () => {
-  expect(readConfig({})).toMatchObject({ liveConsultationEnabled: false, liveSpeechModel: '' });
-  expect(() => readConfig({ FEATURE_LIVE_CONSULTATION_ENABLED: 'true' })).toThrow(/LIVE_SPEECH_MODEL/);
-  expect(() => readConfig({ LIVE_SPEECH_MODEL: 'remote-api' })).toThrow(/LIVE_SPEECH_MODEL/);
+it('keeps live consultation disabled by default and accepts only local speech models', () => {
+  expect(readConfig({})).toMatchObject({ liveConsultationEnabled: false, liveSpeechModel: 'qwen-asr' });
+  expect(readConfig({ FEATURE_LIVE_CONSULTATION_ENABLED: 'true' }).liveConsultationEnabled).toBe(true);
+  expect(readConfig({ SPEECH_MODEL: 'whisper-turbo' }).liveSpeechModel).toBe('whisper-turbo');
+  expect(readConfig({ SPEECH_MODEL: 'qwen-asr', LIVE_SPEECH_MODEL: 'whisper-turbo' }).liveSpeechModel).toBe('qwen-asr');
+  expect(() => readConfig({ SPEECH_MODEL: 'remote-api' })).toThrow(/SPEECH_MODEL/);
+  expect(() => readConfig({ LIVE_SPEECH_MODEL: 'remote-api' })).toThrow(/SPEECH_MODEL/);
 });
 it('constructs an isolated GPU Whisper command with a private route', () => {
   const command = buildSpeechCommand(readConfig({ LIVE_SPEECH_MODEL: 'whisper-turbo' }), 32123, 'test-token');

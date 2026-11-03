@@ -1,7 +1,8 @@
-import { readConfig } from './config.ts';
+import { loadLocalEnv, readConfig } from './config.ts';
 import { createApp } from './app.ts';
 import { createAIServices } from './providers.ts';
 
+loadLocalEnv();
 const config = readConfig();
 const services = createAIServices(config);
 const app = createApp(config, {
@@ -13,6 +14,7 @@ const app = createApp(config, {
   },
   transcribe: services.transcribe,
   liveSpeech: services.liveSpeech,
+  vision: services.vision,
   async generateOwner(...args) { const result = await services.generateOwner(...args); logResult('owner_log', result); return result; },
   async generateBrief(...args) { const result = await services.generateBrief(...args); logResult('brief', result); return result; },
   async generateShelter(...args) { const result = await services.generateShelter(...args); logResult('shelter', result); return result; },
@@ -24,6 +26,8 @@ const server = app.listen(config.port, config.host, () => console.info(`Hanggo s
 server.requestTimeout = Math.max(90_000, config.timeoutMs * 2 + config.sttTimeoutMs + 10_000);
 server.headersTimeout = 15_000;
 server.on('error', () => { console.error('서버를 시작하지 못했습니다. 포트와 환경 설정을 확인해 주세요.'); process.exitCode = 1; });
+app.attachSignal(server);
+void app.recoverCoaching();
 let shutdownTask: Promise<void> | undefined;
 for (const event of ['SIGINT', 'SIGTERM'] as const) process.on(event, () => {
   if (shutdownTask) return;
@@ -33,7 +37,7 @@ for (const event of ['SIGINT', 'SIGTERM'] as const) process.on(event, () => {
   shutdownTask = (async () => {
     await Promise.all([closed, (async () => {
       try { await app.shutdown(); }
-      finally { await services.liveSpeech.release(); }
+      finally { await Promise.all([services.liveSpeech.release(), services.llm.release()]); }
     })()]);
   })();
   void shutdownTask.then(() => { clearTimeout(fallback); process.exit(0); }, () => { clearTimeout(fallback); server.closeAllConnections(); process.exit(1); });

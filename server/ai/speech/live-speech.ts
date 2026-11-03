@@ -1,36 +1,30 @@
 import { spawn, type ChildProcess } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
 import { statSync } from 'node:fs';
-import { createServer } from 'node:net';
 import { resolve } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
-import type { Config } from './config.ts';
-import { assertLocalModel } from './local-model.ts';
+import type { Config } from '../../config.ts';
+import { freePort } from '../free-port.ts';
+import type { SpeechProvider } from './types.ts';
 
-export type SpeechCandidate = Exclude<Config['liveSpeechModel'], ''>;
-export type LiveSpeechService = {
-  prepare(): Promise<void>;
-  transcribe(wav: Buffer, signal?: AbortSignal): Promise<{ text: string; model: string; latencyMs: number }>;
-  release(): Promise<void>;
-};
+export type SpeechCandidate = Config['liveSpeechModel'];
 
 export function buildSpeechCommand(config: Config, port: number, token: string) {
   const candidate = config.liveSpeechModel;
-  if (!candidate) throw new Error('LIVE_SPEECH_MODEL을 선택해 주세요.');
   const origin = `http://127.0.0.1:${port}`;
   if (candidate === 'qwen-asr') {
-    const model = resolve(config.liveModelDirectory, 'Qwen3-ASR-1.7B-bf16.gguf');
-    const projector = resolve(config.liveModelDirectory, 'mmproj-Qwen3-ASR-1.7B-bf16.gguf');
+    const model = resolve(config.liveModelDirectory, 'Qwen3-ASR-1.7B-Q8_0.gguf');
+    const projector = resolve(config.liveModelDirectory, 'mmproj-Qwen3-ASR-1.7B-Q8_0.gguf');
     const executable = resolve(config.llamaServer);
     return { executable, files: [executable, model, projector], baseUrl: origin,
       args: ['-m', model, '--mmproj', projector, '-ngl', '99', '-c', '4096', '-np', '1', '-t', '6',
         '--flash-attn', 'on', '--host', '127.0.0.1', '--port', String(port), '--api-key', token, '--no-webui', '--jinja'] };
   }
-  const model = resolve(config.liveModelDirectory, candidate === 'whisper-turbo' ? 'ggml-large-v3-turbo.bin' : 'ggml-large-v3.bin');
+  const model = resolve(config.liveModelDirectory, 'ggml-large-v3-turbo.bin');
   const executable = resolve(config.whisperServer);
   return { executable, files: [executable, model], baseUrl: `${origin}/internal-${token}`,
     args: ['-m', model, '-l', 'ko', '-t', '6', '-bs', '5', '-bo', '5', '-nt', '--host', '127.0.0.1',
-      '--port', String(port), '--request-path', `/internal-${token}`, '--public', resolve('.local-ai/empty-public')] };
+      '--port', String(port), '--request-path', `/internal-${token}`, '--public', resolve(config.home, 'runtime', 'empty-public')] };
 }
 
 export function speechInstalled(config: Config): boolean {
@@ -51,17 +45,6 @@ export function parseSpeechResponse(candidate: SpeechCandidate, raw: unknown): s
   return text.replace(/<\|(?:im_end|endoftext)\|>/g, '').trim();
 }
 
-async function freePort(): Promise<number> {
-  const server = createServer();
-  return new Promise((resolvePort, reject) => {
-    server.once('error', reject);
-    server.listen(0, '127.0.0.1', () => {
-      const address = server.address();
-      server.close(error => error ? reject(error) : resolvePort((address as { port: number }).port));
-    });
-  });
-}
-
 async function boundedJson(response: Response) {
   if (!response.ok || !response.body) throw new Error(`음성 모델 요청 실패 (${response.status}).`);
   const reader = response.body.getReader();
@@ -77,7 +60,7 @@ async function boundedJson(response: Response) {
   } finally { await reader.cancel().catch(() => {}); reader.releaseLock(); }
 }
 
-export function createLiveSpeech(config: Config, hooks: { unloadTextModel?: () => Promise<void> } = {}): LiveSpeechService {
+export function createLiveSpeech(config: Config, hooks: { unloadTextModel?: () => Promise<void> } = {}): SpeechProvider {
   let child: ChildProcess | undefined;
   let starting: Promise<void> | undefined;
   let lifetime: AbortController | undefined;
@@ -90,15 +73,6 @@ export function createLiveSpeech(config: Config, hooks: { unloadTextModel?: () =
       await new Promise<void>(resolveExit => { owned.once('close', () => resolveExit()); owned.kill(); });
     }
   }
-  async function unloadTextModel() {
-    if (hooks.unloadTextModel) return hooks.unloadTextModel();
-    const signal = AbortSignal.timeout(15_000);
-    await assertLocalModel(config, signal);
-    const response = await fetch(`${config.ollamaBaseUrl}/api/generate`, { method: 'POST', redirect: 'error', signal,
-      headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ model: config.textModel, keep_alive: 0 }) });
-    if (!response.ok) throw new Error('텍스트 모델의 GPU 메모리를 해제하지 못했습니다.');
-    await response.body?.cancel();
-  }
   return {
     async prepare() {
       if (ready) return;
@@ -107,7 +81,7 @@ export function createLiveSpeech(config: Config, hooks: { unloadTextModel?: () =
       lifetime = new AbortController();
       const signal = AbortSignal.any([lifetime.signal, AbortSignal.timeout(config.sttTimeoutMs)]);
       starting = (async () => {
-        await unloadTextModel(); signal.throwIfAborted();
+        await hooks.unloadTextModel?.(); signal.throwIfAborted();
         const port = await freePort(); signal.throwIfAborted();
         token = randomBytes(24).toString('hex');
         const command = buildSpeechCommand(config, port, token); baseUrl = command.baseUrl;
@@ -135,9 +109,9 @@ export function createLiveSpeech(config: Config, hooks: { unloadTextModel?: () =
     },
     async transcribe(wav, signal) {
       signal?.throwIfAborted();
-      if (!ready || !lifetime || !config.liveSpeechModel) throw new Error('음성 모델 준비가 필요합니다.');
+      if (!ready || !lifetime) throw new Error('음성 모델 준비가 필요합니다.');
       if (busy) throw new Error('이전 음성 구간을 처리 중입니다.');
-      if (wav.length > 1024 * 1024) throw new Error('음성 구간이 너무 큽니다.');
+      if (wav.length > 2.5 * 1024 * 1024) throw new Error('음성 구간이 너무 큽니다.');
       busy = true;
       const started = performance.now();
       const combined = AbortSignal.any([lifetime.signal, AbortSignal.timeout(config.sttTimeoutMs), ...(signal ? [signal] : [])]);

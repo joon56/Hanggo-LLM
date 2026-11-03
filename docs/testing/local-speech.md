@@ -1,5 +1,7 @@
 # 로컬 한국어 음성 받아쓰기
 
+> **이전 기록 (2026-11-03):** 설치와 모델 구성이 바뀌었습니다. Ollama와 이 문서의 설치 스크립트는 더 이상 쓰지 않습니다. 현재 방법은 [README](../../README.md)를 따르세요.
+
 Windows x64에서 전체 설치는 `powershell -ExecutionPolicy Bypass -File scripts/setup.ps1`로 진행합니다. 음성 실행기만 다시 설치하려면 저장소 루트에서 `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/setup-local-speech.ps1`을 실행합니다. whisper.cpp `b5130` CPU 실행기와 다국어 `ggml-medium-q5_0.bin` 모델을 `.local-ai`에 설치합니다. 다운로드 파일의 SHA-256을 확인하며 재실행할 수 있습니다. FFmpeg는 `PATH`에 있어야 합니다.
 
 `createLocalTranscriber` 경로 예:

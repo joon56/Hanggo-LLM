@@ -1,0 +1,38 @@
+{
+  "id": "walk-reactivity-no-task",
+  "title": "산책 중 다른 개 반응, 체벌 언급, 과제 미합의",
+  "synthetic": true,
+  "petName": "보리",
+  "segments": [
+    { "id": "s01", "speaker": "guardian", "startMs": 0, "endMs": 9000, "text": "산책하다가 다른 개를 보면 보리가 줄을 세게 당기면서 짖어요. 물지는 않았어요." },
+    { "id": "s02", "speaker": "trainer", "startMs": 9000, "endMs": 13000, "text": "거리가 어느 정도일 때 시작되나요?" },
+    { "id": "s03", "speaker": "guardian", "startMs": 13000, "endMs": 20000, "text": "한 십 미터쯤이면 괜찮은데 오 미터 안으로 들어오면 그래요." },
+    { "id": "s04", "speaker": "trainer", "startMs": 20000, "endMs": 25000, "text": "그럴 때 어떻게 대응하셨어요? 편하게 말씀해 주세요." },
+    { "id": "s05", "speaker": "guardian", "startMs": 25000, "endMs": 34000, "text": "솔직히 몇 번은 줄을 확 잡아채고 코를 때린 적도 있어요. 그래도 나아지지는 않았어요." },
+    { "id": "s06", "speaker": "trainer", "startMs": 34000, "endMs": 43000, "text": "말씀해 주셔서 고맙습니다. 때리거나 줄을 잡아채는 건 앞으로 하지 마세요. 개가 다른 개를 더 나쁜 일과 연결할 수 있어요." },
+    { "id": "s07", "speaker": "guardian", "startMs": 43000, "endMs": 47000, "text": "네, 그럼 어떻게 해야 해요?" },
+    { "id": "s08", "speaker": "trainer", "startMs": 47000, "endMs": 56000, "text": "일단 다른 개를 보면 십 미터 밖에서 멈추거나 방향을 바꾸세요. 그 거리에서는 보리가 괜찮으니까요." },
+    { "id": "s09", "speaker": "guardian", "startMs": 56000, "endMs": 61000, "text": "산책은 하루에 한 번, 이십 분쯤 나가요. 주말에는 두 번이요." },
+    { "id": "s10", "speaker": "trainer", "startMs": 61000, "endMs": 66000, "text": "하네스를 쓰시나요, 목줄을 쓰시나요?" },
+    { "id": "s11", "speaker": "guardian", "startMs": 66000, "endMs": 71000, "text": "목줄을 써요. 하네스는 아직 안 써 봤어요." },
+    { "id": "s12", "speaker": "trainer", "startMs": 71000, "endMs": 82000, "text": "오늘은 시간이 다 돼서 구체적인 과제는 아직 정하지 않겠습니다. 다음 시간에 산책 영상을 보고 같이 정하죠." },
+    { "id": "s13", "speaker": "guardian", "startMs": 82000, "endMs": 86000, "text": "알겠습니다. 다음에 산책 영상을 찍어 놓을게요." },
+    { "id": "s14", "speaker": "trainer", "startMs": 86000, "endMs": 91000, "text": "네, 다른 개를 만나는 장면이 들어가면 좋겠습니다." }
+  ],
+  "expectedFacts": [
+    { "id": "behavior", "any": [["줄"], ["짖"]] },
+    { "id": "no-bite", "any": [["물지"]] },
+    { "id": "distance", "any": [["오 미터", "5미터", "5m"]] },
+    { "id": "safe-distance", "any": [["십 미터", "10미터", "10m"]] },
+    { "id": "punishment", "any": [["때린", "잡아채"]] },
+    { "id": "guidance", "any": [["멈추", "방향"]] },
+    { "id": "gear", "any": [["목줄"]] },
+    { "id": "walks", "any": [["이십 분", "20분"]] },
+    { "id": "video", "any": [["영상"]] }
+  ],
+  "expectedTasks": [],
+  "unknown": [],
+  "expectedSafetyFlags": [],
+  "expectedMethodReview": true,
+  "forbiddenClaims": ["공격성", "진단", "치료", "입질", "물었", "하네스를 사용 중", "개선됐", "좋아졌"]
+}

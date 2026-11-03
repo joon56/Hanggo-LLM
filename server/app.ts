@@ -1,5 +1,6 @@
 import { createHash, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
 import { existsSync } from 'node:fs';
+import type { Server } from 'node:http';
 import path from 'node:path';
 import express from 'express';
 import type { ErrorRequestHandler, Request } from 'express';
@@ -8,9 +9,12 @@ import rateLimit from 'express-rate-limit';
 import multer from 'multer';
 import { z } from 'zod';
 import type { Config } from './config.ts';
-import type { LiveSpeechService } from './live-speech.ts';
+import type { SpeechProvider } from './ai/speech/types.ts';
 import { createConsultationRouter } from './consultation-router.ts';
-import { createConsultationVision } from './consultation-vision.ts';
+import { createGuardianSessions } from './coaching/guardian-session.ts';
+import { createActorResolver, createCoachingRouter } from './coaching/router.ts';
+import { attachSignal } from './coaching/signal.ts';
+import { createFileStore } from './coaching/store.ts';
 import type { VisionService } from './consultation-vision.ts';
 import { ConsultationError } from './consultation-store.ts';
 import type { SourceKind } from '../src/domain/notes.ts';
@@ -27,7 +31,7 @@ import { validateDraft, type Draft } from '../src/domain/notes.ts';
 
 type Services = {
   vision?: VisionService;
-  liveSpeech?: LiveSpeechService;
+  liveSpeech?: SpeechProvider;
   status?: () => Promise<{ configured: boolean; sttReady: boolean; statusMessage: string }>;
   generateOwner?: (input: OwnerInput, signal?: AbortSignal) => Promise<unknown>;
   generateBrief?: (input: BriefInput, signal?: AbortSignal, consultation?: BriefConsultationContext) => Promise<unknown>;
@@ -45,12 +49,13 @@ export function createApp(config: Config, services: Services) {
   const lessons = loadLessonCatalog(config.lessonCatalogPath);
   app.disable('x-powered-by');
   app.set('trust proxy', config.trustProxy);
-  app.use(helmet({ contentSecurityPolicy: { directives: { 'media-src': ["'self'", 'blob:'], 'connect-src': ["'self'"], 'upgrade-insecure-requests': config.production ? [] : null } }, strictTransportSecurity: config.production ? undefined : false }));
+  app.use(helmet({ contentSecurityPolicy: { directives: { 'media-src': ["'self'", 'blob:'], 'connect-src': ["'self'", config.publicOrigin.replace(/^http/, 'ws')], 'upgrade-insecure-requests': config.production ? [] : null } }, strictTransportSecurity: config.production ? undefined : false }));
+  app.use((_req, res, next) => { res.set('Permissions-Policy', 'camera=(self), microphone=(self), display-capture=(self)'); next(); });
   const sessions = new Map<string, number>();
   const cookieName = 'hanggo_session';
   const cookieOptions = { httpOnly: true, secure: config.production, sameSite: 'strict' as const, path: '/api', maxAge: 8 * 60 * 60 * 1000 };
-  const token = (req: Request) => req.headers.cookie?.split(';').map(part => part.trim()).find(part => part.startsWith(`${cookieName}=`))?.slice(cookieName.length + 1) || '';
-  const authenticated = (req: Request) => !config.password || (sessions.get(token(req)) || 0) > Date.now();
+  const token = (req: { headers: { cookie?: string } }) => req.headers.cookie?.split(';').map(part => part.trim()).find(part => part.startsWith(`${cookieName}=`))?.slice(cookieName.length + 1) || '';
+  const authenticated = (req: { headers: { cookie?: string } }) => !config.password || (sessions.get(token(req)) || 0) > Date.now();
   const origins = new Set([config.publicOrigin, ...(!config.production ? ['http://127.0.0.1:5173', `http://127.0.0.1:${config.port}`, 'http://localhost:5173'] : [])]);
   const hosts = new Set([...origins].map(origin => new URL(origin).hostname));
   hosts.add('127.0.0.1'); hosts.add('localhost');
@@ -87,6 +92,11 @@ export function createApp(config: Config, services: Services) {
     res.cookie(cookieName, value, cookieOptions).json({ ...sessionInfo(req), authenticated: true, ...(config.aiEnabled && services.status ? await services.status() : {}) });
   });
   app.delete('/api/session', (req, res) => { sessions.delete(token(req)); res.clearCookie(cookieName, cookieOptions).json(sessionInfo(req)); });
+  // Guardians join by invite without the trainer password, so coaching applies its own identity rules first.
+  const coachingStore = createFileStore(config.coachingDirectory);
+  const coachingAccess = { store: coachingStore, sessions: createGuardianSessions(config.coachingDirectory), isTrainer: (headers: { cookie?: string }) => authenticated({ headers }) };
+  let signal: ReturnType<typeof attachSignal> | undefined;
+  app.use('/api/coaching', createCoachingRouter({ ...coachingAccess, turn: config.turn, secureCookies: config.production, notify: consultation => signal?.notify(consultation) }));
   app.use('/api', (req, res, next) => {
     if (!authenticated(req)) { res.status(401).json({ error: '로그인이 필요합니다.', code: 'AUTH', requestId: res.locals.requestId }); return; }
     next();
@@ -110,7 +120,7 @@ export function createApp(config: Config, services: Services) {
   const aiLimit = rateLimit({ windowMs: 60_000, limit: 30, keyGenerator: () => 'ai', standardHeaders: 'draft-8', legacyHeaders: false,
     message: { error: '요청이 많습니다. 잠시 후 다시 시도해 주세요.', code: 'RATE_LIMIT' } });
   let day = ''; let calls = 0; let active = 0;
-  const consultation = createConsultationRouter({ enabled: config.liveConsultationEnabled && config.aiEnabled, directory: config.consultationDirectory, ffmpegPath: config.ffmpegPath, vision: services.vision ?? createConsultationVision(config), speech: services.liveSpeech, generate: services.generate, acquireAi: charge => {
+  const consultation = createConsultationRouter({ enabled: config.liveConsultationEnabled && config.aiEnabled, directory: config.consultationDirectory, ffmpegPath: config.ffmpegPath, vision: services.vision, speech: services.liveSpeech, generate: services.generate, acquireAi: charge => {
     const today = new Date().toISOString().slice(0, 10);
     if (today !== day) { day = today; calls = 0; }
     if (active >= 1 || (charge && calls >= config.dailyLimit)) throw new ConsultationError('AI_LIMIT', 'Local AI is busy or daily limit reached.', 429);
@@ -188,7 +198,7 @@ export function createApp(config: Config, services: Services) {
   const dist = path.resolve('dist');
   if (existsSync(path.join(dist, 'index.html'))) {
     app.use(express.static(dist, { index: false, dotfiles: 'deny', setHeaders: (res, file) => res.setHeader('Cache-Control', file.includes(`${path.sep}assets${path.sep}`) ? 'public, max-age=31536000, immutable' : 'no-cache') }));
-    app.get('/', (_req, res) => { res.set('Cache-Control', 'no-cache').sendFile('index.html', { root: dist }); });
+    app.get(['/', '/coaching', '/guardian', '/join/:token', '/room/:id'], (_req, res) => { res.set('Cache-Control', 'no-cache').sendFile('index.html', { root: dist }); });
   }
   const errors: ErrorRequestHandler = (error, _req, res, _next) => {
     if (res.headersSent || res.destroyed) return;
@@ -198,5 +208,9 @@ export function createApp(config: Config, services: Services) {
     res.status(large ? 413 : malformed ? 400 : 502).json({ error: large ? '파일은 10MB 이하, 텍스트는 8,000자 이하로 입력해 주세요.' : malformed ? '요청 형식을 확인해 주세요.' : 'AI 요청을 완료하지 못했습니다. 입력은 유지됩니다. 잠시 후 다시 시도해 주세요.', code: large ? 'TOO_LARGE' : malformed ? 'INPUT' : 'UPSTREAM', requestId: res.locals.requestId });
   };
   app.use(errors);
-  return Object.assign(app, { shutdown: () => { stopping = true; return consultation.shutdown(); } });
+  return Object.assign(app, {
+    attachSignal(server: Server) { signal = attachSignal(server, { store: coachingStore, allowedOrigins: origins, resolveActor: createActorResolver(coachingAccess) }); },
+    recoverCoaching: () => coachingStore.recoverInterrupted(),
+    shutdown: () => { stopping = true; signal?.close(); return consultation.shutdown(); },
+  });
 }
