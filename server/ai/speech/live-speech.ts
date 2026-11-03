@@ -27,6 +27,15 @@ export function buildSpeechCommand(config: Config, port: number, token: string) 
       '--port', String(port), '--request-path', `/internal-${token}`, '--public', resolve(config.home, 'runtime', 'empty-public')] };
 }
 
+/** The answer is started in Korean. Left to guess per window, the model wrote "음" as 嗯 and "아" as 啊 or Yeah. */
+export function buildQwenRequest(wav: Buffer) {
+  return { temperature: 0, max_tokens: 512, stream: false, messages: [
+    { role: 'system', content: '' },
+    { role: 'user', content: [{ type: 'input_audio', input_audio: { data: wav.toString('base64'), format: 'wav' } }] },
+    { role: 'assistant', content: 'language Korean<asr_text>' },
+  ] };
+}
+
 export function speechInstalled(config: Config): boolean {
   try { return buildSpeechCommand(config, 1, 'check').files.every(file => { const s = statSync(file); return s.isFile() && s.size > 0; }); }
   catch { return false; }
@@ -120,8 +129,7 @@ export function createLiveSpeech(config: Config, hooks: { unloadTextModel?: () =
         if (config.liveSpeechModel === 'qwen-asr') {
           response = await fetch(`${baseUrl}/v1/chat/completions`, { method: 'POST', redirect: 'error', signal: combined,
             headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-            body: JSON.stringify({ temperature: 0, max_tokens: 512, stream: false,
-              messages: [{ role: 'system', content: '' }, { role: 'user', content: [{ type: 'input_audio', input_audio: { data: wav.toString('base64'), format: 'wav' } }] }] }) });
+            body: JSON.stringify(buildQwenRequest(wav)) });
         } else {
           const form = new FormData(); form.append('file', new Blob([new Uint8Array(wav)], { type: 'audio/wav' }), 'segment.wav');
           form.append('response_format', 'json'); form.append('language', 'ko'); form.append('temperature', '0'); form.append('temperature_inc', '0');

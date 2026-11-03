@@ -3,7 +3,7 @@ import { EventEmitter } from 'node:events';
 import { PassThrough } from 'node:stream';
 import { afterEach, expect, it, vi } from 'vitest';
 import { readConfig } from '../../config.ts';
-import { buildSpeechCommand, createLiveSpeech, parseSpeechResponse } from './live-speech.ts';
+import { buildSpeechCommand, createLiveSpeech, buildQwenRequest, parseSpeechResponse } from './live-speech.ts';
 
 const mocks = vi.hoisted(() => ({ spawn: vi.fn(), stat: vi.fn(() => ({ isFile: () => true, size: 10 })) }));
 vi.mock('node:child_process', () => ({ spawn: mocks.spawn }));
@@ -83,4 +83,10 @@ it('rejects startup failure without waiting for a second close event', async () 
   const speech = createLiveSpeech(readConfig({ LIVE_SPEECH_MODEL: 'whisper-turbo' }), { unloadTextModel: async () => {} });
   await expect(speech.prepare()).rejects.toThrow(/시작/);
   await speech.release();
+});
+
+it('tells the model the language, because it guesses wrong on short sounds', () => {
+  const { messages } = buildQwenRequest(Buffer.from([1, 2, 3]));
+  expect(messages.at(-1)).toEqual({ role: 'assistant', content: 'language Korean<asr_text>' });
+  expect(JSON.stringify(messages[1])).toContain(Buffer.from([1, 2, 3]).toString('base64'));
 });
