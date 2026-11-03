@@ -31,11 +31,13 @@ function pitchOf(wav: Buffer) {
 
 export type StubScript = { speaker: string; text: string }[];
 type Speaker = 'guardian' | 'trainer';
-const SPEAKER_TONE: Record<Speaker, { hz: number; band: number; step: number }> = { guardian: { hz: 440, band: 60, step: 10 }, trainer: { hz: 880, band: 120, step: 20 } };
-const LINE_BASE_HZ = { guardian: 400, trainer: 780 };
+const SPEAKER_BAND: Record<Speaker, [number, number]> = { guardian: [270, 560], trainer: [640, 1700] };
+const LINE_BASE_HZ = { guardian: 300, trainer: 700 };
+// Each line is a tenth higher than the one before, so a few percent of drift in audio processing cannot change which line it is.
+const LINE_RATIO = 1.1;
 
 /** The tone that means one speaker's line of a script, so a recorded demo can say which line it is playing. */
-export const scriptTone = (speaker: Speaker, line: number) => LINE_BASE_HZ[speaker] + SPEAKER_TONE[speaker].step * line;
+export const scriptTone = (speaker: Speaker, line: number) => LINE_BASE_HZ[speaker] * LINE_RATIO ** line;
 
 /**
  * For automated runs only. It recognizes which test tone reached the server, so a run can prove that
@@ -47,7 +49,7 @@ export function createStubSpeech(script: StubScript = []): SpeechProvider {
   const last: Partial<Record<Speaker, number>> = {};
   const scripted = (speaker: Speaker, pitch: number) => {
     const lines = script.filter(line => line.speaker === speaker);
-    const line = Math.round((pitch - LINE_BASE_HZ[speaker]) / SPEAKER_TONE[speaker].step);
+    const line = Math.round(Math.log(pitch / LINE_BASE_HZ[speaker]) / Math.log(LINE_RATIO));
     if (!lines[line]) return STUB_TEXT[speaker];
     if (last[speaker] === line) return '';
     last[speaker] = line;
@@ -57,7 +59,7 @@ export function createStubSpeech(script: StubScript = []): SpeechProvider {
     async prepare() {},
     async transcribe(wav) {
       const pitch = pitchOf(wav);
-      const speaker = (['guardian', 'trainer'] as const).find(name => Math.abs(pitch - SPEAKER_TONE[name].hz) < SPEAKER_TONE[name].band);
+      const speaker = (['guardian', 'trainer'] as const).find(name => pitch >= SPEAKER_BAND[name][0] && pitch < SPEAKER_BAND[name][1]);
       const text = speaker ? scripted(speaker, pitch) : STUB_TEXT.unknown;
       return { text, model: 'stub', latencyMs: 0 };
     },

@@ -31,6 +31,12 @@ describe('with a script', () => {
     await expect(scripted.transcribe(speak('guardian', 0))).resolves.toMatchObject({ text: '[시험 전사] 초인종에 짖어요' });
     await expect(scripted.transcribe(speak('trainer', 1))).resolves.toMatchObject({ text: '[시험 전사] 매트로 보내 주세요' });
   });
+  it('still finds the line when audio processing shifts the pitch a little, as it does on a CI machine', async () => {
+    const scripted = createStubSpeech([...script, { speaker: 'trainer', text: '세 번째 줄' }]);
+    await expect(scripted.transcribe(tone(scriptTone('trainer', 1) * 0.97))).resolves.toMatchObject({ text: '[시험 전사] 매트로 보내 주세요' });
+    await expect(scripted.transcribe(tone(scriptTone('trainer', 2) * 1.03))).resolves.toMatchObject({ text: '[시험 전사] 세 번째 줄' });
+    await expect(scripted.transcribe(tone(scriptTone('guardian', 0) * 0.97))).resolves.toMatchObject({ text: '[시험 전사] 초인종에 짖어요' });
+  });
   it('stays on the right line when a window is lost or a tone is cut in two', async () => {
     const scripted = createStubSpeech(script);
     await expect(scripted.transcribe(speak('trainer', 1))).resolves.toMatchObject({ text: '[시험 전사] 매트로 보내 주세요' });
