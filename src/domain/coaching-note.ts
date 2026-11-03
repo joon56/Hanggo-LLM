@@ -51,6 +51,8 @@ const MAX_ADDED_LINES = 2;
 const REPEAT_SIMILARITY = 0.6;
 const MAX_LINES_AWAY = 6;
 const PLAIN_TITLE = '행동 기록';
+// Pointing these out as unused would only hide the lines that might matter.
+const NOTHING_TO_REPORT = /\?$|말씀해\s*주세요\.?$|^안녕하세요|^네[,.\s]+(?:알겠습니다|그렇군요|맞아요)?\.?$|감사합니다\.?$/;
 const NEGATION = /않|없|못|아니|안\s|말[고아]|마세/;
 const newId = () => crypto.randomUUID();
 
@@ -156,7 +158,7 @@ function citedSegmentIds(note: Pick<CoachingNote, typeof CLAIM_SECTIONS[number] 
 }
 export const uncited = (note: Parameters<typeof citedSegmentIds>[0], source: NoteSource) => {
   const cited = citedSegmentIds(note);
-  return source.lines.filter(line => line.evidence.kind === 'segment' && !cited.has(line.evidence.id)).map(line => line.evidence.id);
+  return source.lines.filter(line => line.evidence.kind === 'segment' && !cited.has(line.evidence.id) && !NOTHING_TO_REPORT.test(line.evidence.quote.trim())).map(line => line.evidence.id);
 };
 const said = (source: NoteSource, kind: Evidence['kind']) => source.lines.filter(line => line.evidence.kind === kind).map(line => line.evidence.quote).join('\n');
 /** From what was said aloud. A private memo must not surface as a warning to the guardian. */

@@ -546,3 +546,13 @@ describe('details of a task after the transcript changes', () => {
     expect(approvalProblems(refreshed).join()).toContain('하루 세 번');
   });
 });
+
+describe('speech the note did not use', () => {
+  it('points to what might matter, not to questions and small talk', () => {
+    const said = consultation({ segments: [
+      segment('q', 'trainer', 0, '한 번 짖으면 얼마나 오래 짖나요?'), segment('r', 'trainer', 3000, '요즘 어떤 상황인지 말씀해 주세요.'), segment('h', 'trainer', 6000, '안녕하세요, 오늘 잘 부탁드립니다.'),
+      segment('k', 'guardian', 9000, '네, 알겠습니다.'), segment('f', 'guardian', 12000, '밤에는 현관 앞에서 잠을 자요.'),
+    ] });
+    expect(assembleNote(blank, buildNoteSource(said, info), 'now').note.uncitedSegmentIds).toEqual(['f']);
+  });
+});
