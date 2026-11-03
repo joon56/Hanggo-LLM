@@ -34,13 +34,14 @@ describe('TrainerHome', () => {
   });
   it('shows a joinable invite link after creating a case', async () => {
     api.createCase.mockResolvedValue({ case: aCase, inviteToken: 'a'.repeat(64) });
-    render(<TrainerHome navigate={vi.fn()} />);
+    render(<TrainerHome navigate={vi.fn()} hostname="example.trycloudflare.com" />);
     await userEvent.type(await screen.findByLabelText('반려동물 이름'), '초코');
     await userEvent.type(screen.getByLabelText('보호자 이름'), '가상 보호자');
     await userEvent.type(screen.getByLabelText('훈련사 이름'), '가상 훈련사');
     await userEvent.click(screen.getByRole('button', { name: '상담 사례 만들기' }));
     expect(api.createCase).toHaveBeenCalledWith({ petName: '초코', guardianName: '가상 보호자', trainerName: '가상 훈련사' });
     expect(await screen.findByLabelText('보호자 초대 링크')).toHaveValue(`${location.origin}/join/${'a'.repeat(64)}`);
+    expect(screen.getByRole('img', { name: '휴대폰 카메라로 찍는 초대 QR 코드' })).toBeInTheDocument();
   });
   it('warns that a loopback invite only opens on this PC', async () => {
     api.createCase.mockResolvedValue({ case: aCase, inviteToken: 'a'.repeat(64) });
@@ -171,6 +172,14 @@ describe('GuardianJoin', () => {
     render(<GuardianJoin token="token" navigate={vi.fn()} userAgent="Chrome" />);
     await userEvent.click(screen.getByRole('button', { name: '상담 입장 준비' }));
     expect(await screen.findByRole('alert')).toHaveTextContent('훈련사에게 새 링크');
+  });
+});
+
+describe('GuardianJoin with a link cut short', () => {
+  it('explains what went wrong in plain words and offers nothing to press', () => {
+    render(<GuardianJoin token="" navigate={vi.fn()} userAgent="Chrome" />);
+    expect(screen.getByRole('alert')).toHaveTextContent('링크가 잘렸습니다');
+    expect(screen.queryByRole('button', { name: '상담 입장 준비' })).toBeNull();
   });
 });
 

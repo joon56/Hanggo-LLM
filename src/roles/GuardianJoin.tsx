@@ -7,6 +7,11 @@ import './call.css';
 export function GuardianJoin({ token, navigate, userAgent = navigator.userAgent }: { token: string; navigate: (path: string) => void; userAgent?: string }) {
   const [error, setError] = useState(''); const [pending, setPending] = useState(false);
   const inApp = isInAppBrowser(userAgent);
+  if (!token) return <main className="coach-page"><section className="coach-card coach-narrow">
+    <PawPrintIcon weight="fill" size={28} />
+    <h1>행고 화상 상담</h1>
+    <p role="alert" className="coach-error">링크가 잘렸습니다. 주소의 /join/ 뒤에 긴 문자열이 있어야 합니다. 훈련사에게 전체 링크나 QR 코드를 다시 받아 주세요.</p>
+  </section></main>;
   return <main className="coach-page"><section className="coach-card coach-narrow">
     <PawPrintIcon weight="fill" size={28} />
     <h1>행고 화상 상담</h1>
