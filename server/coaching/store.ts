@@ -3,7 +3,9 @@ import { mkdir, readFile, readdir, rename, rm, writeFile } from 'node:fs/promise
 import path from 'node:path';
 import { z } from 'zod';
 import { newConsultation, transition } from '../../src/domain/coaching.ts';
-import type { CoachingCase, Consultation } from '../../src/domain/coaching.ts';
+import type { CoachingCase, Consultation, TaskLog } from '../../src/domain/coaching.ts';
+import type { SavedOwnerLog } from '../../src/domain/workspace-types.ts';
+import { noteSchema, sceneSchema } from './note-schema.ts';
 
 export class StoreError extends Error {
   readonly code: string; readonly status: number;
@@ -25,7 +27,13 @@ const consultationSchema = z.object({ id: z.uuid(), caseId: z.uuid(), createdAt:
   startedAt: z.number().optional(), endedAt: z.number().optional(), recordingStartedAt: z.number().optional(),
   recordingGaps: z.array(z.object({ startMs: z.number(), endMs: z.number().optional() })), errors: z.array(z.object({ code: z.string(), message: z.string() })),
   // Records written before transcription existed have none of these.
-  segments: z.array(segmentSchema).default([]), moments: z.array(momentSchema).default([]), frames: z.array(frameSchema).default([]) }).strict();
+  segments: z.array(segmentSchema).default([]), moments: z.array(momentSchema).default([]), frames: z.array(frameSchema).default([]),
+  scenes: z.array(sceneSchema).default([]), note: noteSchema.optional(), noteGenerating: z.boolean().optional() }).strict();
+
+const taskLogSchema: z.ZodType<TaskLog> = z.object({ id: z.uuid(), caseId: z.uuid(), consultationId: z.uuid(), taskId: z.string().min(1).max(100), at: z.string(), status: z.enum(['done', 'partial', 'skipped']), text: z.string().max(2000).optional() }).strict();
+// Saved logs were checked by validateOwnerDraft when they arrived.
+const caseRecordsSchema = z.object({ taskLogs: z.array(taskLogSchema), guardianLogs: z.array(z.custom<SavedOwnerLog>()) }).strict();
+const MAX_RECORDS = 5000;
 
 export type CaseInput = Pick<CoachingCase, 'petName' | 'guardianName' | 'trainerName'>;
 export type CoachingStore = {
@@ -33,6 +41,8 @@ export type CoachingStore = {
   reissueInvite(caseId: string): Promise<string>;
   redeemInvite(token: string): Promise<CoachingCase>;
   getCase(id: string): Promise<CoachingCase>;
+  /** Removes the case and everything recorded under it. This cannot be undone. */
+  deleteCase(id: string): Promise<void>;
   listCases(): Promise<CoachingCase[]>;
   createConsultation(caseId: string): Promise<Consultation>;
   /** One GPU serves one conversation, so only one consultation may be live at a time. */
@@ -42,6 +52,10 @@ export type CoachingStore = {
   updateConsultation(id: string, change: (current: Consultation) => Consultation): Promise<Consultation>;
   putFrame(consultationId: string, frameId: string, bytes: Uint8Array): Promise<void>;
   readFrame(consultationId: string, frameId: string): Promise<Buffer>;
+  addTaskLog(caseId: string, log: TaskLog, limit?: number): Promise<TaskLog>;
+  listTaskLogs(caseId: string): Promise<TaskLog[]>;
+  addGuardianLog(caseId: string, log: SavedOwnerLog, limit?: number): Promise<SavedOwnerLog>;
+  listGuardianLogs(caseId: string): Promise<SavedOwnerLog[]>;
   recoverInterrupted(): Promise<void>;
 };
 
@@ -55,6 +69,7 @@ export function createFileStore(directory: string, options: { now?: () => number
   const safeId = (id: string) => { if (!/^[0-9a-f-]{36}$/.test(id)) throw new StoreError('INPUT', 'Invalid ID.'); return id; };
   const casePath = (id: string) => path.join(root, 'cases', `${safeId(id)}.json`);
   const consultationPath = (id: string) => path.join(root, 'consultations', safeId(id), 'consultation.json');
+  const recordsPath = (caseId: string) => path.join(root, 'case-records', `${safeId(caseId)}.json`);
   const framePath = (id: string, frameId: string) => path.join(root, 'consultations', safeId(id), 'frames', `${safeId(frameId)}.jpg`);
 
   async function replace(file: string, content: string | Uint8Array) {
@@ -69,9 +84,11 @@ export function createFileStore(directory: string, options: { now?: () => number
     const source = await readFile(file, 'utf8').catch(notFound);
     return schema.parse(JSON.parse(source));
   }
+  const readRecords = (caseId: string) => load(recordsPath(caseId), caseRecordsSchema).catch(error => { if (error instanceof StoreError && error.code === 'NOT_FOUND') return { taskLogs: [], guardianLogs: [] }; throw error; });
   const names = (folder: string) => readdir(path.join(root, folder)).catch(error => { if (error.code === 'ENOENT') return [] as string[]; throw error; });
   const allCases = async () => Promise.all((await names('cases')).filter(file => file.endsWith('.json')).map(file => load(path.join(root, 'cases', file), caseSchema)));
-  const allConsultations = async () => Promise.all((await names('consultations')).map(id => load(consultationPath(id), consultationSchema)));
+  // A folder can lose its record if deleting it was interrupted. One leftover must not take every list down with it.
+  const allConsultations = async () => (await Promise.all((await names('consultations')).map(id => load(consultationPath(id), consultationSchema).catch(error => { if (error instanceof StoreError) return null; throw error; })))).filter((item): item is Consultation => item !== null);
 
   async function issue(id: string) {
     const token = randomBytes(32).toString('hex');
@@ -101,6 +118,15 @@ export function createFileStore(directory: string, options: { now?: () => number
       return redeemed;
     }),
     getCase: id => queued(() => load(casePath(id), caseSchema)),
+    deleteCase: id => queued(async () => {
+      await load(casePath(id), caseSchema);
+      const consultations = (await allConsultations()).filter(item => item.caseId === id);
+      if (consultations.some(item => item.state === 'live' || item.state === 'processing')) throw new StoreError('ACTIVE_CONSULTATION', 'A consultation of this case is still running.', 409);
+      for (const item of consultations) await rm(path.dirname(consultationPath(item.id)), { recursive: true, force: true, maxRetries: 3, retryDelay: 200 });
+      await rm(recordsPath(id), { force: true });
+      // Last, so a failure part way leaves a case the trainer can see and delete again.
+      await rm(casePath(id), { force: true });
+    }),
     listCases: () => queued(allCases),
     createConsultation: caseId => queued(async () => {
       await load(casePath(caseId), caseSchema);
@@ -110,7 +136,7 @@ export function createFileStore(directory: string, options: { now?: () => number
     }),
     startConsultation: caseId => queued(async () => {
       await load(casePath(caseId), caseSchema);
-      if ((await allConsultations()).some(item => item.state === 'live')) throw new StoreError('ACTIVE_CONSULTATION', 'Another consultation is live.', 409);
+      if ((await allConsultations()).some(item => item.state === 'live' || item.state === 'processing')) throw new StoreError('ACTIVE_CONSULTATION', 'Another consultation is live or still being organized.', 409);
       const started = transition(newConsultation({ id: randomUUID(), caseId, createdAt: new Date(now()).toISOString() }), 'start', now());
       await save(consultationPath(started.id), started);
       return started;
@@ -124,10 +150,30 @@ export function createFileStore(directory: string, options: { now?: () => number
     }),
     putFrame: (consultationId, frameId, bytes) => queued(() => replace(framePath(consultationId, frameId), bytes)),
     readFrame: (consultationId, frameId) => queued(() => readFile(framePath(consultationId, frameId)).catch(notFound)),
+    addTaskLog: (caseId, log, limit = MAX_RECORDS) => queued(async () => {
+      const records = await readRecords(caseId);
+      if (records.taskLogs.length >= limit) throw new StoreError('RECORD_LIMIT', '저장할 수 있는 기록 수를 넘었습니다.', 429);
+      await save(recordsPath(caseId), { ...records, taskLogs: [...records.taskLogs, log] });
+      return log;
+    }),
+    listTaskLogs: caseId => queued(async () => (await readRecords(caseId)).taskLogs),
+    addGuardianLog: (caseId, log, limit = MAX_RECORDS) => queued(async () => {
+      const records = await readRecords(caseId);
+      // A retry after a lost reply carries the same draft, and must not count twice in the brief.
+      const saved = records.guardianLogs.find(item => item.draft.id === log.draft.id);
+      if (saved) return saved;
+      if (records.guardianLogs.length >= limit) throw new StoreError('RECORD_LIMIT', '저장할 수 있는 기록 수를 넘었습니다.', 429);
+      await save(recordsPath(caseId), { ...records, guardianLogs: [...records.guardianLogs, log] });
+      return log;
+    }),
+    listGuardianLogs: caseId => queued(async () => (await readRecords(caseId)).guardianLogs),
     recoverInterrupted: () => queued(async () => {
-      for (const item of await allConsultations()) if (item.state === 'live' || item.state === 'processing') await save(consultationPath(item.id), {
+      for (const item of await allConsultations()) {
+        if (item.noteGenerating) { const { noteGenerating: _noteGenerating, ...rest } = item; await save(consultationPath(item.id), rest); }
+        if (item.state === 'live' || item.state === 'processing') await save(consultationPath(item.id), {
         // Queued audio lived in memory, so those windows can no longer be transcribed.
         ...transition(item, 'interrupt', now()), segments: item.segments.map(segment => segment.state === 'queued' ? { ...segment, state: 'failed' } : segment) });
+      }
     }),
   };
 }

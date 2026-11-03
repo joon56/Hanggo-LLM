@@ -25,8 +25,9 @@ export type BriefConsultationContext = BriefConsultationChoice & {
   items: { id: string; text: string; category: string; evidence: { kind: 'segment' | 'bookmark' | 'vision'; quote: string; startMs: number; endMs: number }[]; truncated?: boolean }[];
   omittedItems: number;
 };
+export type BriefTaskLog = { id: string; taskId: string; at: string; status: 'done' | 'partial' | 'skipped'; text?: string };
 export type BriefSource = {
-  id: string; kind: 'owner' | 'legacy_consultation' | 'consultation'; date: string | null;
+  id: string; kind: 'owner' | 'legacy_consultation' | 'consultation' | 'task_log'; date: string | null;
   sourceQuote: string; text: string; occurredAt?: string | null; timeHint?: string | null;
   recordId?: string; category?: string; trigger?: string | null; intervention?: string | null; outcome?: string | null;
   scope?: 'current' | 'previous' | 'historical' | 'unknown'; truncated?: boolean;

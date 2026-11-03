@@ -1,27 +1,36 @@
 import { randomUUID } from 'node:crypto';
 import { setTimeout as delay } from 'node:timers/promises';
-import { captionOf, findEchoSource, transition } from '../../src/domain/coaching.ts';
+import { captionOf, findEchoSource } from '../../src/domain/coaching.ts';
+import { correctTerms } from '../../src/domain/speech-terms.ts';
 import type { Consultation, Segment, Speaker, SpeechStatus } from '../../src/domain/coaching.ts';
 import type { SpeechProvider, SpeechResult } from '../ai/speech/types.ts';
 import { StoreError, type CoachingStore } from './store.ts';
 
 const MAX_WAITING = 64;
+// Dictation is a convenience. It must never fill the queue a live call depends on.
+const MAX_WAITING_DICTATION = 8;
 const OVERLAP_TOLERANCE_MS = 500;
 const PREPARE_RETRY_MS = 30_000;
 type Item = { consultationId: string; segmentId: string; wav: Buffer };
+type Dictation = { wav: Buffer; resolve: (text: string) => void; reject: (error: Error) => void };
+const IDLE_RELEASE_MS = 60_000;
+const NO_ROOM = '';
+const afterQuietMinute = (run: () => void) => { const timer = setTimeout(run, IDLE_RELEASE_MS); timer.unref(); return () => clearTimeout(timer); };
 type Deps = {
   store: CoachingStore; speech?: SpeechProvider;
   broadcast: (consultationId: string, message: unknown) => void;
-  notify?: (consultation: Consultation) => void;
   /** How long after the end to accept what browsers still hold. */
   graceMs: number;
   now?: () => number;
+  scheduleIdle?: (run: () => void) => () => void;
 };
 export type Transcription = ReturnType<typeof createTranscription>;
 
 /** Audio stays in memory for this queue only. One GPU serves one window at a time, and the model cannot take a second request. */
-export function createTranscription({ store, speech, broadcast, notify, graceMs, now = Date.now }: Deps) {
-  const waiting: Item[] = [];
+export function createTranscription({ store, speech, broadcast, graceMs, now = Date.now, scheduleIdle = afterQuietMinute }: Deps) {
+  const waiting: (Item | Dictation)[] = [];
+  let cancelIdle: (() => void) | undefined;
+  let recording = false;
   let status: SpeechStatus = speech ? 'idle' : 'off';
   let running: Promise<void> | undefined;
   let preparing: Promise<boolean> | undefined;
@@ -41,11 +50,12 @@ export function createTranscription({ store, speech, broadcast, notify, graceMs,
   }
 
   async function complete({ consultationId, segmentId }: Item, { text: raw, model, latencyMs }: SpeechResult) {
-    const text = raw.trim();
+    const heard = raw.trim();
+    const text = correctTerms(heard);
     const changed: Segment[] = [];
     await store.updateConsultation(consultationId, current => {
       if (!text) return { ...current, segments: current.segments.filter(item => item.id !== segmentId) };
-      const segment: Segment = { ...current.segments.find(item => item.id === segmentId)!, text, originalText: text, state: 'complete', model, latencyMs };
+      const segment: Segment = { ...current.segments.find(item => item.id === segmentId)!, text, originalText: heard, state: 'complete', model, latencyMs };
       const source = findEchoSource(current.segments, segment);
       // Sound reaches the far microphone after the near one, whichever window the queue happened to finish first.
       const echoId = source && (source.startMs > segment.startMs ? source.id : segment.id);
@@ -87,8 +97,33 @@ export function createTranscription({ store, speech, broadcast, notify, graceMs,
     } finally { item.wav.fill(0); }
   }
 
+  async function dictation({ wav, resolve, reject }: Dictation) {
+    try {
+      if (!await ready(NO_ROOM)) throw new StoreError('SPEECH_FAILED', '받아쓰기를 준비하지 못했습니다.', 503);
+      resolve((await speech!.transcribe(wav)).text.trim());
+    } catch (error) {
+      status = status === 'failed' ? status : 'idle';
+      reject(error instanceof StoreError ? error : new StoreError('SPEECH_FAILED', '받아쓰지 못했습니다. 다시 시도해 주세요.', 503));
+    } finally { wav.fill(0); }
+  }
+
+  /** A guardian's short note should not keep the model on the GPU, unless a call needs it. */
+  function releaseWhenQuiet() {
+    cancelIdle?.();
+    cancelIdle = recording || closed || waiting.length ? undefined : scheduleIdle(() => {
+      cancelIdle = undefined;
+      if (recording || running || closed) return;
+      status = 'idle';
+      void speech?.release().catch(() => {});
+    });
+  }
+
   async function run() {
-    while (waiting.length && !closed) await process(waiting.shift()!);
+    while (waiting.length && !closed) {
+      const next = waiting.shift()!;
+      if ('resolve' in next) { await dictation(next); releaseWhenQuiet(); }
+      else await process(next);
+    }
   }
 
   async function drain() { while (running) await running; }
@@ -96,6 +131,8 @@ export function createTranscription({ store, speech, broadcast, notify, graceMs,
   return {
     status: () => status,
     start(consultationId: string) {
+      recording = true;
+      cancelIdle?.(); cancelIdle = undefined;
       if (speech && (status === 'idle' || status === 'failed')) void prepare(consultationId);
     },
     /** The start time identifies a window, so a browser retrying after a lost reply cannot transcribe it twice. */
@@ -119,19 +156,28 @@ export function createTranscription({ store, speech, broadcast, notify, graceMs,
       }
       return segment;
     },
+    dictate(wav: Buffer) {
+      if (!speech) return Promise.reject(new StoreError('SPEECH_OFF', '받아쓰기를 사용할 수 없습니다.', 503));
+      if (waiting.length >= MAX_WAITING_DICTATION) return Promise.reject(new StoreError('BUSY', '받아쓰기가 밀려 있습니다. 잠시 후 다시 시도해 주세요.', 429));
+      cancelIdle?.(); cancelIdle = undefined;
+      return new Promise<string>((resolve, reject) => {
+        waiting.push({ wav, resolve, reject });
+        running ??= run().finally(() => { running = undefined; });
+      });
+    },
     /** GPU order from the design: the speech model leaves before anything else needs the card. */
-    async finish(consultationId: string) {
+    async settle(consultationId: string) {
+      recording = false;
       await delay(graceMs, undefined, { ref: false });
       await drain();
       if (closed) return;
-      const errors: Consultation['errors'] = [];
-      try { await speech?.release(); } catch { errors.push({ code: 'SPEECH_RELEASE', message: '음성 모델을 내리지 못했습니다.' }); }
+      try { await speech?.release(); }
+      catch { await store.updateConsultation(consultationId, current => ({ ...current, errors: [...current.errors, { code: 'SPEECH_RELEASE', message: '음성 모델을 내리지 못했습니다.' }] })); }
       if (speech) status = 'idle';
-      const finished = await store.updateConsultation(consultationId, current => ({ ...transition(current, 'processed', now()), errors: [...current.errors, ...errors] }));
-      notify?.(finished);
     },
     async close() {
       closed = true;
+      cancelIdle?.();
       await drain();
     },
   };

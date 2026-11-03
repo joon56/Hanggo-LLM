@@ -22,3 +22,9 @@ it('ignores silent stretches when measuring the tone', async () => {
 it('says so rather than guessing a speaker for anything else', async () => {
   await expect(speech.transcribe(tone(200))).resolves.toMatchObject({ text: STUB_TEXT.unknown });
 });
+it('reads the next line of each speaker when given a script, and marks it as test output', async () => {
+  const scripted = createStubSpeech([{ speaker: 'trainer', text: '안녕하세요' }, { speaker: 'guardian', text: '초인종에 짖어요' }, { speaker: 'trainer', text: '매트로 보내 주세요' }]);
+  await expect(scripted.transcribe(tone(880))).resolves.toMatchObject({ text: '[시험 전사] 안녕하세요' });
+  await expect(scripted.transcribe(tone(440))).resolves.toMatchObject({ text: '[시험 전사] 초인종에 짖어요' });
+  await expect(scripted.transcribe(tone(880))).resolves.toMatchObject({ text: '[시험 전사] 매트로 보내 주세요' });
+});

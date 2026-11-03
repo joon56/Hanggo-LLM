@@ -8,15 +8,17 @@ import type { Consultation } from '../../src/domain/coaching.ts';
 import { createApp } from '../app.ts';
 import { readConfig } from '../config.ts';
 import { encodeWav } from '../../src/call/speech-windows.ts';
+import { createStubLlm } from '../ai/llm/stub.ts';
+import type { LlmProvider } from '../ai/llm/types.ts';
 import type { SpeechProvider } from '../ai/speech/types.ts';
 
 const origin = 'http://127.0.0.1:5173';
 const password = 'long-test-password-1234';
 const homes: string[] = [];
 afterEach(() => { for (const home of homes.splice(0)) rmSync(home, { recursive: true, force: true }); });
-function setup(env: NodeJS.ProcessEnv = {}, liveSpeech?: SpeechProvider) {
+function setup(env: NodeJS.ProcessEnv = {}, liveSpeech?: SpeechProvider, llm?: LlmProvider) {
   const home = mkdtempSync(path.join(tmpdir(), 'hanggo-router-')); homes.push(home);
-  return createApp(readConfig({ HANGGO_HOME: home, APP_ACCESS_PASSWORD: password, COACHING_GRACE_MS: '1', ...env }), { generate: async () => ({}), transcribe: async () => '', liveSpeech });
+  return createApp(readConfig({ HANGGO_HOME: home, APP_ACCESS_PASSWORD: password, COACHING_GRACE_MS: '1', ...env }), { generate: async () => ({}), transcribe: async () => '', liveSpeech, llm });
 }
 type App = ReturnType<typeof setup>;
 const input = { petName: '초코', guardianName: '가상 보호자', trainerName: '가상 훈련사' };
@@ -350,5 +352,299 @@ describe('recording', () => {
     await consent(owner, id); await consent(member, id);
     await putAudio(member, id, 0, 1000, speaking(1000)).expect(503);
     expect(prepare).not.toHaveBeenCalled();
+  });
+});
+
+describe('review and delivery', () => {
+  const talk = (ms: number) => Buffer.from(encodeWav(Float32Array.from({ length: ms * 16 }, (_, index) => 0.1 * Math.sin(index / 10))));
+  type Agent = ReturnType<typeof request.agent>;
+  const words: Record<string, string> = { guardian: '초인종이 울리면 현관으로 뛰어가 짖어요', trainer: '하루 두 번 매트로 가는 연습을 해 주세요' };
+  async function reviewed(env: NodeJS.ProcessEnv = {}) {
+    let turn = 0;
+    const speech: SpeechProvider = { prepare: async () => {}, release: async () => {}, transcribe: async () => ({ text: Object.values(words)[turn++ % 2], model: 'fake', latencyMs: 1 }) };
+    const app = setup({ AI_ENABLED: 'true', AI_PROVIDER: 'stub', ...env }, speech, createStubLlm());
+    const owner = await trainer(app);
+    const created = await createCase(owner);
+    const member = await guardian(app, created.inviteToken);
+    const { id } = await start(owner, created.case.id);
+    for (const agent of [owner, member]) await agent.post(`/api/coaching/consultations/${id}/consent`).set('Origin', origin).send({ value: true }).expect(200);
+    await member.put(`/api/coaching/consultations/${id}/audio/0?endMs=1000`).set('Origin', origin).set('Content-Type', 'audio/wav').send(talk(1000)).expect(202);
+    await owner.put(`/api/coaching/consultations/${id}/audio/0?endMs=1000`).set('Origin', origin).set('Content-Type', 'audio/wav').send(talk(1000)).expect(202);
+    const frame = '00000000-0000-4000-8000-000000000001';
+    await member.put(`/api/coaching/consultations/${id}/frames/${frame}?atMs=0&source=camera`).set('Origin', origin).set('Content-Type', 'image/jpeg').send(Buffer.from([0xff, 0xd8, 0xff, 1])).expect(201);
+    await expect.poll(async () => (await owner.get(`/api/coaching/consultations/${id}`)).body.segments.filter((item: { state: string }) => item.state === 'complete').length).toBe(2);
+    await owner.post(`/api/coaching/consultations/${id}/end`).set('Origin', origin).send({}).expect(200);
+    await expect.poll(async () => (await owner.get(`/api/coaching/consultations/${id}`)).body.state).toBe('review');
+    const read = async (agent: Agent = owner) => (await agent.get(`/api/coaching/consultations/${id}`).expect(200)).body as Consultation;
+    return { app, owner, member, id, frame, read, caseId: created.case.id };
+  }
+  const url = (id: string, path: string) => `/api/coaching/consultations/${id}${path}`;
+  it('builds a draft after the call and hides it from the guardian', async () => {
+    const { owner, member, id, read, caseId } = await reviewed();
+    const consultation = await read();
+    expect(consultation.note?.guardianReports[0].evidence[0].speaker).toBe('guardian');
+    expect(consultation.scenes).toHaveLength(1);
+    for (const body of [await read(member), ((await member.get(`/api/coaching/cases/${caseId}`).expect(200)).body as { consultations: Consultation[] }).consultations[0]]) {
+      expect(body).not.toHaveProperty('note');
+      expect(body).toMatchObject({ segments: [], scenes: [], frames: [], moments: [] });
+    }
+    await member.get(url(id, '/delivery')).expect(404);
+    await owner.get(url(id, '/delivery')).expect(404);
+  });
+  it('lets only the trainer change anything in the review', async () => {
+    const { member, id, read } = await reviewed();
+    const consultation = await read();
+    const segment = consultation.segments[0].id; const scene = consultation.scenes[0];
+    await member.patch(url(id, `/segments/${segment}`)).set('Origin', origin).send({ text: '바꾸기' }).expect(403);
+    await member.patch(url(id, `/scenes/${scene.id}/observations/${scene.observations[0].id}`)).set('Origin', origin).send({ reviewed: true }).expect(403);
+    await member.put(url(id, '/note')).set('Origin', origin).send(consultation.note).expect(403);
+    await member.post(url(id, '/note')).set('Origin', origin).send({}).expect(403);
+    await member.post(url(id, '/approve')).set('Origin', origin).send({}).expect(403);
+  });
+  it('keeps the original when the trainer corrects the transcript, and updates quotes in the note', async () => {
+    const { owner, id, read } = await reviewed();
+    const before = await read();
+    const segment = before.segments.find(item => item.speaker === 'guardian')!;
+    const updated = (await owner.patch(url(id, `/segments/${segment.id}`)).set('Origin', origin).send({ text: '초인종 소리에 현관으로 뛰어가 짖어요' }).expect(200)).body as Consultation;
+    const changed = updated.segments.find(item => item.id === segment.id)!;
+    expect(changed).toMatchObject({ text: '초인종 소리에 현관으로 뛰어가 짖어요', originalText: segment.originalText });
+    expect(updated.note?.guardianReports[0].evidence[0].quote).toBe('초인종 소리에 현관으로 뛰어가 짖어요');
+    expect(updated.note?.guardianReports[0].edited).toBeUndefined();
+    await owner.patch(url(id, '/segments/missing')).set('Origin', origin).send({ text: '바꾸기' }).expect(404);
+    await owner.patch(url(id, `/segments/${segment.id}`)).set('Origin', origin).send({ text: '' }).expect(400);
+  });
+  it('rebuilds forged evidence and refuses evidence that does not exist', async () => {
+    const { owner, id, read } = await reviewed();
+    const { note } = await read();
+    const forged = structuredClone(note!);
+    forged.guardianReports[0].evidence[0].quote = '꾸며낸 인용';
+    const saved = (await owner.put(url(id, '/note')).set('Origin', origin).send(forged).expect(200)).body as Consultation;
+    expect(saved.note?.guardianReports[0].evidence[0].quote).toBe(words.guardian);
+    const missing = structuredClone(note!);
+    missing.guardianReports[0].evidence[0].id = 'missing';
+    await owner.put(url(id, '/note')).set('Origin', origin).send(missing).expect(400);
+    await owner.put(url(id, '/note')).set('Origin', origin).send({ version: 1 }).expect(400);
+  });
+  it('blocks approval on a banned expression and delivers after it is fixed', async () => {
+    const { owner, member, id, read, frame } = await reviewed();
+    const { note, scenes } = await read();
+    const blocked = structuredClone(note!);
+    blocked.guidance[0].text = '이 연습으로 반드시 좋아집니다';
+    await owner.put(url(id, '/note')).set('Origin', origin).send(blocked).expect(200);
+    const refused = await owner.post(url(id, '/approve')).set('Origin', origin).send({}).expect(409);
+    expect(refused.body.code).toBe('NOTE_BLOCKED');
+    expect((await read()).state).toBe('review');
+    await member.get(url(id, `/frames/${frame}`)).expect(403);
+    await owner.put(url(id, '/note')).set('Origin', origin).send(note).expect(200);
+    await owner.patch(url(id, `/scenes/${scenes[0].id}/observations/${scenes[0].observations[0].id}`)).set('Origin', origin).send({ reviewed: true }).expect(200);
+    const approved = (await owner.post(url(id, '/approve')).set('Origin', origin).send({}).expect(200)).body as Consultation;
+    expect(approved.state).toBe('approved');
+    expect(approved.note?.approvedAt).toBeTruthy();
+    const delivery = (await member.get(url(id, '/delivery')).expect(200)).body;
+    expect(delivery.note.tasks).toHaveLength(1);
+    expect(delivery.note).not.toHaveProperty('methodReview');
+    expect(delivery.scenes[0].frameIds).toEqual([frame]);
+    await member.get(url(id, `/frames/${frame}`)).expect(200);
+  });
+  it('keeps uncited photos from the guardian even after approval', async () => {
+    const { owner, member, id, frame } = await reviewed();
+    await owner.post(url(id, '/approve')).set('Origin', origin).send({}).expect(200);
+    expect((await member.get(url(id, '/delivery')).expect(200)).body.scenes).toEqual([]);
+    await member.get(url(id, `/frames/${frame}`)).expect(403);
+    await owner.get(url(id, `/frames/${frame}`)).expect(200);
+  });
+  it('keeps the photo of an observation the delivery left out', async () => {
+    const { owner, member, id, read, frame } = await reviewed();
+    const { scenes } = await read();
+    const observation = url(id, `/scenes/${scenes[0].id}/observations/${scenes[0].observations[0].id}`);
+    await owner.patch(observation).set('Origin', origin).send({ text: '보호자가 목줄을 세게 당기고 있다', reviewed: true }).expect(200);
+    await owner.post(url(id, '/approve')).set('Origin', origin).send({}).expect(200);
+    const delivery = (await member.get(url(id, '/delivery')).expect(200)).body;
+    expect(delivery.note.aiObservations).toEqual([]);
+    expect(delivery.scenes).toEqual([]);
+    await member.get(url(id, `/frames/${frame}`)).expect(403);
+  });
+  it('freezes everything once approved', async () => {
+    const { owner, id, read } = await reviewed();
+    const { note, segments } = await read();
+    await owner.post(url(id, '/approve')).set('Origin', origin).send({}).expect(200);
+    await owner.put(url(id, '/note')).set('Origin', origin).send(note).expect(409);
+    await owner.patch(url(id, `/segments/${segments[0].id}`)).set('Origin', origin).send({ text: '바꾸기' }).expect(409);
+    await owner.post(url(id, '/note')).set('Origin', origin).send({}).expect(409);
+    await owner.post(url(id, '/approve')).set('Origin', origin).send({}).expect(409);
+  });
+  it('regenerates in the background and refuses edits meanwhile', async () => {
+    const { owner, id, read } = await reviewed();
+    const { note } = await read();
+    const started = await owner.post(url(id, '/note')).set('Origin', origin).send({}).expect(202);
+    expect(started.body.noteGenerating).toBe(true);
+    await expect.poll(async () => (await read()).noteGenerating).toBeUndefined();
+    expect((await read()).note?.guidance).toHaveLength(note!.guidance.length);
+  });
+  it('blocks a second call until the first is organized, then allows it', async () => {
+    const { owner, caseId } = await reviewed();
+    await owner.post(`/api/coaching/cases/${caseId}/consultations`).set('Origin', origin).send({}).expect(201);
+  });
+});
+
+describe('task records, guardian logs, and the brief', () => {
+  const speakingWav = (ms: number) => Buffer.from(encodeWav(Float32Array.from({ length: ms * 16 }, (_, index) => 0.1 * Math.sin(index / 10))));
+  async function delivered() {
+    let turn = 0;
+    const lines = ['초인종이 울리면 현관으로 뛰어가 짖어요', '하루 두 번 매트로 가는 연습을 해 주세요'];
+    const speech: SpeechProvider = { prepare: async () => {}, release: async () => {}, transcribe: async () => ({ text: lines[turn++ % 2], model: 'fake', latencyMs: 1 }) };
+    const app = setup({ AI_ENABLED: 'true', AI_PROVIDER: 'stub' }, speech, createStubLlm());
+    const owner = await trainer(app);
+    const created = await createCase(owner);
+    const member = await guardian(app, created.inviteToken);
+    const caseId = created.case.id;
+    const { id } = await start(owner, caseId);
+    for (const agent of [owner, member]) await agent.post(`/api/coaching/consultations/${id}/consent`).set('Origin', origin).send({ value: true }).expect(200);
+    await member.put(`/api/coaching/consultations/${id}/audio/0?endMs=1000`).set('Origin', origin).set('Content-Type', 'audio/wav').send(speakingWav(1000)).expect(202);
+    await owner.put(`/api/coaching/consultations/${id}/audio/0?endMs=1000`).set('Origin', origin).set('Content-Type', 'audio/wav').send(speakingWav(1000)).expect(202);
+    await expect.poll(async () => (await owner.get(`/api/coaching/consultations/${id}`)).body.segments.filter((item: { state: string }) => item.state === 'complete').length).toBe(2);
+    await owner.post(`/api/coaching/consultations/${id}/end`).set('Origin', origin).send({}).expect(200);
+    await expect.poll(async () => (await owner.get(`/api/coaching/consultations/${id}`)).body.state).toBe('review');
+    return { app, owner, member, id, caseId };
+  }
+  async function approved() {
+    const context = await delivered();
+    const body = (await context.owner.post(`/api/coaching/consultations/${context.id}/approve`).set('Origin', origin).send({}).expect(200)).body as Consultation;
+    return { ...context, taskId: body.note!.tasks[0].id };
+  }
+  const logUrl = (caseId: string) => `/api/coaching/cases/${caseId}/task-logs`;
+  it('takes a task record only from the guardian, for a task in a confirmed note', async () => {
+    const { owner, member, id, caseId } = await delivered();
+    const draftTask = ((await owner.get(`/api/coaching/consultations/${id}`)).body as Consultation).note!.tasks[0].id;
+    await member.post(logUrl(caseId)).set('Origin', origin).send({ consultationId: id, taskId: draftTask, status: 'done' }).expect(404);
+    await owner.post(`/api/coaching/consultations/${id}/approve`).set('Origin', origin).send({}).expect(200);
+    await owner.post(logUrl(caseId)).set('Origin', origin).send({ consultationId: id, taskId: draftTask, status: 'done' }).expect(403);
+    const created = await member.post(logUrl(caseId)).set('Origin', origin).send({ consultationId: id, taskId: draftTask, status: 'partial', text: ' 소리를 줄이니 갔어요 ' }).expect(201);
+    expect(created.body).toMatchObject({ caseId, consultationId: id, taskId: draftTask, status: 'partial', text: '소리를 줄이니 갔어요' });
+    await member.post(logUrl(caseId)).set('Origin', origin).send({ consultationId: id, taskId: 'missing', status: 'done' }).expect(404);
+    await member.post(logUrl(caseId)).set('Origin', origin).send({ consultationId: id, taskId: draftTask, status: 'great' }).expect(400);
+    for (const agent of [owner, member]) expect((await agent.get(logUrl(caseId)).expect(200)).body.logs).toHaveLength(1);
+  });
+  it('keeps a guardian out of another case', async () => {
+    const { app, owner, id, caseId, taskId } = await approved();
+    const other = await createCase(owner);
+    const stranger = await guardian(app, other.inviteToken);
+    await stranger.post(logUrl(caseId)).set('Origin', origin).send({ consultationId: id, taskId, status: 'done' }).expect(403);
+    await stranger.get(logUrl(caseId)).expect(403);
+    await stranger.post(logUrl(other.case.id)).set('Origin', origin).send({ consultationId: id, taskId, status: 'done' }).expect(404);
+    await stranger.get(`/api/coaching/cases/${caseId}/guardian-logs`).expect(403);
+  });
+  it('turns a guardian log into a draft to confirm, then saves it', async () => {
+    const { owner, member, caseId } = await approved();
+    const url = `/api/coaching/cases/${caseId}/guardian-logs`;
+    await owner.post(`${url}/draft`).set('Origin', origin).send({ text: '산책했어요', sourceKind: 'nl_log_text' }).expect(403);
+    const draft = (await member.post(`${url}/draft`).set('Origin', origin).send({ text: '오늘 초인종에 두 번 짖었어요', sourceKind: 'nl_log_text' }).expect(200)).body;
+    expect(draft.pets).toEqual([{ id: caseId, name: '초코', nicknames: [] }]);
+    expect(draft.events[0]).toMatchObject({ petId: caseId, sourceQuote: '오늘 초인종에 두 번 짖었어요' });
+    expect((await member.get(url).expect(200)).body.logs).toEqual([]);
+    const saved = await member.post(url).set('Origin', origin).send({ draft }).expect(201);
+    expect(saved.body.draft.sourceText).toBe('오늘 초인종에 두 번 짖었어요');
+    expect((await owner.get(url).expect(200)).body.logs).toHaveLength(1);
+    await owner.post(url).set('Origin', origin).send({ draft }).expect(403);
+    await member.post(url).set('Origin', origin).send({ draft: { ...draft, sourceText: '' } }).expect(400);
+    await member.post(url).set('Origin', origin).send({ draft: { ...draft, pets: [{ id: 'other', name: '다른 개', nicknames: [] }], events: draft.events.map((event: object) => ({ ...event, petId: 'other' })) } }).expect(400);
+    await member.post(`${url}/draft`).set('Origin', origin).send({ text: '' }).expect(400);
+  });
+  it('dictates for the guardian without keeping audio', async () => {
+    const { owner, member, caseId } = await approved();
+    const url = `/api/coaching/cases/${caseId}/voice`;
+    const spoken = await member.put(url).set('Origin', origin).set('Content-Type', 'audio/wav').send(speakingWav(1000)).expect(200);
+    expect(spoken.body.text).toBeTruthy();
+    const quiet = await member.put(url).set('Origin', origin).set('Content-Type', 'audio/wav').send(Buffer.from(encodeWav(new Float32Array(16000)))).expect(200);
+    expect(quiet.body.text).toBe('');
+    await member.put(url).set('Origin', origin).set('Content-Type', 'audio/wav').send(Buffer.from('nope')).expect(400);
+    await owner.put(url).set('Origin', origin).set('Content-Type', 'audio/wav').send(speakingWav(1000)).expect(403);
+  });
+  it('shows the trainer the next brief with the last tasks and their records, and shows the guardian nothing', async () => {
+    const { owner, member, id, caseId, taskId } = await approved();
+    const url = `/api/coaching/cases/${caseId}/brief`;
+    await member.get(url).expect(403);
+    const empty = (await owner.get(url).expect(200)).body;
+    expect(empty.consultationId).toBe(id);
+    expect(empty.brief.previousTasks[0].text).toContain('수행 여부 미확인');
+    await member.post(logUrl(caseId)).set('Origin', origin).send({ consultationId: id, taskId, status: 'done', text: '소리를 줄이니 매트로 갔어요' }).expect(201);
+    const draft = (await member.post(`/api/coaching/cases/${caseId}/guardian-logs/draft`).set('Origin', origin).send({ text: '오늘 초인종에 짖었어요', sourceKind: 'nl_log_text' }).expect(200)).body;
+    draft.events[0].occurredAt = new Date(Date.now() - 60000).toISOString(); draft.events[0].edited = true;
+    await member.post(`/api/coaching/cases/${caseId}/guardian-logs`).set('Origin', origin).send({ draft }).expect(201);
+    const { brief } = (await owner.get(url).expect(200)).body;
+    expect(brief.previousTasks[0].text).toContain('완료 1회');
+    expect(brief.sources.some((source: { kind: string; sourceQuote: string }) => source.kind === 'task_log' && source.sourceQuote === '소리를 줄이니 매트로 갔어요')).toBe(true);
+    expect(brief.sources.some((source: { kind: string; sourceQuote: string }) => source.kind === 'owner' && source.sourceQuote === '오늘 초인종에 짖었어요')).toBe(true);
+    expect(brief.sources.find((source: { kind: string; category?: string }) => source.category === 'task').evidence[0].quote).toBeTruthy();
+    expect(brief.summary).toHaveLength(3);
+  });
+  it('still gives a brief before the first confirmed consultation, and says what is missing', async () => {
+    const { owner, caseId } = await delivered();
+    const { brief, consultationId } = (await owner.get(`/api/coaching/cases/${caseId}/brief`).expect(200)).body;
+    expect(consultationId).toBeNull();
+    expect(brief.previousTasks).toEqual([]);
+    expect(brief.dataGaps.join()).toContain('확정 상담일지');
+  });
+});
+
+describe('deleting a case', () => {
+  it('lets only the trainer delete, ends the guardian session, and removes the records', async () => {
+    const app = setup(); const owner = await trainer(app);
+    const created = await createCase(owner);
+    const member = await guardian(app, created.inviteToken);
+    const url = `/api/coaching/cases/${created.case.id}`;
+    await member.delete(url).set('Origin', origin).expect(403);
+    await owner.delete(url).set('Origin', origin).expect(204);
+    await owner.get(url).expect(404);
+    await member.get('/api/coaching/me').expect(401);
+  });
+  it('requires the app origin', async () => {
+    const app = setup(); const owner = await trainer(app);
+    const created = await createCase(owner);
+    await owner.delete(`/api/coaching/cases/${created.case.id}`).expect(403);
+  });
+});
+
+describe('guardian input limits', () => {
+  async function guardianOfCase() {
+    const app = setup(); const owner = await trainer(app);
+    const created = await createCase(owner);
+    return { caseId: created.case.id, member: await guardian(app, created.inviteToken) };
+  }
+  const draftFor = async (member: ReturnType<typeof request.agent>, caseId: string, text = '오늘 초인종에 짖었어요') => (await member.post(`/api/coaching/cases/${caseId}/guardian-logs/draft`).set('Origin', origin).send({ text, sourceKind: 'nl_log_text' }).expect(200)).body;
+  it('assigns event ids itself, so a crafted or repeated id cannot break the brief', async () => {
+    const { caseId, member } = await guardianOfCase();
+    const url = `/api/coaching/cases/${caseId}/guardian-logs`;
+    const first = await draftFor(member, caseId);
+    first.events[0].id = 'record-days';
+    const saved = (await member.post(url).set('Origin', origin).send({ draft: first }).expect(201)).body;
+    expect(saved.draft.events[0].id).not.toBe('record-days');
+    const second = await draftFor(member, caseId, '어제도 초인종에 짖었어요');
+    second.events[0].id = saved.draft.events[0].id;
+    await member.post(url).set('Origin', origin).send({ draft: second }).expect(201);
+    const ids = (await member.get(url).expect(200)).body.logs.flatMap((log: { draft: { events: { id: string }[] } }) => log.draft.events.map(event => event.id));
+    expect(new Set(ids).size).toBe(2);
+  });
+  it('treats a retried save as the same log', async () => {
+    const { caseId, member } = await guardianOfCase();
+    const url = `/api/coaching/cases/${caseId}/guardian-logs`;
+    const draft = await draftFor(member, caseId);
+    const first = (await member.post(url).set('Origin', origin).send({ draft }).expect(201)).body;
+    const again = (await member.post(url).set('Origin', origin).send({ draft }).expect(201)).body;
+    expect(again.id).toBe(first.id);
+    expect((await member.get(url).expect(200)).body.logs).toHaveLength(1);
+  });
+  it('refuses an oversized log', async () => {
+    const { caseId, member } = await guardianOfCase();
+    const draft = await draftFor(member, caseId);
+    draft.clarification = 'x'.repeat(200 * 1024);
+    await member.post(`/api/coaching/cases/${caseId}/guardian-logs`).set('Origin', origin).send({ draft }).expect(400);
+  });
+  it('slows down a guardian who keeps asking for drafts', async () => {
+    const { caseId, member } = await guardianOfCase();
+    const codes: number[] = [];
+    for (let index = 0; index < 12; index++) codes.push((await member.post(`/api/coaching/cases/${caseId}/guardian-logs/draft`).set('Origin', origin).send({ text: '기록' })).status);
+    expect(codes.slice(0, 10).every(code => code === 200)).toBe(true);
+    expect(codes.at(-1)).toBe(429);
   });
 });

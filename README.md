@@ -11,7 +11,7 @@
 ![React](https://img.shields.io/badge/React-19-405438?style=flat-square)
 ![Local AI](https://img.shields.io/badge/llama.cpp_%2B_Qwen3--ASR-Local_AI-405438?style=flat-square)
 
-[공개 체험판](https://joon56.github.io/Hanggo-LLM/) · [빠른 시작](#빠른-시작) · [브리핑 시연](docs/testing/consultation-brief.md) · [화상 코칭 시연](docs/testing/two-way-coaching.md) · [기존 기능 시연](docs/testing/beta-test-script.md)
+[자동 시연 영상](https://joon56.github.io/Hanggo-LLM/demo/) · [공개 체험판](https://joon56.github.io/Hanggo-LLM/) · [빠른 시작](#빠른-시작) · [브리핑 시연](docs/testing/consultation-brief.md) · [화상 코칭 시연](docs/testing/two-way-coaching.md) · [기존 기능 시연](docs/testing/beta-test-script.md)
 
 </div>
 
@@ -21,11 +21,11 @@
 
 보호자와 훈련사가 각자 기기에서 링크로 접속해 화상 코칭을 합니다. 기록 초안은 이 PC의 llama.cpp `Gemma 4 12B`로 만들고, 음성은 `Qwen3-ASR`로 전사합니다. 초안은 원문 근거와 함께 사람이 검토합니다.
 
-통화와 AI 기록을 잇는 작업은 진행 중입니다. 지금은 통화와 동의 표시까지 동작하고, 자막과 일지는 다음 단계에서 연결합니다. [설계](docs/superpowers/specs/2026-11-03-two-way-coaching-design.md) · [검증 결과](docs/llm/two-way-step-1.md) · [모델 선정](docs/llm/model-selection-2026-11.md)
+상담이 끝나면 전사와 장면으로 근거 달린 일지 초안을 만들고, 훈련사가 확정한 내용만 보호자에게 갑니다. 보호자의 과제 기록은 다음 상담 브리핑으로 이어집니다. [자동 시연 영상](https://joon56.github.io/Hanggo-LLM/demo/)에서 두 사람의 화면을 나란히 볼 수 있습니다. 합성 입력으로 흐름을 보여 주는 영상입니다. [설계](docs/superpowers/specs/2026-11-03-two-way-coaching-design.md) · [점수판](docs/llm/scoreboard.md)
 
 | 기능 | 흐름 |
 |---|---|
-| **쌍방향 화상 코칭** | 훈련사가 사례 생성 → 보호자 초대 링크 → 각자 기기로 입장 → 영상·음성·바탕화면 공유 → 양쪽 동의 후 화자별 자막과 캐치 장면 저장 |
+| **쌍방향 화상 코칭** | 사례 생성 → 초대 링크 → 각자 기기로 입장 → 영상·음성·바탕화면 공유 → 양쪽 동의 후 화자별 자막과 캐치 → 근거 달린 일지 초안 → 훈련사 확정 → 보호자 전달 → 과제 기록 → 다음 상담 브리핑 |
 | 상담일지 | 3~60초 음성 또는 8,000자 이하 텍스트 → 원문·분류·숫자 확인 → 승인·저장 |
 | 보호자 일상 기록 | 반려동물 등록 → 음성 또는 텍스트 → 사건별 반려동물·시각·근거 확인 → 저장 |
 | 상담 전 브리핑 | 보호자 기록 + 직접 선택한 확정 상담일지 → 핵심 3줄·구체적인 확인 질문·날짜와 원문 근거·자료 부족 표시 |
@@ -41,11 +41,13 @@
 
 ### 화상 코칭의 흐름
 
-**입장 → 양쪽 동의 → 화자별 자막·캐치 → 종료 → 전사 정리**
+**입장 → 양쪽 동의 → 화자별 자막·캐치 → 종료 → 장면 관찰·일지 초안 → 훈련사 검토·확정 → 보호자 전달 → 과제 기록 → 다음 브리핑**
 
 각 브라우저가 자기 마이크만 침묵 기준으로 잘라 서버로 보내므로 화자는 업로드한 사람으로 정해집니다. 캐치를 누르면 양쪽 브라우저가 버튼 약 5초 전부터 2초 후까지의 사진을 올립니다. 공유 화면과 훈련사 카메라는 캐치할 때만 저장합니다. 어느 쪽이든 동의를 철회하면 아직 보내지 않은 음성과 사진을 버립니다.
 
-[사람 시연 대본](docs/testing/two-way-coaching.md) · [2단계 검증 결과](docs/llm/two-way-step-2.md) · [무료 음성 모델 비교 결과](docs/llm/speech-comparison.md)
+일지의 문장은 LLM이 쓰지만 인용과 시각은 코드가 원문에서 채웁니다. 근거에 없는 숫자와 이름, 훈련사가 말하지 않은 과제, 금지 표현은 재생성 후에도 남으면 빼고 경고로 남깁니다. 안전 신호는 규칙과 LLM 중 하나만 잡아도 표시합니다. 보호자에게는 확정본만 가고 초안, 메모, 체벌 언급, 인용하지 않은 사진은 가지 않습니다.
+
+[사람 시연 대본](docs/testing/two-way-coaching.md) · [전사 검증](docs/llm/two-way-step-2.md) · [일지 검증](docs/llm/two-way-step-3.md) · [순환 검증](docs/llm/two-way-step-4.md) · [자동 시연 검증](docs/llm/two-way-step-5.md) · [무료 음성 모델 비교 결과](docs/llm/speech-comparison.md)
 
 <details>
 <summary><strong>모바일 검토 화면 보기</strong></summary>

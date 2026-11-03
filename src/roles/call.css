@@ -18,6 +18,10 @@
 .coach-invite { display: grid; gap: 8px; border-top: 1px solid var(--line); padding-top: 12px; }
 .coach-check.coach-check { display: flex; gap: 8px; align-items: flex-start; font-weight: 400; font-size: 13px; line-height: 1.5; }
 .coach-check input { margin-top: 3px; flex-shrink: 0; }
+.coach-history { display: grid; gap: 6px; list-style: none; padding: 10px 0 0; margin: 0; border-top: 1px solid var(--line); font-size: 13px; }
+.coach-history li { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.call-link.coach-link { color: var(--ink); margin-left: auto; }
+.call-link.coach-delete { color: var(--muted); justify-self: end; font-size: 12px; }
 .prejoin-preview { width: 100%; aspect-ratio: 16 / 9; object-fit: cover; background: #1c1f1c; border-radius: 10px; }
 
 .call-room { position: fixed; inset: 0; display: flex; flex-direction: column; background: #171a17; color: #f3f4f0; }
@@ -27,6 +31,7 @@
 .call-link { color: #cfd8c4; font-size: 12px; text-decoration: underline; padding: 2px 4px; }
 .call-status { padding: 6px 14px; font-size: 13px; background: rgba(255, 255, 255, .08); }
 .call-status.is-error { background: #7a2b20; }
+.call-brief { position: absolute; z-index: 2; top: 44px; right: 10px; bottom: 80px; width: min(440px, calc(100vw - 20px)); overflow: auto; padding: 14px; border-radius: 12px; background: #fff; color: var(--ink); box-shadow: 0 8px 28px rgba(0, 0, 0, .35); }
 .call-stage { flex: 1; position: relative; min-height: 0; padding: 0 10px; display: grid; grid-template-columns: minmax(0, 1fr) 200px; grid-auto-rows: minmax(0, 1fr); gap: 8px; }
 .call-tile { position: relative; margin: 0; min-height: 0; min-width: 0; border-radius: 10px; overflow: hidden; background: #0e100e; aspect-ratio: 16 / 9; }
 .call-tile.is-main { grid-column: 1; grid-row: 1 / span 4; aspect-ratio: auto; }
@@ -39,6 +44,12 @@
 .call-moment { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; padding: 6px 14px; font-size: 13px; background: rgba(255, 255, 255, .08); }
 .call-moment form { display: flex; flex: 1; min-width: 240px; align-items: center; gap: 6px; }
 .call-moment input { flex: 1; min-width: 0; min-height: 32px; padding: 0 10px; border: 0; border-radius: 8px; background: rgba(255, 255, 255, .92); color: var(--ink); font-size: 13px; }
+.call-checklist { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; padding: 0 14px 8px; font-size: 12px; }
+.call-checklist ul { display: flex; flex-wrap: wrap; gap: 6px; margin: 0; padding: 0; list-style: none; }
+.call-checklist li { padding: 2px 8px; border: 1px solid rgba(255, 255, 255, .35); border-radius: 999px; }
+.call-checklist li[data-covered="true"] { border-color: transparent; background: rgba(255, 255, 255, .1); color: #a9afa2; }
+.call-checklist li[data-covered="true"]::before { content: '✓ '; }
+.call-checklist p { margin: 0; color: #f0c98a; }
 .call-captions { padding: 8px 14px 0; display: grid; gap: 2px; font-size: 14px; line-height: 1.45; }
 .call-captions strong { color: #cfd8c4; font-weight: 600; margin-right: 4px; }
 .call-captions p[data-speaker="trainer"] strong { color: #f0c98a; }
@@ -50,6 +61,12 @@
 .call-control:disabled { opacity: .45; }
 .call-control.is-catch { width: auto; display: flex; align-items: center; gap: 6px; padding: 0 16px; border-radius: 24px; font-size: 14px; font-weight: 600; }
 .call-control.is-end { background: #b23a28; }
+
+@media (max-width: 480px) {
+  .call-controls { gap: 6px; padding-left: 8px; padding-right: 8px; }
+  .call-control { width: 44px; height: 44px; }
+  .call-control.is-catch { padding: 0 12px; }
+}
 
 @media (max-width: 720px) {
   .call-stage { grid-template-columns: repeat(3, minmax(0, 1fr)); grid-template-rows: minmax(0, 1fr) auto; }

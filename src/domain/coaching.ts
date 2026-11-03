@@ -1,3 +1,5 @@
+import type { CoachingNote, Scene } from './coaching-note.ts';
+
 export type Speaker = 'guardian' | 'trainer';
 export type CoachingCase = {
   id: string; petName: string; guardianName: string; trainerName: string; createdAt: string; inviteHash: string; inviteExpiresAt: string;
@@ -24,14 +26,19 @@ export type Consultation = {
   startedAt?: number; endedAt?: number; recordingStartedAt?: number;
   recordingGaps: RecordingGap[]; errors: { code: string; message: string }[];
   segments: Segment[]; moments: Moment[]; frames: FrameRef[];
+  scenes: Scene[]; note?: CoachingNote;
+  /** A draft is being generated, so the review screen waits instead of offering stale text. */
+  noteGenerating?: boolean;
 };
 export const captionOf = ({ id, speaker, startMs, endMs, text, state, echoSuspect }: Segment): Caption => ({ id, speaker, startMs, endMs, text, state, echoSuspect });
+export type TaskLogStatus = 'done' | 'partial' | 'skipped';
+export type TaskLog = { id: string; caseId: string; consultationId: string; taskId: string; at: string; status: TaskLogStatus; text?: string };
 export type ConsultationEvent = 'start' | 'end' | 'processed' | 'approve' | 'interrupt';
 
 export class TransitionError extends Error {}
 
 export function newConsultation(input: { id: string; caseId: string; createdAt: string }): Consultation {
-  return { ...input, state: 'scheduled', recording: false, consent: { guardian: false, trainer: false }, recordingGaps: [], errors: [], segments: [], moments: [], frames: [] };
+  return { ...input, state: 'scheduled', recording: false, consent: { guardian: false, trainer: false }, recordingGaps: [], errors: [], segments: [], moments: [], frames: [], scenes: [] };
 }
 
 const nextState: Partial<Record<ConsultationState, Partial<Record<ConsultationEvent, ConsultationState>>>> = {

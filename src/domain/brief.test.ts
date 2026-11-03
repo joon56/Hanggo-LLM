@@ -125,3 +125,36 @@ it('discloses clipping when legacy original quote exceeds limit despite short ed
   expect(draft.sources?.[0].truncated).toBe(true);
   expect(draft.dataGaps.join(' ')).toContain('긴 원문은 최대 400자 발췌');
 });
+
+describe('brief with task records', () => {
+  const context = { id: 'c1', date: '2026-09-20', petName: '초코', trainerName: '김', revision: 'r1', approvedAt: '2026-09-20T10:00:00Z', omittedItems: 0,
+    items: [{ id: 'task-1', text: '매트 연습 (담당 보호자)', category: 'task', evidence: [{ kind: 'segment' as const, quote: '매트 연습을 해 주세요', startMs: 61000, endMs: 64000 }] }] };
+  const log = (id: string, at: string, status: 'done' | 'partial' | 'skipped', text?: string) => ({ id, taskId: 'task-1', at, status, ...(text ? { text } : {}) });
+  it('keeps saying unknown when nobody recorded anything', () => {
+    const draft = computeBrief(briefInput(), context);
+    expect(draft.previousTasks[0].text).toContain('수행 여부 미확인');
+    expect(draft.questionsForOwner.some(question => question.text.includes('수행 여부는 미확인'))).toBe(true);
+  });
+  it('shows the task with counted records and links each record as evidence', () => {
+    const draft = computeBrief(briefInput(), context, [log('l1', '2026-09-25T01:00:00Z', 'done', '소리를 줄이니 매트로 갔어요'), log('l2', '2026-09-26T01:00:00Z', 'partial'), log('l3', '2026-09-27T01:00:00Z', 'done')]);
+    const [task] = draft.previousTasks;
+    expect(task.text).toContain('매트 연습');
+    expect(task.text).toContain('완료 2회');
+    expect(task.text).toContain('일부 1회');
+    expect(task.text).toContain('못 함 0회');
+    const sources = draft.sources!.filter(source => task.refs.some(ref => draft.facts.find(fact => fact.id === ref)?.refs.includes(source.id)));
+    expect(sources.map(source => source.kind).sort()).toEqual(['consultation', 'task_log', 'task_log', 'task_log']);
+    expect(sources.find(source => source.id === 'task-log:l1')).toMatchObject({ date: '2026-09-25', sourceQuote: '소리를 줄이니 매트로 갔어요' });
+    expect(sources.find(source => source.kind === 'consultation')?.evidence?.[0]).toMatchObject({ quote: '매트 연습을 해 주세요', startMs: 61000 });
+  });
+  it('asks about what the records leave out rather than whether the task was tried', () => {
+    const draft = computeBrief(briefInput(), context, [log('l1', '2026-09-25T01:00:00Z', 'skipped', '바빠서 못 했어요')]);
+    const question = draft.questionsForOwner.find(item => item.text.includes('매트 연습'));
+    expect(question?.text).toContain('수행 기록');
+    expect(question?.text).not.toContain('수행 여부는 미확인');
+  });
+  it('does not count records of another task', () => {
+    const draft = computeBrief(briefInput(), context, [{ ...log('l1', '2026-09-25T01:00:00Z', 'done'), taskId: 'other' }]);
+    expect(draft.previousTasks[0].text).toContain('수행 여부 미확인');
+  });
+});

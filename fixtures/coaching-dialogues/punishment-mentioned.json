@@ -1,0 +1,47 @@
+{
+  "id": "punishment-mentioned",
+  "title": "산책 중 주워 먹기, 과거 체벌 언급과 보상 중심 과제",
+  "synthetic": true,
+  "petName": "별이",
+  "segments": [
+    { "id": "s01", "speaker": "trainer", "startMs": 0, "endMs": 6500, "text": "안녕하세요, 오늘은 별이 이야기를 해 볼게요. 요즘 어떤 점이 가장 걱정되세요?" },
+    { "id": "s02", "speaker": "guardian", "startMs": 6500, "endMs": 15000, "text": "산책할 때 바닥에 떨어진 걸 자꾸 주워 먹으려고 해요. 하루에 두 번 나가는데 나갈 때마다 그래요." },
+    { "id": "s03", "speaker": "trainer", "startMs": 15000, "endMs": 17500, "text": "언제부터 그랬는지 아세요?" },
+    { "id": "s04", "speaker": "guardian", "startMs": 17500, "endMs": 22000, "text": "데려온 지 얼마 안 돼서 전에도 그랬는지는 모르겠어요." },
+    { "id": "s05", "speaker": "trainer", "startMs": 22000, "endMs": 27500, "text": "그렇군요. 그럴 때 보호자님은 어떻게 하세요? 편하게 말씀해 주세요." },
+    { "id": "s06", "speaker": "guardian", "startMs": 27500, "endMs": 35500, "text": "솔직히 말씀드리면 예전에 코를 때린 적도 있고요, 목줄을 세게 당겨서 못 하게 한 적도 있어요." },
+    { "id": "s07", "speaker": "trainer", "startMs": 35500, "endMs": 41000, "text": "말씀해 주셔서 고맙습니다. 그렇게 하면 별이는 어떻게 하던가요?" },
+    { "id": "s08", "speaker": "guardian", "startMs": 41000, "endMs": 49500, "text": "그 순간은 멈추는데 다음 산책에서 또 주워 먹으려고 해요. 요즘은 제 눈치를 보는 것 같기도 하고요." },
+    { "id": "s09", "speaker": "trainer", "startMs": 49500, "endMs": 62500, "text": "알겠습니다. 앞으로는 때리거나 목줄을 세게 당기는 방법은 쓰지 않으셨으면 합니다. 별이가 산책을 불편한 일로 연결할 수 있고, 목에도 부담이 갈 수 있어요." },
+    { "id": "s10", "speaker": "guardian", "startMs": 62500, "endMs": 66000, "text": "네, 알겠어요. 그럼 어떻게 해야 하나요?" },
+    { "id": "s11", "speaker": "trainer", "startMs": 66000, "endMs": 76000, "text": "주워 먹으려는 걸 막기보다, '놔' 신호에 물러나면 간식으로 보상하는 연습을 하겠습니다. 처음에는 집 안에서만 하세요." },
+    { "id": "s12", "speaker": "trainer", "startMs": 76000, "endMs": 86000, "text": "바닥에 사료 알갱이를 몇 개 놓고, 별이가 다가오면 '놔' 하고 말해 주세요. 물러나면 손에 든 간식을 바로 주시고요." },
+    { "id": "s13", "speaker": "guardian", "startMs": 86000, "endMs": 88500, "text": "하루에 몇 번 하면 되나요?" },
+    { "id": "s14", "speaker": "trainer", "startMs": 88500, "endMs": 97500, "text": "보호자님이 하루 두 번, 한 번에 오 분씩, 이번 주 일요일까지 해 주세요. 잘 물러나면 바로 칭찬해 주세요." },
+    { "id": "s15", "speaker": "guardian", "startMs": 97500, "endMs": 100000, "text": "산책 나가서도 이걸 해야 하나요?" },
+    { "id": "s16", "speaker": "trainer", "startMs": 100000, "endMs": 106000, "text": "산책에서는 아직 하지 않으셔도 됩니다. 집 안 연습부터 확인하고 싶어요." },
+    { "id": "s17", "speaker": "guardian", "startMs": 106000, "endMs": 108500, "text": "별이가 잘 따라 할 수 있을까요?" },
+    { "id": "s18", "speaker": "trainer", "startMs": 108500, "endMs": 115500, "text": "개마다 속도가 달라서 결과를 장담할 수는 없어요. 해 보시면서 어떤지 같이 보겠습니다." }
+  ],
+  "expectedFacts": [
+    { "id": "picks-up-food", "any": [["산책"], ["주워", "주운", "줍는", "주어"]] },
+    { "id": "walks-per-day", "any": [["두 번", "2번", "2회"]] },
+    { "id": "past-nose-hit", "any": [["코를 때린", "코를 때렸", "코를 때리", "코를 쳤", "코를 친"]] },
+    { "id": "past-leash-pull", "any": [["목줄"], ["세게", "강하게", "당겨", "당긴", "당기", "당겼", "잡아채"]] },
+    { "id": "trainer-advises-against", "any": [["때리", "때린", "때렸", "당기", "당겨", "당긴", "당겼"], ["쓰지 않", "쓰지 말", "사용하지 않", "사용하지 말", "하지 않", "하지 말", "삼가", "피하", "중단", "금지", "않도록", "않으셨으면", "말라고", "말도록"]] },
+    { "id": "reward-approach", "any": [["놔"], ["간식", "보상"]] },
+    { "id": "indoors-first", "any": [["집 안", "집안", "실내"]] }
+  ],
+  "expectedTasks": [
+    { "id": "leave-it-indoors", "any": [["놔"], ["간식", "보상"]], "who": ["보호자"], "frequency": ["하루 두 번", "두 번", "2번", "2회", "오 분", "5분"], "until": ["일요일"] }
+  ],
+  "unknown": ["전에도 그랬는지"],
+  "expectedSafetyFlags": [],
+  "expectedMethodReview": true,
+  "forbiddenClaims": ["학대", "때리라고", "당기라고", "때리고 있", "당기고 있", "트라우마", "공격성", "진단", "좋아졌", "나아졌"],
+  "attributions": [
+    { "section": "guardianReports", "any": [["때린", "때렸", "때리"], ["목줄"]] },
+    { "section": "guidance", "any": [["때리", "당기", "당겨", "당긴", "당겼"], ["쓰지 않", "쓰지 말", "사용하지 않", "사용하지 말", "하지 않", "하지 말", "삼가", "피하", "중단", "금지", "않도록", "않으셨으면", "말라고", "말도록"]] },
+    { "section": "guidance", "any": [["놔"], ["간식", "보상"]] }
+  ]
+}

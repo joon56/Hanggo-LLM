@@ -1,10 +1,11 @@
 // @vitest-environment node
 import { mkdtempSync, rmSync } from 'node:fs';
 import { createServer, type Server } from 'node:http';
+import { connect as netConnect } from 'node:net';
 import type { AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { afterEach, beforeEach, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { WebSocket } from 'ws';
 import { createGuardianSessions } from './guardian-session.ts';
 import { createActorResolver, GUARDIAN_COOKIE } from './router.ts';
@@ -206,4 +207,31 @@ it('tells participants when the recording clock started', async () => {
   await store.updateConsultation(consultationId, current => ({ ...current, recording: true, recordingStartedAt: 1234 }));
   const trainer = await connect(trainerCookie);
   await expect(trainer.next('state')).resolves.toMatchObject({ recording: true, recordingStartedAt: 1234 });
+});
+
+describe('malformed upgrades from anyone', () => {
+  const raw = (target: string) => new Promise<void>((resolve, reject) => {
+    const socket = netConnect(port, '127.0.0.1', () => socket.write(`GET ${target} HTTP/1.1\r\nHost: x\r\nConnection: Upgrade\r\nUpgrade: websocket\r\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\nSec-WebSocket-Version: 13\r\n\r\n`));
+    socket.on('data', () => socket.destroy());
+    socket.on('close', () => resolve());
+    socket.on('error', reject);
+  });
+  it('survives a path that cannot be parsed as a URL', async () => {
+    await raw('//');
+    await raw('http://');
+    const trainer = await connect(trainerCookie);
+    await expect(trainer.next('hello')).resolves.toMatchObject({ role: 'trainer' });
+  });
+  it('survives a client that resets right after being refused', async () => {
+    await new Promise<void>(resolve => {
+      const socket = netConnect(port, '127.0.0.1', () => {
+        socket.write('GET /api/coaching/consultations/x/signal?call=1 HTTP/1.1\r\nHost: x\r\nConnection: Upgrade\r\nUpgrade: websocket\r\n\r\n');
+        socket.resetAndDestroy();
+        resolve();
+      });
+    });
+    await new Promise(wait => setTimeout(wait, 100));
+    const trainer = await connect(trainerCookie);
+    await expect(trainer.next('hello')).resolves.toMatchObject({ role: 'trainer' });
+  });
 });

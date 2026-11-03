@@ -2,21 +2,26 @@ import { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { expect, type Page } from '@playwright/test';
+import { aggregateScores, scoreDelivered, type GoldenDialogue } from '../scripts/note-metrics.ts';
 import { characterErrorRate } from '../scripts/speech-metrics.ts';
-import { loadLocalEnv } from '../server/config.ts';
+import { loadLocalEnv, readConfig } from '../server/config.ts';
 import type { Consultation, Segment, Speaker } from '../src/domain/coaching.ts';
-import { createCaseAsTrainer, enterAsGuardian, enterAsTrainer, joinAsGuardian, launch, room, startServer } from './helpers/two-way.ts';
+import { termRecall } from '../src/domain/speech-terms.ts';
+import { createCaseAsTrainer, enterAsGuardian, enterAsTrainer, ensureMedia, joinAsGuardian, launch, room, startServer } from './helpers/two-way.ts';
 
-// Usage: npm run verify:real-speech -- [dialogue,...]
-// Plays a synthetic Korean dialogue through two fake microphones into the real server and the real speech model.
-// This PC only. Windows voice Heami reads the lines, so the result does not stand for real human conversation.
+// Usage: node e2e/verify-real-speech.ts [--note] [--human <clips>] [dialogue,...]
+// Plays speech through two fake microphones into the real server and the real speech model.
+// Default voices are Windows Heami reading golden dialogues, so this PC only, and not real conversation.
+// --human uses read speech from zeroth_korean (scripts/fetch-speech-eval.ts), alternating speakers. Real voices, unrelated topics.
+// --note also runs the real LLM on the result, with a real dog video as the guardian's camera.
 const WORK = path.resolve('.tmp/real-speech');
 const LEAD_IN_MS = 30000;
 const GAP_MS = 500;
 const TAIL_MS = 20000;
 const SAMPLE_RATE = 48000;
-type Line = { id: string; speaker: Speaker; text: string };
-type Dialogue = { id: string; petName: string; segments: Line[] };
+const ORGANIZE_TIMEOUT_MS = 90 * 60 * 1000;
+type Line = { id: string; speaker: Speaker; text: string; file?: string };
+type Dialogue = Partial<GoldenDialogue> & { id: string; petName: string; segments: Line[] };
 
 function synthesize(lines: Line[], folder: string) {
   mkdirSync(folder, { recursive: true });
@@ -44,7 +49,7 @@ function pcmOf(file: string) {
 /** One track per microphone. Each person's lines sit where they fall in the conversation, with silence while the other speaks. */
 function buildTracks(dialogue: Dialogue, folder: string) {
   const perMs = SAMPLE_RATE / 1000;
-  const lines = dialogue.segments.map(line => ({ ...line, pcm: pcmOf(path.join(folder, `${line.id}.wav`)) }));
+  const lines = dialogue.segments.map(line => ({ ...line, pcm: pcmOf(line.file ?? path.join(folder, `${line.id}.wav`)) }));
   const length = LEAD_IN_MS * perMs + lines.reduce((sum, line) => sum + line.pcm.length + GAP_MS * perMs, 0);
   const tracks: Record<Speaker, Int16Array> = { guardian: new Int16Array(length), trainer: new Int16Array(length) };
   let at = LEAD_IN_MS * perMs;
@@ -72,16 +77,22 @@ const watchLatency = (page: Page) => page.evaluate(() => {
 });
 const readLatency = (page: Page) => page.evaluate(() => (window as unknown as { captionDelays: number[] }).captionDelays);
 
-async function verify(name: string) {
-  const dialogue = JSON.parse(readFileSync(`fixtures/coaching-dialogues/${name}.json`, 'utf8')) as Dialogue;
-  const folder = path.join(WORK, name);
-  synthesize(dialogue.segments, folder);
+function dogVideo() {
+  const file = path.join(WORK, 'dog.y4m');
+  if (!existsSync(file)) execFileSync('ffmpeg', ['-v', 'error', '-nostdin', '-y', '-i', 'fixtures/demo/dog.webm', '-vf', 'scale=640:360,fps=15', '-pix_fmt', 'yuv420p', file], { windowsHide: true });
+  return file;
+}
+
+async function verify(dialogue: Dialogue, withNote: boolean) {
+  const folder = path.join(WORK, dialogue.id);
+  mkdirSync(folder, { recursive: true });
+  if (dialogue.segments.some(line => !line.file)) synthesize(dialogue.segments, folder);
   const { files, durationMs } = buildTracks(dialogue, folder);
   const server = await startServer(3390, { speech: 'real' });
   const uploadsBeforeConsent = { count: 0 };
   // %noloop plays the dialogue once. It starts when the microphone opens, so the lead-in covers joining the call.
   const trainer = await launch('trainer', { audioFile: `${files.trainer}%noloop` });
-  const guardian = await launch('guardian', { audioFile: `${files.guardian}%noloop` });
+  const guardian = await launch('guardian', { audioFile: `${files.guardian}%noloop`, ...(withNote ? { videoFile: dogVideo() } : {}) });
   try {
     const started = Date.now();
     const invite = await createCaseAsTrainer(trainer.page, server.origin, dialogue.petName);
@@ -101,17 +112,17 @@ async function verify(name: string) {
     if (joinedAfterMs > LEAD_IN_MS - 3000) throw new Error(`Joining took ${joinedAfterMs}ms, longer than the lead-in. Raise LEAD_IN_MS.`);
     await watchLatency(trainer.page); await watchLatency(guardian.page);
     const prepareStarted = Date.now();
-    await expect(room(trainer.page)).toHaveAttribute('data-speech-status', 'ready', { timeout: 120_000 });
+    await expect(room(trainer.page)).toHaveAttribute('data-speech-status', 'ready', { timeout: 600_000 });
     const preparationMs = Date.now() - prepareStarted;
-    const gpu = execFileSync('nvidia-smi', ['--query-gpu=name,memory.used', '--format=csv,noheader,nounits'], { encoding: 'utf8', windowsHide: true }).trim();
-
     // Catch once the conversation has been running, so the scenes before the press exist.
     await trainer.page.waitForTimeout(Math.max(0, LEAD_IN_MS + 20000 - (Date.now() - started)));
     await guardian.page.getByRole('button', { name: '캐치' }).click();
     await trainer.page.waitForTimeout(Math.max(0, durationMs + TAIL_MS - (Date.now() - started)));
     const delays = { trainer: await readLatency(trainer.page), guardian: await readLatency(guardian.page) };
     await trainer.page.getByRole('button', { name: '상담 종료' }).click();
-    await expect.poll(async () => (await read()).state, { timeout: 120_000 }).toBe('review');
+    const endedAt = Date.now();
+    await expect.poll(async () => (await read()).state, { timeout: ORGANIZE_TIMEOUT_MS, intervals: [2000] }).toBe('review');
+    const organizeMs = Date.now() - endedAt;
     const finished = await read();
 
     const reference = (speaker: Speaker) => dialogue.segments.filter(line => line.speaker === speaker).map(line => line.text).join(' ');
@@ -122,16 +133,26 @@ async function verify(name: string) {
     const windowMs = (item: Segment) => item.endMs - item.startMs;
     const [moment] = finished.moments;
     const momentFrames = finished.frames.filter(frame => moment?.frameIds.includes(frame.id));
+    const labelled = dialogue.expectedFacts && finished.note;
     return {
-      dialogue: name, audioSeconds: Math.round((durationMs - LEAD_IN_MS) / 1000), preparationMs, gpuAfterPrepare: gpu, uploadsBeforeConsent: uploadsBeforeConsent.count,
+      dialogue: dialogue.id, audioSeconds: Math.round((durationMs - LEAD_IN_MS) / 1000), preparationMs, uploadsBeforeConsent: uploadsBeforeConsent.count, organizeSeconds: Math.round(organizeMs / 1000),
       segments: { total: finished.segments.length, complete: judged.length, failed: finished.segments.filter(item => item.state === 'failed').length, echoSuspect: finished.segments.filter(item => item.echoSuspect).length },
       speakerLabels: { judged: judged.length, mislabeled: mislabeled.length, examples: mislabeled.slice(0, 3).map(item => ({ speaker: item.speaker, text: item.text })) },
       cer: { guardian: characterErrorRate(reference('guardian'), heard('guardian')), trainer: characterErrorRate(reference('trainer'), heard('trainer')) },
+      terms: termRecall(`${reference('guardian')} ${reference('trainer')}`, `${heard('guardian')} ${heard('trainer')}`),
+      termsBeforeCorrection: termRecall(`${reference('guardian')} ${reference('trainer')}`, finished.segments.map(item => item.originalText).join(' ')),
       windowMs: stats(judged.map(windowMs)), transcriptionMs: stats(judged.map(item => item.latencyMs ?? 0)),
       captionDelayMs: { trainerScreen: stats(delays.trainer), guardianScreen: stats(delays.guardian) },
       catch: moment && { frames: momentFrames.length, bySpeaker: { guardian: momentFrames.filter(frame => frame.speaker === 'guardian').length, trainer: momentFrames.filter(frame => frame.speaker === 'trainer').length },
         earliestBeforeMs: moment.atMs - Math.min(...momentFrames.map(frame => frame.atMs)), latestAfterMs: Math.max(...momentFrames.map(frame => frame.atMs)) - moment.atMs, largestBytes: Math.max(...momentFrames.map(frame => frame.bytes)) },
+      ...(withNote ? {
+        noteScore: labelled ? scoreDelivered(dialogue as GoldenDialogue, finished.note!) : null,
+        noteSections: finished.note && { summary: finished.note.summary.length, guardianReports: finished.note.guardianReports.length, guidance: finished.note.guidance.length, tasks: finished.note.tasks.length, fallbackUsed: !!finished.note.fallbackUsed, warnings: finished.note.warnings.length },
+        scenes: finished.scenes.map(scene => ({ atMs: scene.atMs, photos: scene.frameIds.length, state: scene.state, observations: scene.observations.map(item => item.text) })),
+        errors: finished.errors,
+      } : {}),
       transcripts: { guardian: heard('guardian'), trainer: heard('trainer') },
+      ...(withNote ? { note: finished.note } : {}),
     };
   } finally {
     await trainer.browser.close(); await guardian.browser.close();
@@ -139,14 +160,30 @@ async function verify(name: string) {
   }
 }
 
+function humanDialogue(clips: number): Dialogue {
+  const root = path.resolve(readConfig().home, 'cache', 'eval', 'zeroth');
+  const { samples } = JSON.parse(readFileSync(path.join(root, 'manifest.json'), 'utf8').replace(/^﻿/, '')) as { samples: { file: string; expected: string }[] };
+  return { id: `human-${clips}`, petName: '초코', segments: samples.slice(0, clips).map((sample, index) => ({ id: `h${index}`, speaker: index % 2 ? 'guardian' : 'trainer', text: sample.expected, file: path.join(root, sample.file) })) };
+}
+
 loadLocalEnv();
-const names = (process.argv[2] || 'doorbell-barking,walk-reactivity-no-task,sudden-growl-safety').split(',');
-const report = { createdAt: new Date().toISOString(), voice: 'Microsoft Heami (synthetic)', results: [] as unknown[] };
+ensureMedia();
+const args = process.argv.slice(2);
+const withNote = args.includes('--note');
+const humanAt = args.indexOf('--human');
+const humanClips = humanAt >= 0 ? Number(args[humanAt + 1]) : 0;
+const names = args.filter((arg, index) => !arg.startsWith('--') && index !== humanAt + 1 || (humanAt < 0 && !arg.startsWith('--'))).join(',').split(',').filter(Boolean);
+const dialogues: Dialogue[] = humanClips ? [humanDialogue(humanClips)] : (names.length ? names : ['doorbell-barking', 'walk-reactivity-no-task', 'sudden-growl-safety']).map(name => JSON.parse(readFileSync(`fixtures/coaching-dialogues/${name}.json`, 'utf8')) as Dialogue);
+const report = { createdAt: new Date().toISOString(), voice: humanClips ? 'zeroth_korean read speech (real people, unrelated topics)' : 'Microsoft Heami (synthetic)', llm: withNote ? process.env.LLM_MODEL ?? 'default' : null, results: [] as Awaited<ReturnType<typeof verify>>[] };
 mkdirSync(WORK, { recursive: true });
-for (const name of names) {
-  const result = await verify(name);
+const reportFile = path.join(WORK, `report${withNote ? '-note' : ''}${humanClips ? '-human' : ''}.json`);
+for (const dialogue of dialogues) {
+  const result = await verify(dialogue, withNote);
   report.results.push(result);
-  writeFileSync(path.join(WORK, 'report.json'), JSON.stringify(report, null, 2));
-  const { transcripts: _transcripts, ...summary } = result;
+  writeFileSync(reportFile, JSON.stringify(report, null, 2));
+  const { transcripts: _transcripts, note: _note, ...summary } = result;
   console.info(JSON.stringify(summary));
 }
+const scores = report.results.flatMap(item => item.noteScore ? [item.noteScore] : []);
+if (scores.length) console.info(JSON.stringify({ noteSummary: aggregateScores(scores) }));
+console.info(`Report: ${reportFile}`);

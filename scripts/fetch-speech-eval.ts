@@ -58,5 +58,6 @@ async function domain() {
   console.info(`domain: ${sentences.length}`);
 }
 
-await domain();
+// The domain sentences need a Windows voice. The CPU run on Linux only needs the read speech.
+if (process.platform === 'win32') await domain();
 await zeroth();

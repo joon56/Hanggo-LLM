@@ -1,0 +1,49 @@
+{
+  "id": "two-tasks-two-people",
+  "title": "식탁 짖음과 퇴근 인사, 보호자·남편 과제 분리",
+  "synthetic": true,
+  "petName": "토리",
+  "segments": [
+    { "id": "s01", "speaker": "trainer", "startMs": 0, "endMs": 6500, "text": "안녕하세요. 오늘은 토리 이야기를 해 볼게요. 요즘 어떤 점이 가장 힘드세요?" },
+    { "id": "s02", "speaker": "guardian", "startMs": 6500, "endMs": 14000, "text": "저녁에 식탁에 앉으면 토리가 옆에 와서 계속 짖어요. 아침이랑 저녁, 하루 두 번 그래요." },
+    { "id": "s03", "speaker": "trainer", "startMs": 14000, "endMs": 17000, "text": "집에 토리 말고 다른 동물도 있나요?" },
+    { "id": "s04", "speaker": "guardian", "startMs": 17000, "endMs": 25000, "text": "고양이 나비가 있어요. 나비가 식탁 위로 올라가면 토리도 따라서 식탁 옆으로 와서 더 짖어요." },
+    { "id": "s05", "speaker": "trainer", "startMs": 25000, "endMs": 28500, "text": "나비와 토리가 둘이 있을 때는 어떤가요?" },
+    { "id": "s06", "speaker": "guardian", "startMs": 28500, "endMs": 34000, "text": "낮에는 제가 일하느라 못 봐서 둘이 있을 때는 어떤지 모르겠어요." },
+    { "id": "s07", "speaker": "trainer", "startMs": 34000, "endMs": 39000, "text": "알겠습니다. 토리가 계속 짖을 때 보호자님은 어떻게 하세요?" },
+    { "id": "s08", "speaker": "guardian", "startMs": 39000, "endMs": 45500, "text": "처음에는 무시하는데 계속 짖으면 결국 간식을 한 개 줘요. 그러면 조용해져요." },
+    { "id": "s09", "speaker": "trainer", "startMs": 45500, "endMs": 51000, "text": "그러면 짖는 것이 간식과 연결될 수 있어요. 다른 상황도 있나요?" },
+    { "id": "s10", "speaker": "guardian", "startMs": 51000, "endMs": 58500, "text": "남편이 퇴근해서 현관에 들어오면 토리가 뛰어올라요. 남편은 지금 회사라서 같이 못 했어요." },
+    { "id": "s11", "speaker": "trainer", "startMs": 58500, "endMs": 68500, "text": "지금 화면으로 보니까 토리는 보호자님 발 옆에 앉아 있고, 나비는 소파 위에 있네요. 토리가 오늘은 차분해 보입니다." },
+    { "id": "s12", "speaker": "trainer", "startMs": 68500, "endMs": 73500, "text": "과제를 두 가지 드리겠습니다. 첫 번째는 식사 시간입니다." },
+    { "id": "s13", "speaker": "trainer", "startMs": 73500, "endMs": 83500, "text": "보호자님이 하루 두 번, 식탁 옆에 매트를 깔고 토리가 매트에 앉아 있으면 간식을 주세요. 이번 주 일요일까지 해 주세요." },
+    { "id": "s14", "speaker": "guardian", "startMs": 83500, "endMs": 86500, "text": "짖을 때는 간식을 안 주면 되나요?" },
+    { "id": "s15", "speaker": "trainer", "startMs": 86500, "endMs": 91500, "text": "네, 짖을 때는 주지 마시고 매트에 앉아 있을 때만 주세요." },
+    { "id": "s16", "speaker": "trainer", "startMs": 91500, "endMs": 105500, "text": "두 번째는 남편분 몫입니다. 퇴근해서 들어오시면 처음 일 분은 토리를 보지도 말고 말도 걸지 마세요. 토리가 네 발을 바닥에 두면 그때 인사하고 간식을 주시면 됩니다." },
+    { "id": "s17", "speaker": "trainer", "startMs": 105500, "endMs": 110500, "text": "남편분은 퇴근하실 때마다 하시고, 다음 상담까지 해 주세요." },
+    { "id": "s18", "speaker": "guardian", "startMs": 110500, "endMs": 118000, "text": "남편한테 그대로 전해 줄게요. 나비가 현관에 나올 때도 있는데 그때도 똑같이 하면 되죠?" },
+    { "id": "s19", "speaker": "trainer", "startMs": 118000, "endMs": 128500, "text": "네, 나비가 나와도 같은 방식으로 하시면 됩니다. 다음 상담에서 식사 시간과 퇴근 인사가 각각 어땠는지 같이 확인해 보겠습니다." }
+  ],
+  "expectedFacts": [
+    { "id": "table-barking", "any": [["식탁"], ["짖"]] },
+    { "id": "meal-times", "any": [["아침"], ["저녁"]] },
+    { "id": "cat-name", "any": [["고양이"], ["나비"]] },
+    { "id": "cat-on-table", "any": [["나비"], ["식탁 위", "식탁에 올라", "식탁으로 올라"]] },
+    { "id": "treat-after-barking", "any": [["결국", "계속 짖", "짖으면"], ["간식"]] },
+    { "id": "husband-jumping", "any": [["남편"], ["퇴근"], ["뛰어오", "뛰어올", "올라"]] },
+    { "id": "trainer-observed", "any": [["앉"], ["소파"]] }
+  ],
+  "expectedTasks": [
+    { "id": "mat-at-meals", "any": [["매트"], ["간식"]], "who": ["보호자"], "frequency": ["하루 두 번", "두 번", "2번", "2회", "아침과 저녁", "아침, 저녁", "아침저녁"], "until": ["일요일"] },
+    { "id": "homecoming-greeting", "any": [["퇴근", "귀가"], ["간식"]], "who": ["남편"], "frequency": ["퇴근할 때", "퇴근하실 때", "퇴근 때", "퇴근마다", "퇴근 시", "퇴근 후 매번", "귀가할 때", "귀가 시", "매번"], "until": ["다음 상담"] }
+  ],
+  "unknown": ["둘이 있을 때"],
+  "expectedSafetyFlags": [],
+  "expectedMethodReview": false,
+  "forbiddenClaims": ["남편이 매트", "남편은 매트", "보호자가 퇴근", "나비가 짖", "고양이 토리", "강아지 나비", "토리가 식탁 위", "나비를 공격했", "나비를 쫓아다녔", "진단"],
+  "attributions": [
+    { "section": "guardianReports", "any": [["나비"], ["식탁"], ["짖"]] },
+    { "section": "trainerObservations", "any": [["앉"], ["나비"], ["소파"]] },
+    { "section": "guardianReports", "any": [["남편"], ["퇴근"]] }
+  ]
+}

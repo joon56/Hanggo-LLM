@@ -91,7 +91,10 @@ export function attachSignal(server: Server, { store, allowedOrigins, resolveAct
   }
 
   const onUpgrade = (request: IncomingMessage, socket: Duplex, head: Buffer) => {
-    const url = new URL(request.url ?? '/', 'http://localhost');
+    // Anyone can reach this before any check. An error thrown or unheard here would end the whole process.
+    socket.on('error', () => {});
+    let url: URL;
+    try { url = new URL(request.url ?? '/', 'http://localhost'); } catch { refuse(socket, 404); return; }
     const id = PATH.exec(url.pathname)?.[1];
     if (!id) { refuse(socket, 404); return; }
     const call = url.searchParams.get('call');

@@ -1,0 +1,45 @@
+{
+  "id": "negation-no-biting",
+  "title": "손님 방문 시 뛰어오름, 부정 표현 확인",
+  "synthetic": true,
+  "petName": "루이",
+  "segments": [
+    { "id": "s01", "speaker": "trainer", "startMs": 0, "endMs": 8000, "text": "안녕하세요, 보호자님. 오늘은 루이 이야기부터 들어 볼게요. 요즘 가장 신경 쓰이는 점이 뭔가요?" },
+    { "id": "s02", "speaker": "guardian", "startMs": 8000, "endMs": 18500, "text": "손님이 오면 루이가 뛰어올라서 옷이 자꾸 더러워져요. 다행히 물지는 않았어요. 짖지 않았어요. 그냥 반가워서 그러는 것 같아요." },
+    { "id": "s03", "speaker": "trainer", "startMs": 18500, "endMs": 24500, "text": "손님은 얼마나 자주 오시나요? 그리고 루이가 혼자 있을 때는 어떤가요?" },
+    { "id": "s04", "speaker": "guardian", "startMs": 24500, "endMs": 33500, "text": "손님이 얼마나 자주 오는지는 달마다 달라서 잘 모르겠어요. 혼자 있을 때는 흥분하지 않아요. 조용히 자요." },
+    { "id": "s05", "speaker": "trainer", "startMs": 33500, "endMs": 37500, "text": "알겠습니다. 손님이 오면 보호자님은 어떻게 하세요?" },
+    { "id": "s06", "speaker": "guardian", "startMs": 37500, "endMs": 44500, "text": "'안 돼' 하면서 손으로 가슴을 밀어서 내려요. 그런데 밀수록 더 신나서 올라와요." },
+    { "id": "s07", "speaker": "trainer", "startMs": 44500, "endMs": 53500, "text": "지금 화면으로 보니까 루이가 보호자님 무릎에 앞발을 올렸고, 꼬리를 낮게 흔들고 있어요. 입은 대지 않았고요." },
+    { "id": "s08", "speaker": "guardian", "startMs": 53500, "endMs": 58500, "text": "네, 지금도 올라오고 싶어 하는 것 같아요. 평소에도 이래요." },
+    { "id": "s09", "speaker": "trainer", "startMs": 58500, "endMs": 68500, "text": "뛰어오를 때는 간식을 주지 마시고, 네 발이 바닥에 닿았을 때만 간식을 주세요. 올라오는 걸 손으로 밀지는 마시고요." },
+    { "id": "s10", "speaker": "guardian", "startMs": 68500, "endMs": 74000, "text": "밀면 안 되는 이유가 있나요? 저는 그게 제일 빠른 방법 같아서요." },
+    { "id": "s11", "speaker": "trainer", "startMs": 74000, "endMs": 82000, "text": "밀면 루이가 놀이처럼 받아들일 수 있어서요. 올라오면 몸을 옆으로 돌리고, 눈은 마주치지 마세요." },
+    { "id": "s12", "speaker": "trainer", "startMs": 82000, "endMs": 93000, "text": "과제는 이렇게 하겠습니다. 가족이 현관으로 들어오는 상황을 만들고, 루이가 네 발을 바닥에 두고 있으면 바로 간식을 주는 연습입니다." },
+    { "id": "s13", "speaker": "guardian", "startMs": 93000, "endMs": 95500, "text": "하루에 몇 번 하면 되나요?" },
+    { "id": "s14", "speaker": "trainer", "startMs": 95500, "endMs": 101000, "text": "보호자님이 하루 한 번, 한 번에 오 분씩 다음 상담까지 해 주세요." },
+    { "id": "s15", "speaker": "guardian", "startMs": 101000, "endMs": 104500, "text": "알겠어요. 저녁 산책 다녀와서 해 볼게요." },
+    { "id": "s16", "speaker": "trainer", "startMs": 104500, "endMs": 113000, "text": "좋습니다. 다음 상담에서는 루이가 네 발을 바닥에 두고 있던 시간이 어땠는지 같이 확인해 보겠습니다." }
+  ],
+  "expectedFacts": [
+    { "id": "visitor-jumping", "any": [["손님"], ["뛰어오", "뛰어올", "올라와", "올라오", "점프"]] },
+    { "id": "no-bite", "any": [["물지 않", "물지는 않", "물지도 않", "물진 않", "문 적은 없", "문 적이 없", "문 적 없", "무는 행동은 없", "입질은 없", "입질이 없"]] },
+    { "id": "no-bark", "any": [["짖지 않", "짖지는 않", "짖지도 않", "짖진 않", "안 짖", "짖음은 없", "짖음이 없", "짖는 행동은 없"]] },
+    { "id": "calm-alone", "any": [["혼자"], ["흥분하지 않", "흥분하지는 않", "흥분하지도 않", "흥분하진 않", "흥분은 없", "흥분이 없", "차분", "조용"]] },
+    { "id": "guardian-response", "any": [["밀어", "밀며", "밀면", "밀고", "밀기", "민다", "밀치"]] },
+    { "id": "reward-four-paws", "any": [["네 발", "네발", "바닥"], ["간식"]] },
+    { "id": "trainer-observed", "any": [["앞발", "무릎"], ["꼬리"]] }
+  ],
+  "expectedTasks": [
+    { "id": "four-paws-reward", "any": [["네 발", "네발", "바닥", "현관"], ["간식"]], "who": ["보호자"], "frequency": ["하루 한 번", "하루 1번", "하루 1회", "한 번", "1번", "1회"], "until": ["다음 상담"] }
+  ],
+  "unknown": ["얼마나 자주"],
+  "expectedSafetyFlags": [],
+  "expectedMethodReview": false,
+  "forbiddenClaims": ["손님을 물었", "물려고 했", "짖었", "짖는다", "혼자 있을 때 흥분해", "분리불안", "공격성", "진단", "뛰어오를 때 간식을 준다", "밀어서 내리도록"],
+  "attributions": [
+    { "section": "guardianReports", "any": [["물지 않", "물지는 않", "물지도 않", "물진 않", "문 적은 없", "문 적이 없", "문 적 없", "무는 행동은 없", "입질은 없", "입질이 없"]] },
+    { "section": "trainerObservations", "any": [["앞발", "무릎"], ["꼬리"]] },
+    { "section": "guidance", "any": [["네 발", "네발", "바닥"], ["간식"]] }
+  ]
+}

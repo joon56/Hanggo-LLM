@@ -1,4 +1,9 @@
 import type { MissingDevice } from '../call/devices';
+import type { ConsultationState, Speaker } from '../domain/coaching';
+
+export const SPEAKER_NAME: Record<Speaker, string> = { guardian: '보호자', trainer: '훈련사' };
+export const STATE_LABEL: Record<ConsultationState, string> = { scheduled: '예정', live: '진행 중', processing: '정리 중', review: '검토 대기', approved: '확정', interrupted: '중단됨' };
+export const clockLabel = (ms: number) => `${String(Math.floor(ms / 60000)).padStart(2, '0')}:${String(Math.floor(ms / 1000) % 60).padStart(2, '0')}`;
 
 const LABELS = { camera: '카메라', microphone: '마이크' } as const;
 
@@ -19,7 +24,7 @@ export const isInAppBrowser = (userAgent: string) => IN_APP_BROWSERS.test(userAg
 
 export function apiMessage(error: unknown, fallback: string) {
   const code = (error as { code?: string })?.code;
-  if (code === 'ACTIVE_CONSULTATION') return '진행 중인 상담이 있습니다. 먼저 그 상담을 종료해 주세요.';
+  if (code === 'ACTIVE_CONSULTATION') return '진행 중이거나 정리 중인 상담이 있습니다. 그 상담이 끝난 뒤 다시 시도해 주세요.';
   if (code === 'INVITE') return '이 링크는 이미 쓰였거나 만료되었습니다. 훈련사에게 새 링크를 요청해 주세요.';
   if (code === 'AUTH') return '로그인이 필요합니다.';
   return error instanceof Error && error.message ? error.message : fallback;

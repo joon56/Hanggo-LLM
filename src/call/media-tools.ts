@@ -4,11 +4,29 @@ const FRAME_WIDTH = 640;
 const FRAME_HEIGHT = 360;
 const MAX_FRAME_BYTES = 256 * 1024;
 const QUALITIES = [0.75, 0.5, 0.3];
+const RESUME_TIMEOUT_MS = 4000;
+
+let sharedContext: AudioContext | undefined;
+let workletLoaded: Promise<void> | undefined;
+function audioContext() {
+  sharedContext ??= new AudioContext();
+  return sharedContext;
+}
+
+/**
+ * iOS only starts audio inside a tap, and recording starts later when the other person consents.
+ * Call this from a click handler so the context is already running by then.
+ */
+export function unlockAudio() {
+  if (typeof AudioContext !== 'undefined') void audioContext().resume().catch(() => {});
+}
 
 export async function tapMicrophone(track: MediaStreamTrack, onSamples: (samples: Float32Array) => void): Promise<MicrophoneTap> {
-  const context = new AudioContext();
-  await context.audioWorklet.addModule('/consultation-audio-worklet.js');
-  await context.resume();
+  const context = audioContext();
+  workletLoaded ??= context.audioWorklet.addModule('/consultation-audio-worklet.js');
+  await workletLoaded;
+  // Waiting on resume() can hang forever without a gesture, and the failure should surface as a warning.
+  await Promise.race([context.resume(), new Promise((_resolve, reject) => setTimeout(() => reject(new Error('Audio did not start.')), RESUME_TIMEOUT_MS))]);
   const source = context.createMediaStreamSource(new MediaStream([track]));
   const worklet = new AudioWorkletNode(context, 'consultation-audio');
   worklet.port.onmessage = event => { if (event.data.type === 'samples') onSamples(event.data.samples); };
@@ -18,7 +36,6 @@ export async function tapMicrophone(track: MediaStreamTrack, onSamples: (samples
   return { sampleRate: context.sampleRate, stop() {
     worklet.port.onmessage = null;
     source.disconnect(); worklet.disconnect(); mute.disconnect();
-    void context.close().catch(() => {});
   } };
 }
 

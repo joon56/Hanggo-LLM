@@ -1,16 +1,17 @@
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { CallSnapshot } from '../call/call-session';
 import { ApiError } from '../api';
 import { CallStage } from './CallStage';
+import { CaseBrief } from './CaseBrief';
 import { GuardianHome } from './GuardianHome';
 import { GuardianJoin } from './GuardianJoin';
 import { PreJoin } from './PreJoin';
 import { TrainerHome } from './TrainerHome';
 import { deviceAdvice, isInAppBrowser } from './copy';
 
-const api = vi.hoisted(() => ({ getMe: vi.fn(), listCases: vi.fn(), getCase: vi.fn(), createCase: vi.fn(), reissueInvite: vi.fn(), joinWithInvite: vi.fn(), startConsultation: vi.fn(), setConsent: vi.fn() }));
+const api = vi.hoisted(() => ({ getMe: vi.fn(), listCases: vi.fn(), getCase: vi.fn(), createCase: vi.fn(), reissueInvite: vi.fn(), joinWithInvite: vi.fn(), startConsultation: vi.fn(), setConsent: vi.fn(), getDelivery: vi.fn(), frameUrl: vi.fn(), listTaskLogs: vi.fn(), addTaskLog: vi.fn(), draftGuardianLog: vi.fn(), saveGuardianLog: vi.fn(), transcribeVoice: vi.fn(), getCaseBrief: vi.fn(), deleteCase: vi.fn() }));
 vi.mock('../coaching-api', () => api);
 const login = vi.hoisted(() => vi.fn());
 vi.mock('../api', async original => ({ ...await original<typeof import('../api')>(), login }));
@@ -69,7 +70,83 @@ describe('TrainerHome', () => {
     api.startConsultation.mockRejectedValue(new ApiError('Another consultation is live.', 'ACTIVE_CONSULTATION'));
     render(<TrainerHome navigate={vi.fn()} />);
     await userEvent.click(await screen.findByRole('button', { name: '초코 상담 시작' }));
-    expect(await screen.findByRole('alert')).toHaveTextContent('진행 중인 상담');
+    expect(await screen.findByRole('alert')).toHaveTextContent('진행 중이거나 정리 중인 상담');
+  });
+});
+
+describe('CaseBrief', () => {
+  const brief = { facts: [{ id: 'task:0', label: '과제', value: 'x', unit: '', previousValue: null, refs: ['consultation-source', 'task-log:l1'] }], summary: [{ text: '핵심 상황: 초인종', refs: ['task:0'] }], changes: [], cautions: [], questionsForOwner: [{ text: '기록에 없는 상황이 있나요?', refs: ['task:0'] }],
+    previousTasks: [{ text: '이전 상담 과제와 수행 기록: 매트 연습 · 완료 1회', refs: ['task:0'] }], dataGaps: ['최근 기간 중 13일은 기록이 없습니다.'], safetyFlags: ['구토'],
+    sources: [{ id: 'consultation-source', kind: 'consultation', date: '2026-11-01', sourceQuote: '매트 연습을 해 주세요', text: '매트 연습', evidence: [{ kind: 'segment', quote: '매트 연습을 해 주세요', startMs: 61000, endMs: 64000 }] }, { id: 'task-log:l1', kind: 'task_log', date: '2026-11-02', sourceQuote: '소리를 줄이니 갔어요', text: '완료' }] };
+  it('shows last tasks with records, and opens their evidence with speech time', async () => {
+    api.getCaseBrief.mockResolvedValue({ brief, consultationId: 'c1' });
+    render(<CaseBrief caseId="case-1" />);
+    const section = await screen.findByRole('region', { name: '상담 전 브리핑' });
+    expect(section).toHaveTextContent('매트 연습 · 완료 1회');
+    expect(section).toHaveTextContent('안전 신호: 구토');
+    expect(screen.queryByText('소리를 줄이니 갔어요')).toBeNull();
+    await userEvent.click(screen.getAllByRole('button', { name: '근거 2건' })[1]);
+    expect(screen.getByText('소리를 줄이니 갔어요')).toBeInTheDocument();
+    expect(screen.getByText(/상담 01:01 · “매트 연습을 해 주세요”/)).toBeInTheDocument();
+  });
+  it('reports a refused or failed load', async () => {
+    api.getCaseBrief.mockRejectedValue(new ApiError('권한이 없습니다.', 'FORBIDDEN'));
+    render(<CaseBrief caseId="case-1" />);
+    expect(await screen.findByRole('alert')).toHaveTextContent('권한이 없습니다.');
+  });
+});
+
+describe('TrainerHome deleting a case', () => {
+  beforeEach(() => { api.getMe.mockResolvedValue({ role: 'trainer' }); api.listCases.mockResolvedValue({ cases: [aCase] }); api.getCase.mockResolvedValue({ ...aCase, consultations: [] }); });
+  afterEach(() => { vi.restoreAllMocks(); });
+  it('deletes only after a clear warning, then refreshes', async () => {
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true);
+    api.deleteCase.mockResolvedValue(undefined);
+    render(<TrainerHome navigate={vi.fn()} />);
+    await userEvent.click(await screen.findByRole('button', { name: '초코 사례 삭제' }));
+    expect(confirm.mock.calls[0][0]).toContain('되돌릴 수 없');
+    expect(api.deleteCase).toHaveBeenCalledWith('case-1');
+    await waitFor(() => expect(api.listCases).toHaveBeenCalledTimes(2));
+  });
+  it('does nothing when the trainer backs out', async () => {
+    vi.spyOn(window, 'confirm').mockReturnValue(false);
+    render(<TrainerHome navigate={vi.fn()} />);
+    await userEvent.click(await screen.findByRole('button', { name: '초코 사례 삭제' }));
+    expect(api.deleteCase).not.toHaveBeenCalled();
+  });
+});
+
+describe('TrainerHome past consultations', () => {
+  const past = (id: string, state: string) => ({ ...liveConsultation, id, state });
+  beforeEach(() => { api.getMe.mockResolvedValue({ role: 'trainer' }); api.listCases.mockResolvedValue({ cases: [aCase] }); });
+  it('opens the review for a finished consultation and names its state', async () => {
+    const navigate = vi.fn();
+    api.getCase.mockResolvedValue({ ...aCase, consultations: [past('c2', 'review'), past('c1', 'approved')] });
+    render(<TrainerHome navigate={navigate} />);
+    const list = await screen.findByRole('list', { name: '초코 지난 상담' });
+    expect(list).toHaveTextContent('검토 대기');
+    expect(list).toHaveTextContent('확정');
+    await userEvent.click(screen.getByRole('button', { name: '검토하기' }));
+    expect(navigate).toHaveBeenCalledWith('/review/c2');
+    await userEvent.click(screen.getByRole('button', { name: '열기' }));
+    expect(navigate).toHaveBeenCalledWith('/review/c1');
+  });
+  it('follows a consultation being organized until the review is ready', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      api.getCase.mockResolvedValue({ ...aCase, consultations: [past('c2', 'processing')] });
+      render(<TrainerHome navigate={vi.fn()} />);
+      expect(await screen.findByText('정리 중')).toBeInTheDocument();
+      api.getCase.mockResolvedValue({ ...aCase, consultations: [past('c2', 'review')] });
+      await vi.advanceTimersByTimeAsync(3100);
+      expect(await screen.findByRole('button', { name: '검토하기' })).toBeInTheDocument();
+    } finally { vi.useRealTimers(); }
+  });
+  it('does not list a live consultation as past', async () => {
+    api.getCase.mockResolvedValue({ ...aCase, consultations: [liveConsultation] });
+    render(<TrainerHome navigate={vi.fn()} />);
+    await screen.findByRole('button', { name: '초코 상담 다시 입장' });
+    expect(screen.queryByRole('list', { name: '초코 지난 상담' })).toBeNull();
   });
 });
 
@@ -90,9 +167,31 @@ describe('GuardianJoin', () => {
   });
   it('explains an invalid invite', async () => {
     api.joinWithInvite.mockRejectedValue(new ApiError('Invite is invalid or expired.', 'INVITE'));
+    api.getMe.mockRejectedValue(new ApiError('로그인이 필요합니다.', 'AUTH'));
     render(<GuardianJoin token="token" navigate={vi.fn()} userAgent="Chrome" />);
     await userEvent.click(screen.getByRole('button', { name: '상담 입장 준비' }));
     expect(await screen.findByRole('alert')).toHaveTextContent('훈련사에게 새 링크');
+  });
+});
+
+describe('GuardianJoin with a link already used on this device', () => {
+  const press = () => userEvent.click(screen.getByRole('button', { name: '상담 입장 준비' }));
+  it('goes straight to the guardian screen instead of saying the link expired', async () => {
+    api.joinWithInvite.mockRejectedValue(new ApiError('Invite is invalid or expired.', 'INVITE'));
+    api.getMe.mockResolvedValue({ role: 'guardian', caseId: 'case-1' });
+    const navigate = vi.fn();
+    render(<GuardianJoin token="t" navigate={navigate} userAgent="Chrome" />);
+    await press();
+    await waitFor(() => expect(navigate).toHaveBeenCalledWith('/guardian'));
+  });
+  it('still explains an expired link to someone without a session', async () => {
+    api.joinWithInvite.mockRejectedValue(new ApiError('Invite is invalid or expired.', 'INVITE'));
+    api.getMe.mockRejectedValue(new ApiError('로그인이 필요합니다.', 'AUTH'));
+    const navigate = vi.fn();
+    render(<GuardianJoin token="t" navigate={navigate} userAgent="Chrome" />);
+    await press();
+    expect(await screen.findByRole('alert')).toHaveTextContent('이미 쓰였거나 만료');
+    expect(navigate).not.toHaveBeenCalled();
   });
 });
 
@@ -108,6 +207,69 @@ describe('GuardianHome', () => {
     render(<GuardianHome navigate={navigate} />);
     await userEvent.click(await screen.findByRole('button', { name: '상담 입장' }));
     expect(navigate).toHaveBeenCalledWith('/room/c1');
+  });
+  it('shows the latest confirmed note, and nothing for a draft', async () => {
+    api.getMe.mockResolvedValue({ role: 'guardian', caseId: 'case-1' });
+    api.getCase.mockResolvedValue({ ...aCase, consultations: [{ ...liveConsultation, id: 'draft', state: 'review' }] });
+    const { unmount } = render(<GuardianHome navigate={vi.fn()} />);
+    await screen.findByText(/훈련사가 상담을 시작하면/);
+    expect(api.getDelivery).not.toHaveBeenCalled();
+    unmount();
+    api.listTaskLogs.mockResolvedValue({ logs: [] });
+    api.getDelivery.mockResolvedValue({ note: { summary: [], concerns: [], behaviors: [], guardianReports: [], trainerObservations: [], aiObservations: [], guidance: [], tasks: [], followUps: [], safetyFlags: [], approvedAt: 'x' }, scenes: [] });
+    api.getCase.mockResolvedValue({ ...aCase, consultations: [{ ...liveConsultation, id: 'new', state: 'approved' }, { ...liveConsultation, id: 'old', state: 'approved' }] });
+    render(<GuardianHome navigate={vi.fn()} />);
+    expect(await screen.findByRole('article', { name: '확정된 상담일지' })).toBeInTheDocument();
+    expect(api.getDelivery).toHaveBeenCalledWith('new');
+  });
+});
+
+describe('GuardianHome daily log', () => {
+  const draft = { id: 'd', sourceText: '오늘 초인종에 짖었어요', sourceKind: 'nl_log_text', pets: [{ id: 'case-1', name: '초코', nicknames: [] }], now: '2026-11-04T01:00:00.000Z', timeZone: 'Asia/Seoul', safetyFlags: [], clarification: null, mode: 'manual',
+    events: [{ id: 'e1', petId: 'case-1', type: 'bark', occurredAt: null, timeHint: null, durationMin: null, trigger: null, intervention: null, outcome: null, details: { amountText: null, isTreat: null, excretionKinds: [], placeText: null }, sourceQuote: '오늘 초인종에 짖었어요', edited: false }] };
+  beforeEach(() => {
+    api.getMe.mockResolvedValue({ role: 'guardian', caseId: 'case-1' });
+    api.getCase.mockResolvedValue({ ...aCase, consultations: [] });
+    api.draftGuardianLog.mockResolvedValue(draft);
+  });
+  const writeLog = async () => {
+    render(<GuardianHome navigate={vi.fn()} />);
+    await userEvent.type(await screen.findByLabelText('일상 기록 내용'), '오늘 초인종에 짖었어요');
+    await userEvent.click(screen.getByRole('button', { name: '내용 확인' }));
+  };
+  it('shows what was understood before saving, and saves only after the guardian agrees', async () => {
+    api.saveGuardianLog.mockResolvedValue({ id: 's' });
+    await writeLog();
+    expect(api.draftGuardianLog).toHaveBeenCalledWith('case-1', '오늘 초인종에 짖었어요');
+    expect(await screen.findByText('짖음')).toBeInTheDocument();
+    expect(api.saveGuardianLog).not.toHaveBeenCalled();
+    await userEvent.click(screen.getByRole('button', { name: '저장' }));
+    expect(api.saveGuardianLog).toHaveBeenCalledWith('case-1', { ...draft, events: [{ ...draft.events[0], occurredAt: draft.now }] });
+    expect(await screen.findByText(/저장했습니다/)).toBeInTheDocument();
+    expect(screen.getByLabelText('일상 기록 내용')).toHaveValue('');
+  });
+  it('lets the guardian say which day it happened, so the brief can count it', async () => {
+    api.saveGuardianLog.mockResolvedValue({ id: 's' });
+    await writeLog();
+    fireEvent.change(await screen.findByLabelText('언제였나요'), { target: { value: '2026-11-02' } });
+    await userEvent.click(screen.getByRole('button', { name: '저장' }));
+    const saved = api.saveGuardianLog.mock.calls[0][1];
+    expect(new Date(saved.events[0].occurredAt).toISOString()).toBe(new Date('2026-11-02T12:00:00').toISOString());
+    expect(saved.events[0].edited).toBe(true);
+  });
+  it('goes back to the words on request, and warns about health mentions', async () => {
+    api.draftGuardianLog.mockResolvedValue({ ...draft, safetyFlags: ['vomiting'] });
+    await writeLog();
+    expect(await screen.findByRole('alert')).toHaveTextContent('동물병원');
+    await userEvent.click(screen.getByRole('button', { name: '다시 쓰기' }));
+    expect(screen.getByLabelText('일상 기록 내용')).toHaveValue('오늘 초인종에 짖었어요');
+  });
+  it('keeps the words when saving fails', async () => {
+    api.saveGuardianLog.mockRejectedValue(new ApiError('저장할 수 없습니다.', 'INPUT'));
+    await writeLog();
+    await userEvent.click(await screen.findByRole('button', { name: '저장' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('저장할 수 없습니다.');
+    expect(screen.getByRole('button', { name: '저장' })).toBeInTheDocument();
   });
 });
 
@@ -133,12 +295,43 @@ describe('PreJoin', () => {
     await userEvent.click(screen.getByRole('button', { name: '입장' }));
     expect(onJoin).toHaveBeenCalledWith(expect.objectContaining({ consent: false }));
   });
+  it('shows consent given earlier as checked, so rejoining cannot hide that recording is on', async () => {
+    const onJoin = vi.fn();
+    render(<PreJoin petName="초코" role="guardian" relayAvailable consented openPreview={async () => ({ stream: { getTracks: () => [] } as unknown as MediaStream, missing: [] })} onJoin={onJoin} />);
+    const box = await screen.findByRole('checkbox');
+    expect(box).toBeChecked();
+    await userEvent.click(box);
+    await userEvent.click(screen.getByRole('button', { name: '입장' }));
+    expect(onJoin).toHaveBeenCalledWith(expect.objectContaining({ consent: false }));
+  });
   it('reports consent only when the box is checked', async () => {
     const onJoin = vi.fn();
     render(<PreJoin petName="초코" role="guardian" relayAvailable openPreview={async () => ({ stream: stream(), missing: [] })} onJoin={onJoin} />);
     await userEvent.click(await screen.findByLabelText(/AI 받아쓰기와 장면 저장에 동의합니다/));
     await userEvent.click(screen.getByRole('button', { name: '입장' }));
     expect(onJoin).toHaveBeenCalledWith(expect.objectContaining({ consent: true }));
+  });
+});
+
+describe('CallStage checklist', () => {
+  const caption = (speaker: 'guardian' | 'trainer', text: string) => ({ id: text, speaker, startMs: 0, endMs: 1, text, state: 'complete' as const });
+  const actions = { onToggleMicrophone: vi.fn(), onToggleCamera: vi.fn(), onSwitchCamera: vi.fn(), onStartShare: vi.fn(), onStopShare: vi.fn(), onLeave: vi.fn(), onEnd: vi.fn(), onConsent: vi.fn(), onCatch: vi.fn(), onMemo: vi.fn() };
+  const call = (change: Partial<CallSnapshot>): CallSnapshot => ({ status: 'connected', peerOnline: true, peerMedia: { camera: true, microphone: true, screen: false }, stats: { inboundVideoFrames: 0, inboundAudioBytes: 0, inboundAudioEnergy: 0, relayed: false, roundTripMs: null }, consent: { guardian: true, trainer: true }, recording: true, localStream: null, remoteStream: null, localScreen: null, remoteScreen: null, microphoneOn: true, cameraOn: true, hasCamera: true, hasMicrophone: true, error: null, captions: [], speech: 'ready', lastMoment: null, captionLatencyMs: null, uploadLost: false, ...change }) as CallSnapshot;
+  it('shows the trainer what is still unasked while recording, and a safety signal as soon as it is heard', () => {
+    render(<CallStage role="trainer" petName="초코" canShare call={call({ captions: [caption('guardian', '하루에 세 번쯤 그래요. 어제 구토도 했어요')] })} {...actions} />);
+    const list = screen.getByRole('list', { name: '상담에서 확인할 것' });
+    expect(within(list).getByText('빈도')).toHaveAttribute('data-covered', 'true');
+    expect(within(list).getByText('언제')).toHaveAttribute('data-covered', 'false');
+    expect(screen.getByRole('alert')).toHaveTextContent('구토');
+  });
+  it('is a tool for the trainer, so the guardian does not see it', () => {
+    render(<CallStage role="guardian" petName="초코" canShare call={call({ captions: [caption('guardian', '어제 구토도 했어요')] })} {...actions} />);
+    expect(screen.queryByRole('list', { name: '상담에서 확인할 것' })).toBeNull();
+    expect(screen.queryByRole('alert')).toBeNull();
+  });
+  it('stays out of the way when nothing is being recorded', () => {
+    render(<CallStage role="trainer" petName="초코" canShare call={call({ recording: false })} {...actions} />);
+    expect(screen.queryByRole('list', { name: '상담에서 확인할 것' })).toBeNull();
   });
 });
 
@@ -166,6 +359,31 @@ describe('CallStage', () => {
     const log = screen.getByRole('log', { name: '자막' });
     expect(log).not.toHaveTextContent('메아리 문장');
     expect(log).toHaveTextContent('훈련사 받아쓰지 못한 구간입니다');
+  });
+  it('lets the trainer open the brief during the call, and only the trainer', async () => {
+    api.getCaseBrief.mockResolvedValue({ consultationId: null, brief: { facts: [], summary: [{ text: '핵심 상황 문장', refs: [] }], changes: [], cautions: [], questionsForOwner: [], previousTasks: [], dataGaps: [], safetyFlags: [], sources: [] } });
+    const actions = handlers();
+    render(<CallStage role="trainer" caseId="case-1" petName="초코" canShare call={snapshot()} {...actions} />);
+    expect(screen.queryByRole('region', { name: '상담 전 브리핑' })).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: '브리핑' }));
+    expect(await screen.findByRole('region', { name: '상담 전 브리핑' })).toHaveTextContent('핵심 상황 문장');
+    fireEvent.click(screen.getByRole('button', { name: '브리핑' }));
+    expect(screen.queryByRole('region', { name: '상담 전 브리핑' })).toBeNull();
+    cleanup();
+    render(<CallStage role="guardian" caseId="case-1" petName="초코" canShare call={snapshot()} {...actions} />);
+    expect(screen.queryByRole('button', { name: '브리핑' })).toBeNull();
+  });
+  it('offers a retry when the connection failed, and says when a missing relay may be why', () => {
+    const onRetry = vi.fn();
+    const actions = handlers();
+    const { unmount } = render(<CallStage role="trainer" petName="초코" canShare call={snapshot({ status: 'failed' })} relayAvailable={false} onRetry={onRetry} {...actions} />);
+    expect(screen.getByRole('status')).toHaveTextContent('중계 서버');
+    fireEvent.click(screen.getByRole('button', { name: '다시 연결' }));
+    expect(onRetry).toHaveBeenCalled();
+    unmount();
+    render(<CallStage role="trainer" petName="초코" canShare call={snapshot({ status: 'failed' })} relayAvailable onRetry={onRetry} {...actions} />);
+    expect(screen.getByRole('status')).not.toHaveTextContent('중계 서버');
+    expect(screen.getByRole('status')).toHaveTextContent('연결하지 못했습니다');
   });
   it('offers the catch button only while recording', () => {
     const { actions } = setup({ recording: true });

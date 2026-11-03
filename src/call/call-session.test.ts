@@ -46,7 +46,7 @@ function fakeSignal() {
   return { sent, channel, open: (next: SignalHandler) => { handler = next; return channel; }, emit: (message: any) => handler(message) };
 }
 const flush = async () => { for (let index = 0; index < 8; index++) await Promise.resolve(); };
-function fakeRecorder() { return { start: vi.fn<(clock: () => number) => void>(), stop: vi.fn(), moment: vi.fn(), setScreen: vi.fn() }; }
+function fakeRecorder() { return { start: vi.fn<(clock: () => number) => void>(), stop: vi.fn(), moment: vi.fn(), setScreen: vi.fn(), drain: vi.fn(async () => {}) }; }
 function build(role: 'trainer' | 'guardian', options: { tracks?: FakeTrack[]; display?: () => Promise<MediaStream>; forceRelay?: boolean; recorder?: ReturnType<typeof fakeRecorder> } = {}) {
   const signal = fakeSignal();
   const local = new FakeStream(options.tracks ?? [new FakeTrack('audio'), new FakeTrack('video')]);
@@ -372,5 +372,69 @@ describe('recording', () => {
     expect(session.snapshot().uploadLost).toBe(false);
     session.noteUploadLost();
     expect(session.snapshot().uploadLost).toBe(true);
+  });
+});
+
+describe('a connection that never comes up', () => {
+  it('reports failure after thirty seconds with the peer online, instead of saying connecting forever', async () => {
+    const { session, signal } = build('trainer');
+    signal.emit({ type: 'hello', role: 'trainer', serverNow: 1, peerOnline: true }); await flush();
+    await vi.advanceTimersByTimeAsync(29_000);
+    expect(session.snapshot().status).toBe('connecting');
+    await vi.advanceTimersByTimeAsync(2_000);
+    expect(session.snapshot().status).toBe('failed');
+  });
+  it('recovers by itself if the connection comes up late', async () => {
+    const { session, signal, peer } = build('trainer');
+    signal.emit({ type: 'hello', role: 'trainer', serverNow: 1, peerOnline: true }); await flush();
+    await vi.advanceTimersByTimeAsync(31_000);
+    peer().setIce('connected');
+    expect(session.snapshot().status).toBe('connected');
+  });
+  it('does not fail while simply waiting for the other person', async () => {
+    const { session, signal } = build('trainer');
+    signal.emit({ type: 'hello', role: 'trainer', serverNow: 1, peerOnline: false }); await flush();
+    await vi.advanceTimersByTimeAsync(120_000);
+    expect(session.snapshot().status).toBe('waiting');
+  });
+  it('gives a dropped connection the same time to recover', async () => {
+    const { session, signal, peer } = build('trainer');
+    signal.emit({ type: 'hello', role: 'trainer', serverNow: 1, peerOnline: true }); await flush();
+    peer().setIce('connected');
+    await vi.advanceTimersByTimeAsync(60_000);
+    peer().setIce('disconnected');
+    await vi.advanceTimersByTimeAsync(29_000);
+    expect(session.snapshot().status).toBe('reconnecting');
+    await vi.advanceTimersByTimeAsync(2_000);
+    expect(session.snapshot().status).toBe('failed');
+  });
+  it('does not fire after leaving', async () => {
+    const { session, signal } = build('trainer');
+    signal.emit({ type: 'hello', role: 'trainer', serverNow: 1, peerOnline: true }); await flush();
+    session.leave();
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(session.snapshot().status).toBe('left');
+  });
+});
+
+describe('finishing', () => {
+  it('sends what is buffered and waits for it, within a limit', async () => {
+    const recorder = { ...fakeRecorder(), drain: vi.fn(() => new Promise<void>(() => {})) };
+    const { session } = build('guardian', { recorder });
+    let done = false;
+    void session.finish().then(() => { done = true; });
+    expect(recorder.stop).toHaveBeenCalledWith({ flush: true });
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(done).toBe(false);
+    await vi.advanceTimersByTimeAsync(4000);
+    expect(done).toBe(true);
+  });
+  it('moves on as soon as uploads are done', async () => {
+    const recorder = { ...fakeRecorder(), drain: vi.fn(async () => {}) };
+    const { session } = build('guardian', { recorder });
+    let done = false;
+    void session.finish().then(() => { done = true; });
+    await flush();
+    expect(done).toBe(true);
   });
 });

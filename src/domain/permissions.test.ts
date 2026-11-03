@@ -9,6 +9,7 @@ const other = 'case-2';
 const table: [Action, 'trainer-only' | 'shared' | 'guardian-writes'][] = [
   ['case:create', 'trainer-only'],
   ['case:invite', 'trainer-only'],
+  ['case:delete', 'trainer-only'],
   ['consultation:start', 'trainer-only'],
   ['consultation:end', 'trainer-only'],
   ['brief:read', 'trainer-only'],
@@ -27,6 +28,8 @@ const table: [Action, 'trainer-only' | 'shared' | 'guardian-writes'][] = [
   ['frame:read-cited', 'shared'],
   ['task-log:read', 'shared'],
   ['task-log:write', 'guardian-writes'],
+  ['guardian-log:write', 'guardian-writes'],
+  ['guardian-log:read', 'shared'],
 ];
 
 describe('can', () => {
@@ -37,7 +40,7 @@ describe('can', () => {
     expect(can(guardian, action)).toBe(false);
   });
   it('covers every action in the table', () => {
-    expect(table.length).toBe(20);
+    expect(table.length).toBe(23);
   });
   it('denies unknown actions by default', () => {
     expect(can(trainer, 'admin:everything' as Action, 'case-1')).toBe(false);

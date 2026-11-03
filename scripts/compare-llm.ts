@@ -1,17 +1,18 @@
 import { execFileSync } from 'node:child_process';
 import { mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
-import { buildNoteRequest, type NoteSegment } from '../server/coaching/note-prompt.ts';
+import { buildNoteRequest } from '../server/coaching/note-prompt.ts';
 import { loadLocalEnv, readConfig } from '../server/config.ts';
 import { createLlmProvider } from '../server/providers.ts';
 import { scoreNote, type GoldenDialogue } from './note-metrics.ts';
 
 // Usage: node scripts/compare-llm.ts [model,model,...]
-// Measures the tentative note prompt on synthetic golden dialogues. Step 3 repeats this with validation.
+// Measures the note prompt alone on synthetic golden dialogues, without retry or validation. scripts/eval-notes.ts measures the whole service.
+type LineSegment = { id: string; speaker: 'guardian' | 'trainer'; startMs: number; endMs: number; text: string };
 loadLocalEnv();
 const models = (process.argv[2] ?? 'qwen35-9b,gemma4-e4b,gemma4-12b,hcx-14b,qwen38-27b').split(',');
 const folder = new URL('../fixtures/coaching-dialogues/', import.meta.url);
-const dialogues = await Promise.all((await readdir(folder)).filter(file => file.endsWith('.json')).map(async file => JSON.parse(await readFile(new URL(file, folder), 'utf8')) as GoldenDialogue & { segments: NoteSegment[]; petName: string }));
+const dialogues = await Promise.all((await readdir(folder)).filter(file => file.endsWith('.json')).map(async file => JSON.parse(await readFile(new URL(file, folder), 'utf8')) as GoldenDialogue & { segments: LineSegment[]; petName: string }));
 const root = path.resolve(readConfig().home, 'cache', 'eval');
 await mkdir(root, { recursive: true });
 const outputPath = path.join(root, 'llm-comparison.json');
@@ -26,7 +27,8 @@ for (const model of models) {
   try {
     for (const dialogue of dialogues) {
       const started = performance.now();
-      const { json, finished } = await llm.structured(buildNoteRequest(dialogue.petName, dialogue.segments));
+      const lines = dialogue.segments.map(segment => ({ alias: segment.id, evidence: { kind: 'segment' as const, id: segment.id, quote: segment.text, startMs: segment.startMs, endMs: segment.endMs, speaker: segment.speaker as 'guardian' | 'trainer' } }));
+      const { json, finished } = await llm.structured(buildNoteRequest(dialogue.petName, lines));
       const latencyMs = Math.round(performance.now() - started);
       gpuPeak = Math.max(gpuPeak, gpuMemory() ?? 0);
       runs.push({ dialogue: dialogue.id, latencyMs, finished, characters: dialogue.segments.reduce((sum, segment) => sum + segment.text.length, 0), score: scoreNote(dialogue, json), note: json });

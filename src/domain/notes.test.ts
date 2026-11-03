@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { approveDraft, createDraft, getReviewSignals, validateDraft, type Draft } from './notes';
+import { flagsFromSource, methodPattern } from './notes';
 
 describe('createDraft', () => {
   it('extracts only source sentences with exact provenance', () => {
@@ -92,5 +93,28 @@ describe('approveDraft', () => {
     expect(note.draft.items[0].text).toBe('오늘 앉아를 연습했습니다.');
     expect(note.metadata.petName).toBe('몽이');
     expect(note.mode).toBe('demo');
+  });
+});
+
+describe('safety words in ordinary sentences', () => {
+  const flags = (text: string) => flagsFromSource(text);
+  it('does not read an apartment as pain or asking as biting', () => {
+    expect(flags('아파트 복도에서 소리가 나면 짖어요')).toEqual([]);
+    expect(flags('제가 훈련사님께 물었어요')).toEqual([]);
+    expect(flags('수의사에게 물었는데 괜찮대요')).toEqual([]);
+    expect(flags('뭐라고 물었어요')).toEqual([]);
+  });
+  it('still catches the real thing', () => {
+    expect(flags('만지면 아파해요')).toContain('통증');
+    expect(flags('다리가 아픈 것 같아요')).toContain('통증');
+    expect(flags('아이 손을 물었어요')).toContain('물림');
+    expect(flags('갑자기 물었어요')).toContain('물림');
+    expect(flags('개가 물었어요')).toContain('물림');
+    expect(flags('다른 개한테 물렸어요')).toContain('물림');
+  });
+});
+describe('forceful methods in ordinary sentences', () => {
+  it('catches past tense and jerking the leash', () => {
+    for (const text of ['목줄을 세게 당겼어요', '줄을 확 잡아채요', '목줄을 강하게 당긴 적이 있어요']) expect(methodPattern.test(text), text).toBe(true);
   });
 });
