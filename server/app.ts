@@ -10,21 +10,18 @@ import multer from 'multer';
 import { z } from 'zod';
 import type { Config } from './config.ts';
 import type { SpeechProvider } from './ai/speech/types.ts';
-import { createConsultationRouter } from './consultation-router.ts';
 import { createGuardianSessions } from './coaching/guardian-session.ts';
 import { createActorResolver, createCoachingRouter } from './coaching/router.ts';
 import { attachSignal } from './coaching/signal.ts';
 import { createFileStore } from './coaching/store.ts';
 import { createTranscription } from './coaching/transcription.ts';
-import type { VisionService } from './consultation-vision.ts';
-import { ConsultationError } from './consultation-store.ts';
 import type { Consultation } from '../src/domain/coaching.ts';
 import type { SourceKind } from '../src/domain/notes.ts';
 import { AudioValidationError, validateAudioDuration } from './audio.ts';
 import { OwnerInputSchema } from './owner-service.ts';
 import { BriefInputSchema } from './brief-service.ts';
 import { ShelterInputSchema } from './shelter-service.ts';
-import type { OwnerInput, BriefInput, BriefConsultationContext, ShelterInput } from '../src/domain/workspace-types.ts';
+import type { OwnerInput, BriefInput, ShelterInput } from '../src/domain/workspace-types.ts';
 import { loadLessonCatalog } from './lessons.ts';
 import { suggestLessons, suggestShelterLessons } from '../src/domain/lessons.ts';
 import { validateShelterDraft } from '../src/domain/shelter.ts';
@@ -32,11 +29,10 @@ import type { ShelterDraft } from '../src/domain/workspace-types.ts';
 import { validateDraft, type Draft } from '../src/domain/notes.ts';
 
 type Services = {
-  vision?: VisionService;
   liveSpeech?: SpeechProvider;
   status?: () => Promise<{ configured: boolean; sttReady: boolean; statusMessage: string }>;
   generateOwner?: (input: OwnerInput, signal?: AbortSignal) => Promise<unknown>;
-  generateBrief?: (input: BriefInput, signal?: AbortSignal, consultation?: BriefConsultationContext) => Promise<unknown>;
+  generateBrief?: (input: BriefInput, signal?: AbortSignal) => Promise<unknown>;
   generateShelter?: (input: ShelterInput, signal?: AbortSignal) => Promise<unknown>;
   generate: (text: string, sourceKind: SourceKind, signal?: AbortSignal) => Promise<unknown>;
   transcribe: (buffer: Buffer, filename: string, petName: string, signal?: AbortSignal) => Promise<string>;
@@ -126,14 +122,6 @@ export function createApp(config: Config, services: Services) {
   const aiLimit = rateLimit({ windowMs: 60_000, limit: 30, keyGenerator: () => 'ai', standardHeaders: 'draft-8', legacyHeaders: false,
     message: { error: '요청이 많습니다. 잠시 후 다시 시도해 주세요.', code: 'RATE_LIMIT' } });
   let day = ''; let calls = 0; let active = 0;
-  const consultation = createConsultationRouter({ enabled: config.liveConsultationEnabled && config.aiEnabled, directory: config.consultationDirectory, ffmpegPath: config.ffmpegPath, vision: services.vision, speech: services.liveSpeech, generate: services.generate, acquireAi: charge => {
-    const today = new Date().toISOString().slice(0, 10);
-    if (today !== day) { day = today; calls = 0; }
-    if (active >= 1 || (charge && calls >= config.dailyLimit)) throw new ConsultationError('AI_LIMIT', 'Local AI is busy or daily limit reached.', 429);
-    if (charge) calls++; active++;
-    let released = false; return () => { if (!released) { released = true; active--; } };
-  } });
-  app.use('/api/consultations', consultation.router);
   const featureRoutes = { '/api/owner-logs': 'ownerLog', '/api/briefs': 'brief', '/api/shelter-profiles': 'shelter' } as const;
   for (const [route, feature] of Object.entries(featureRoutes)) app.use(route, (_req, res, next) => {
     if (!config.features[feature]) { res.status(503).json({ error: '서버에서 이 기능을 활성화해 주세요.', code: 'FEATURE_DISABLED', requestId: res.locals.requestId }); return; }
@@ -169,12 +157,7 @@ export function createApp(config: Config, services: Services) {
     });
   }
   featureRoute('/api/owner-logs', OwnerInputSchema, services.generateOwner);
-  featureRoute('/api/briefs', BriefInputSchema, services.generateBrief ? async (input, signal) => {
-    const context = input.consultation ? await consultation.resolveBrief(input.consultation, input.pet.name) : undefined;
-    const result = await services.generateBrief!(input, signal, context);
-    if (input.consultation) await consultation.resolveBrief(input.consultation, input.pet.name);
-    return result;
-  } : undefined);
+  featureRoute('/api/briefs', BriefInputSchema, services.generateBrief);
   featureRoute('/api/shelter-profiles', ShelterInputSchema, services.generateShelter);
   const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024, files: 1, fields: 3, fieldSize: 12800, parts: 4 } });
   app.post('/api/transcribe', upload.single('audio'), async (req, res) => {
@@ -208,7 +191,6 @@ export function createApp(config: Config, services: Services) {
   }
   const errors: ErrorRequestHandler = (error, _req, res, _next) => {
     if (res.headersSent || res.destroyed) return;
-    if (error instanceof ConsultationError) { res.status(error.status).json({ error: error.message, code: error.code, requestId: res.locals.requestId }); return; }
     const large = error?.code === 'LIMIT_FILE_SIZE' || error?.type === 'entity.too.large';
     const malformed = error instanceof multer.MulterError || error?.type === 'entity.parse.failed';
     res.status(large ? 413 : malformed ? 400 : 502).json({ error: large ? '파일은 10MB 이하, 텍스트는 8,000자 이하로 입력해 주세요.' : malformed ? '요청 형식을 확인해 주세요.' : 'AI 요청을 완료하지 못했습니다. 입력은 유지됩니다. 잠시 후 다시 시도해 주세요.', code: large ? 'TOO_LARGE' : malformed ? 'INPUT' : 'UPSTREAM', requestId: res.locals.requestId });
@@ -217,6 +199,6 @@ export function createApp(config: Config, services: Services) {
   return Object.assign(app, {
     attachSignal(server: Server) { signal = attachSignal(server, { store: coachingStore, allowedOrigins: origins, resolveActor: createActorResolver(coachingAccess), speechStatus: transcription.status }); },
     recoverCoaching: () => coachingStore.recoverInterrupted(),
-    shutdown: () => { stopping = true; signal?.close(); shutdownTask ??= transcription.close().then(() => consultation.shutdown()); return shutdownTask; },
+    shutdown: () => { stopping = true; signal?.close(); shutdownTask ??= transcription.close(); return shutdownTask; },
   });
 }

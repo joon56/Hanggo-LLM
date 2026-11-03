@@ -17,7 +17,6 @@ it('derives runtime and data paths from HANGGO_HOME', () => {
   const home = path.join('D:', 'hanggo');
   const config = readConfig({ HANGGO_HOME: home });
   expect(config.home).toBe(home);
-  expect(config.consultationDirectory).toBe(path.join(home, 'data', 'consultations'));
   expect(config.llamaServer).toBe(path.join(home, 'runtime', 'llama-cpp', 'llama-server.exe'));
   expect(config.whisperServer).toBe(path.join(home, 'runtime', 'whisper-cpp', 'Release', 'whisper-server.exe'));
   expect(config.liveModelDirectory).toBe(path.join(home, 'models', 'stt'));

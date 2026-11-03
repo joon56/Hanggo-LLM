@@ -4,7 +4,6 @@ import { expect, test } from '@playwright/test';
 test.beforeEach(async ({ page }) => {
   await page.route('**/api/session', route => route.fulfill({ json: { authenticated: true, requirePassword: false, aiEnabled: false, configured: false, textModel: '', sttModel: '', features: { ownerLog: true, brief: true, shelter: true } } }));
   await page.route('**/api/lessons', route => route.fulfill({ json: { lessons: [] } }));
-  await page.route('**/api/consultations**', route => route.fulfill({ json: { consultations: [], sessions: [] } }));
   await page.addInitScript(() => {
     const pet = { id: 'brief-pet', name: '시연초코', nicknames: [] };
     const now = new Date().toISOString();

@@ -13,8 +13,7 @@ export const BriefInputSchema = z.object({
   now: timestamp,
   timeZone: z.string().max(100).refine(v => { try { new Intl.DateTimeFormat('en', { timeZone: v }); return true; } catch { return false; } }),
   previousSession: z.object({ date: calendarDate, items: z.array(z.object({ id, text: z.string().min(1).max(2000), category: z.string().min(1).max(100), sourceQuote: z.string().min(1).max(2000).optional() }).strict()).max(100) }).strict().optional(),
-  consultation: z.object({ id, revision: z.string().min(1).max(100) }).strict().optional(),
-}).strict().refine(v => !(v.previousSession && v.consultation), '상담은 한 건만 선택해 주세요.').refine(v => new Set(v.records.map(r => r.id)).size === v.records.length, '기록 ID가 중복됩니다.').refine(v => {
+}).strict().refine(v => new Set(v.records.map(r => r.id)).size === v.records.length, '기록 ID가 중복됩니다.').refine(v => {
   const ids = v.records.flatMap(r => r.draft.events.map(e => e.id)); return new Set(ids).size === ids.length;
 }, '사건 ID가 중복됩니다.').refine(v => { const ids = v.previousSession?.items.map(i => i.id) ?? []; return new Set(ids).size === ids.length; }, '과제 ID가 중복됩니다.');
 export const BriefExtraction = z.object({ summary: z.array(id).max(3), changes: z.array(id).max(10), questionsForOwner: z.array(id).max(3) }).strict();

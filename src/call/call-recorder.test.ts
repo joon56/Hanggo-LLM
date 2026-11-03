@@ -49,6 +49,13 @@ describe('speech', () => {
     expect(uploadAudio).toHaveBeenCalledTimes(1);
     expect(uploadAudio.mock.calls[0][0]).toMatchObject({ startMs: 100000 });
   });
+  it('starts the audio clock at the first sample, because the audio graph takes a moment to run after it opens', async () => {
+    const { recorder, clock, speak, uploadAudio, setTime } = build();
+    recorder.start(clock); await flush();
+    setTime(100850);
+    speak(voice(4000)); setTime(104850); speak(silence(400)); await flush();
+    expect(uploadAudio.mock.calls[0][0]).toMatchObject({ startMs: 100850 });
+  });
   it('does not produce negative times when the clock estimate is slightly early', async () => {
     const { recorder, clock, speak, uploadAudio, setTime } = build();
     setTime(-40);

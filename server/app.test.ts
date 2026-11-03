@@ -149,9 +149,8 @@ it('requires consent and valid feature input, and shares the global AI quota', a
   expect(generateOwner).toHaveBeenCalledOnce();
   expect(generateOwner.mock.calls[0][0]).toEqual(input);
 });
-it('exposes idempotent application shutdown and rejects subsequent consultation mutations',async()=>{
- const {app}=make({LIVE_CONSULTATION_ENABLED:'true'});const first=app.shutdown();expect(app.shutdown()).toBe(first);await first;
- await request(app).post('/api/consultations').set('Origin',origin).send({}).expect(503);
+it('exposes idempotent application shutdown',async()=>{
+ const {app}=make();const first=app.shutdown();expect(app.shutdown()).toBe(first);await first;
 });
 it('rejects new AI requests after application shutdown begins',async()=>{
  const {app,generate}=make();await app.shutdown();

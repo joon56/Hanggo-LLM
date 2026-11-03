@@ -2,7 +2,6 @@ import { expect, test } from '@playwright/test';
 
 test.beforeEach(async ({ page }) => {
   await page.route('**/api/lessons', route => route.fulfill({ json: { lessons: [] } }));
-  await page.route('**/api/consultations/brief-context', route => route.fulfill({ json: { consultations: [] } }));
   await page.route('**/api/session', route => route.fulfill({ json: { authenticated: true, requirePassword: false, aiEnabled: false, configured: false, textModel: '', sttModel: '', features: { ownerLog: true, brief: true, shelter: true } } }));
 });
 

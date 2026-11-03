@@ -40,14 +40,12 @@ export function readConfig(env: NodeJS.ProcessEnv = process.env) {
   if (!isLlmModel(llmModel)) throw new Error('Invalid LLM_MODEL');
   const liveSpeechModel = env.SPEECH_MODEL || env.LIVE_SPEECH_MODEL || 'qwen-asr';
   if (!['whisper-turbo', 'qwen-asr'].includes(liveSpeechModel)) throw new Error('Invalid SPEECH_MODEL');
-  const liveConsultationEnabled = env.FEATURE_LIVE_CONSULTATION_ENABLED === 'true';
   const aiProvider = env.AI_PROVIDER === 'stub' ? 'stub' as const : 'local' as const;
   if (production && aiProvider === 'stub') throw new Error('AI_PROVIDER=stub is for automated tests only.');
   return { home, profile, aiProvider,
     production, host, password, publicOrigin, provider: 'local' as const,
-    liveConsultationEnabled, liveSpeechModel: liveSpeechModel as 'whisper-turbo' | 'qwen-asr',
+    liveSpeechModel: liveSpeechModel as 'whisper-turbo' | 'qwen-asr',
     turn: readTurn(env), coachingDirectory: path.join(home, 'data', 'coaching'),
-    consultationDirectory: env.CONSULTATION_DIRECTORY || path.join(home, 'data', 'consultations'),
     liveModelDirectory: env.LIVE_MODEL_DIRECTORY || path.join(home, 'models', 'stt'),
     whisperServer: env.WHISPER_SERVER || path.join(home, 'runtime', 'whisper-cpp', 'Release', 'whisper-server.exe'),
     llamaServer: env.LLAMA_SERVER || path.join(home, 'runtime', 'llama-cpp', 'llama-server.exe'),

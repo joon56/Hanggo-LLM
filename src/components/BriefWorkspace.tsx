@@ -1,12 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
 import { generateBrief } from '../feature-api';
 import { ApiError } from '../api';
-import { getBriefConsultation, listBriefConsultations } from '../consultation-api';
 import { computeBrief } from '../domain/brief';
 import { listOwnerLogs, listPets } from '../domain/owner-storage';
 import { listNotes } from '../domain/storage';
 import type { ApprovedNote } from '../domain/notes';
-import type { BriefDraft, BriefInput, BriefSource, BriefConsultationChoice, BriefConsultationContext, Pet, SavedOwnerLog } from '../domain/workspace-types';
+import type { BriefDraft, BriefInput, BriefSource, Pet, SavedOwnerLog } from '../domain/workspace-types';
 import { downloadJson, message } from './workspace-utils';
 import IssueReport from './IssueReport';
 
@@ -15,7 +14,7 @@ const time = (ms: number) => Math.floor(ms / 60000).toString().padStart(2, '0') 
 const sourceKind = { owner: '보호자 기록', legacy_consultation: '확정 요약 상담', consultation: '확정 상세 상담' };
 export default function BriefWorkspace({ aiReady }: Props) {
   const [pets, setPets] = useState<Pet[]>([]), [records, setRecords] = useState<SavedOwnerLog[]>([]);
-  const [notes, setNotes] = useState<ApprovedNote[]>([]), [consultations, setConsultations] = useState<BriefConsultationChoice[]>([]);
+  const [notes, setNotes] = useState<ApprovedNote[]>([]);
   const [petId, setPetId] = useState(''), [selection, setSelection] = useState('');
   const [consent, setConsent] = useState(false), [draft, setDraft] = useState<BriefDraft | null>(null), [pending, setPending] = useState(false);
   const [error, setError] = useState(''), [notice, setNotice] = useState(''), [consultationNotice, setConsultationNotice] = useState(''), [refId, setRefId] = useState('');
@@ -25,22 +24,16 @@ export default function BriefWorkspace({ aiReady }: Props) {
   useEffect(() => {
     try { const values = listPets(); setPets(values); setRecords(listOwnerLogs()); setPetId(values[0]?.id ?? ''); } catch (caught) { setError(message(caught)); }
     try { setNotes(listNotes()); } catch (caught) { setConsultationNotice('요약 상담일지: ' + message(caught)); }
-    const controller = new AbortController();
-    listBriefConsultations(controller.signal).then(result => { if (!controller.signal.aborted) setConsultations(result.consultations ?? []); }).catch(caught => { if (!controller.signal.aborted) setConsultationNotice(previous => (previous + ' 상세 상담 목록: ' + message(caught)).trim()); });
-    return () => { controller.abort(); version.current++; abort.current?.abort(); };
+    return () => { version.current++; abort.current?.abort(); };
   }, []);
   const selected = pets.find(pet => pet.id === petId);
   const note = notes.find(note => 'legacy:' + note.id === selection && note.metadata.petName.trim() === selected?.name.trim());
-  const consultation = consultations.find(item => 'server:' + item.id === selection && item.petName.trim() === selected?.name.trim());
   const input: BriefInput | null = selected ? { pet: selected, records, now: new Date().toISOString(), timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-    ...(note ? { previousSession: { date: note.metadata.sessionDate, items: note.draft.items.map(item => ({ id: item.id, text: item.text, category: item.category, sourceQuote: item.sourceQuote })) } } : {}),
-    ...(consultation ? { consultation: { id: consultation.id, revision: consultation.revision } } : {}) } : null;
+    ...(note ? { previousSession: { date: note.metadata.sessionDate, items: note.draft.items.map(item => ({ id: item.id, text: item.text, category: item.category, sourceQuote: item.sourceQuote })) } } : {}) } : null;
   let factsDraft: BriefDraft | null = null;
-  try { if (input) factsDraft = computeBrief({ ...input, consultation: undefined }); } catch { factsDraft = null; }
+  try { if (input) factsDraft = computeBrief(input); } catch { factsDraft = null; }
   const invalidate = (caught: unknown) => {
     setSelection(''); setDraft(null); setError(message(caught) + ' 확정 상담일지를 다시 선택해 주세요.');
-    const current = version.current;
-    listBriefConsultations().then(result => { if (current === version.current) setConsultations(result.consultations ?? []); }).catch(() => { if (current === version.current) setConsultationNotice('최신 상담 목록을 읽지 못했습니다. 화면을 다시 열어 확인해 주세요.'); });
     try { setNotes(listNotes()); } catch (storageError) { setConsultationNotice(message(storageError)); }
   };
   const generate = async () => {
@@ -49,7 +42,6 @@ export default function BriefWorkspace({ aiReady }: Props) {
     if (aiReady && !consent) { setError('AI 처리 동의가 필요합니다.'); return; }
     const current = version.current, controller = new AbortController(); abort.current = controller; setPending(true);
     const stillCurrent = () => current === version.current && !controller.signal.aborted;
-    const readContext = () => consultation ? getBriefConsultation(consultation.id, input.pet.name, consultation.revision, controller.signal) : Promise.resolve(undefined);
     const validateLegacy = () => {
       if (!note) return;
       let stored: ApprovedNote | undefined;
@@ -57,13 +49,10 @@ export default function BriefWorkspace({ aiReady }: Props) {
       catch (caught) { throw new ApiError(message(caught), 'BRIEF_CONSULTATION_INVALID'); }
       if (!stored || JSON.stringify(stored) !== JSON.stringify(note)) throw new ApiError('선택한 요약 상담일지가 변경되었습니다.', 'BRIEF_CONSULTATION_INVALID');
     };
-    let context: BriefConsultationContext | undefined;
     try {
-      if (selection && !note && !consultation) throw new ApiError('선택한 상담일지가 목록에 없습니다.', 'BRIEF_CONSULTATION_INVALID');
+      if (selection && !note) throw new ApiError('선택한 상담일지가 목록에 없습니다.', 'BRIEF_CONSULTATION_INVALID');
       validateLegacy();
-      context = await readContext(); if (!stillCurrent()) return;
-      validateLegacy();
-      if (!aiReady) { setDraft(computeBrief(input, context)); setNotice('저장된 근거로 코드 브리핑을 만들었습니다.'); return; }
+      if (!aiReady) { setDraft(computeBrief(input)); setNotice('저장된 근거로 코드 브리핑을 만들었습니다.'); return; }
       const result = await generateBrief(input, controller.signal); if (!stillCurrent()) return;
       validateLegacy();
       setDraft(result.draft); setNotice(result.fallbackUsed ? 'AI 선택 실패 · 코드 기반 대체 브리핑입니다. 상세 근거와 질문을 확인해 주세요.' : '로컬 AI가 근거 우선순위를 선택한 브리핑입니다.');
@@ -74,9 +63,7 @@ export default function BriefWorkspace({ aiReady }: Props) {
       // Re-read selected approved context before a fallback after transport errors.
       try {
         validateLegacy();
-        context = await readContext(); if (!stillCurrent()) return;
-        validateLegacy();
-        setDraft(computeBrief(input, context)); setNotice('AI 선택 실패 · 코드 기반 대체 브리핑입니다.');
+        setDraft(computeBrief(input)); setNotice('AI 선택 실패 · 코드 기반 대체 브리핑입니다.');
         setError(message(caught) + ' 근거와 확인 질문을 코드로 구성했습니다.');
       } catch (validationError) { if (stillCurrent()) invalidate(validationError); }
     } finally { if (current === version.current) { abort.current = null; setPending(false); } }
@@ -102,10 +89,9 @@ export default function BriefWorkspace({ aiReady }: Props) {
     <label className="ws-label">반려동물<select value={petId} onChange={e => { reset(); setPetId(e.target.value); setSelection(''); }}><option value="">선택하세요</option>{pets.map(pet => <option key={pet.id} value={pet.id}>{pet.name}</option>)}</select></label>
     <label className="ws-label">확정 상담일지 (선택 사항)<select value={selection} disabled={!selected} onChange={e => { reset(); setSelection(e.target.value); }}><option value="">상담 연결 없이 만들기</option>
       {notes.filter(note => note.metadata.petName.trim() === selected?.name.trim()).map(note => <option key={note.id} value={'legacy:' + note.id}>요약 상담 · {note.metadata.sessionDate} · {note.metadata.trainerName}</option>)}
-      {consultations.filter(item => item.petName.trim() === selected?.name.trim()).map(item => <option key={item.id} value={'server:' + item.id}>상세 상담 · {item.date} · {item.trainerName}</option>)}
     </select></label>
     {consultationNotice && <p className="ws-muted">{consultationNotice}</p>}
-    {selected && <div className="ws-box"><h3>사용 자료</h3><p>저장된 보호자 기록 {records.filter(record => record.draft.events.some(e => e.petId === petId)).length}건</p><p>선택 상담: {note ? '확정 요약 · ' + note.metadata.sessionDate : consultation ? '확정 상세 · ' + consultation.date : '선택 없음'}</p>{consultation && <p className="ws-muted">생성할 때 서버의 확정 상태와 현재 내용을 다시 확인합니다.</p>}</div>}
+    {selected && <div className="ws-box"><h3>사용 자료</h3><p>저장된 보호자 기록 {records.filter(record => record.draft.events.some(e => e.petId === petId)).length}건</p><p>선택 상담: {note ? '확정 요약 · ' + note.metadata.sessionDate : '선택 없음'}</p></div>}
     {aiReady && <label className="ws-check"><input type="checkbox" checked={consent} onChange={e => { setConsent(e.target.checked); if (!e.target.checked) cancel(); }} />선택한 기록을 이 PC의 로컬 AI 서버에서 처리하는 데 동의합니다.</label>}
     <button className="button primary full" onClick={generate} disabled={!selected || pending}>{pending ? '브리핑 만드는 중' : aiReady ? 'AI 브리핑 만들기' : '기록으로 브리핑 만들기'}</button>{pending && <button className="button secondary full" onClick={cancel}>생성 취소</button>}
     {notice && <p role="status" className="ws-notice">{notice}</p>}{error && <p role="alert" className="ws-error">{error}</p>}{(draft || error) && <IssueReport feature="brief" input={input} output={draft} requestId={draft?.generation?.requestId} error={error} />}

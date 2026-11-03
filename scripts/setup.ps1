@@ -16,7 +16,7 @@ if ($LASTEXITCODE -ne 0) { throw 'Package install failed.' }
 $utf8 = [Text.UTF8Encoding]::new($false)
 $settings = Join-Path $HanggoHome 'settings.env'
 if (-not (Test-Path -LiteralPath $settings)) {
-  [IO.File]::WriteAllText($settings, "AI_ENABLED=true`nFEATURE_OWNER_LOG_ENABLED=true`nFEATURE_BRIEF_ENABLED=true`nFEATURE_LIVE_CONSULTATION_ENABLED=true`nSPEECH_MODEL=qwen-asr`nLLM_MODEL=gemma4-12b`n", $utf8)
+  [IO.File]::WriteAllText($settings, "AI_ENABLED=true`nFEATURE_OWNER_LOG_ENABLED=true`nFEATURE_BRIEF_ENABLED=true`nSPEECH_MODEL=qwen-asr`nLLM_MODEL=gemma4-12b`n", $utf8)
 }
 $secrets = Join-Path $HanggoHome 'secrets.env'
 if (-not (Test-Path -LiteralPath $secrets)) {

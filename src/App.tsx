@@ -11,7 +11,6 @@ import type { Session } from './api';
 import OwnerWorkspace from './components/OwnerWorkspace';
 import BriefWorkspace from './components/BriefWorkspace';
 import ShelterWorkspace from './components/ShelterWorkspace';
-import ConsultationWorkspace from './components/ConsultationWorkspace';
 import LessonMatches from './components/LessonMatches';
 import IssueReport from './components/IssueReport';
 import './workspace.css';
@@ -30,8 +29,7 @@ function initialHistory() {
 
 export default function App() {
   const publicDemo = import.meta.env.VITE_PUBLIC_DEMO === 'true';
-  const [workspace, setWorkspace] = useState<'notes' | 'ownerLog' | 'brief' | 'shelter' | 'consultation'>('notes');
-  const [consultationBusy, setConsultationBusy] = useState(false);
+  const [workspace, setWorkspace] = useState<'notes' | 'ownerLog' | 'brief' | 'shelter'>('notes');
   const [history, setHistory] = useState<ApprovedNote[]>([]);
   const [error, setError] = useState('');
   const [session, setSession] = useState<Session | null>(publicDemo ? {
@@ -231,9 +229,8 @@ export default function App() {
     setNotice(''); await recorder.start();
   };
   const changeInputMode = (mode: 'text' | 'voice') => { setInputMode(mode); if (mode === 'text') { cancelPending(); recorder.reset(); } };
-  const workspaceLabels = { notes: '상담일지', ownerLog: '보호자 일상 기록', brief: '상담 전 브리핑', shelter: '보호소 프로필', consultation: '실시간 상담' };
+  const workspaceLabels = { notes: '상담일지', ownerLog: '보호자 일상 기록', brief: '상담 전 브리핑', shelter: '보호소 프로필' };
   const changeWorkspace = (next: typeof workspace) => {
-    if (consultationBusy) return;
     if (next === workspace) return;
     if (recording || recorder.audioBlob) {
       if (!window.confirm('다른 기능으로 이동하면 현재 녹음이 삭제됩니다. 이동할까요?')) return;
@@ -241,13 +238,9 @@ export default function App() {
     cancelPending(); recorder.reset(); setWorkspace(next);
   };
 
-  const connectionSession = workspace === 'consultation' && session?.liveConsultation?.enabled && !localDemo ? {
-    ...session, sttModel: session.liveConsultation.model, sttReady: session.liveConsultation.ready,
-    statusMessage: session.liveConsultation.ready ? `실시간 상담 받아쓰기 · ${session.liveConsultation.model} · 준비됨` : '실시간 상담 받아쓰기 모델을 준비해 주세요.',
-  } : session;
   const connection = publicDemo
     ? <section className="connection-panel" aria-label="공개 체험판"><strong>공개 체험판 · AI 연결 없음</strong><span>텍스트 정리·녹음 재생·검토·저장을 체험하세요. AI 생성·받아쓰기는 제공하지 않습니다. 가상 자료를 사용하세요.</span></section>
-    : <ConnectionPanel session={connectionSession} loading={sessionLoading} error={sessionError} onRetry={retrySession} onLogin={loginSession} onLogout={logoutSession} localDemo={localDemo} onDemo={value => { cancelPending(); setLocalDemo(value); }} />;
+    : <ConnectionPanel session={session} loading={sessionLoading} error={sessionError} onRetry={retrySession} onLogin={loginSession} onLogout={logoutSession} localDemo={localDemo} onDemo={value => { cancelPending(); setLocalDemo(value); }} />;
   if (sessionLoading || (!session && !(import.meta.env.DEV && localDemo)) || (session?.requirePassword && !session.authenticated)) return <div className="connection-gate">{connection}</div>;
 
   return <div className="app-shell">
@@ -255,7 +248,7 @@ export default function App() {
       <a className="brand" href="#main"><span className="brand-symbol"><PawPrintIcon weight="fill" size={25} /></span><span>행고<span className="brand-dot">.</span></span></a>
       {!publicDemo && <a className="button secondary coaching-entry" href="/coaching">화상 코칭</a>}
       <div className="workspace-label">TRAINER WORKSPACE</div>
-      <nav className="workspace-nav" aria-label="기능 선택">{(Object.keys(workspaceLabels) as (keyof typeof workspaceLabels)[]).filter(key => key === 'consultation' ? !publicDemo && !localDemo && session?.liveConsultation?.enabled : key === 'notes' || publicDemo || localDemo || session?.features?.[key]).map(key => <button key={key} className={workspace === key ? 'active-nav' : 'workspace-nav-button'} aria-current={workspace === key ? 'page' : undefined} disabled={consultationBusy} onClick={() => changeWorkspace(key)}><NotebookIcon size={20} /><span>{workspaceLabels[key]}</span></button>)}</nav>
+      <nav className="workspace-nav" aria-label="기능 선택">{(Object.keys(workspaceLabels) as (keyof typeof workspaceLabels)[]).filter(key => key === 'notes' || publicDemo || localDemo || session?.features?.[key]).map(key => <button key={key} className={workspace === key ? 'active-nav' : 'workspace-nav-button'} aria-current={workspace === key ? 'page' : undefined} onClick={() => changeWorkspace(key)}><NotebookIcon size={20} /><span>{workspaceLabels[key]}</span></button>)}</nav>
       {workspace === 'notes' && <>
       <button className="new-note button secondary" onClick={newNote}><PlusIcon size={17} />새 상담 기록</button>
       <div className="history-heading"><span>저장한 기록</span><span>{history.length}</span></div>
@@ -268,17 +261,16 @@ export default function App() {
         </div>)}
       </nav>
       </>}
-      <div className="sidebar-bottom"><div className="local-status"><span />{workspace === 'consultation' ? '상담 녹화·원문은 이 PC 서버에 보관' : '승인한 기록은 이 브라우저에 보관'}</div><p>상담의 기록이<br />다음 훈련의 시작이 되도록.</p><span className="sidebar-version">HANGGO / 0.2</span></div>
+      <div className="sidebar-bottom"><div className="local-status"><span />승인한 기록은 이 브라우저에 보관</div><p>상담의 기록이<br />다음 훈련의 시작이 되도록.</p><span className="sidebar-version">HANGGO / 0.2</span></div>
     </aside>
 
     <div className="workspace">
       <header className="topbar"><div className="breadcrumbs">행고 기록 공간<span>/</span><strong>{workspaceLabels[workspace]}</strong></div><div className="topbar-actions"><span className="demo-badge">{aiReady ? 'LOCAL AI' : 'DEMO'}</span>{workspace === 'notes' && <button className="help-button" onClick={() => setShowHelp(value => !value)} aria-expanded={showHelp}><InfoIcon size={18} />사용 안내</button>}</div></header>
       <main id="main">
-        {consultationBusy ? <fieldset disabled className="consultation-connection-lock">{connection}</fieldset> : connection}
+        {connection}
         {workspace === 'ownerLog' && <OwnerWorkspace aiReady={aiReady} sttReady={sttReady} />}
         {workspace === 'brief' && <BriefWorkspace aiReady={aiReady} />}
         {workspace === 'shelter' && <ShelterWorkspace aiReady={aiReady} serverAvailable={!publicDemo && !localDemo} />}
-        {workspace === 'consultation' && <ConsultationWorkspace ready={!!session?.liveConsultation?.ready} model={session?.liveConsultation?.model ?? ''} onBusyChange={setConsultationBusy} />}
         {workspace === 'notes' && <>
         <section className="page-intro"><div><span className="eyebrow">AFTER THE SESSION</span><h1>대화의 끝에서,<br className="mobile-break" /> 기록의 시작.</h1><p>짧게 남긴 상담 요약을, 다음 훈련으로 이어지는 일지로.</p></div><div className="intro-caption"><BookOpenTextIcon size={27} weight="light" /><span>말하고, 확인하고,<br /><strong>기록으로 남기세요.</strong></span></div></section>
         <div className="flow-strip" aria-label="진행 단계"><span className={!draft ? 'current' : 'complete'}><i>{draft ? <CheckIcon size={13} /> : '1'}</i>요약 남기기</span><ArrowRightIcon /><span className={draft && !saved ? 'current' : saved ? 'complete' : ''}><i>{saved ? <CheckIcon size={13} /> : '2'}</i>원문과 초안 확인</span><ArrowRightIcon /><span className={saved ? 'current' : ''}><i>3</i>승인하고 보관</span><span className="flow-note">{aiReady ? 'AI 초안 · 훈련사 최종 검토' : '로컬 규칙 분류'}</span></div>

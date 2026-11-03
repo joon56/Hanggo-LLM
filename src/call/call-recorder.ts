@@ -103,7 +103,6 @@ export class CallRecorder {
       const tap = await tapMicrophone(track, samples => this.onSamples(samples));
       if (generation !== this.generation) { tap.stop(); return; }
       this.tap = tap;
-      this.base = this.clock!();
       this.windows = new SpeechWindows(tap.sampleRate, window => {
         if (this.options.transcribes?.() === false) return;
         const offset = Math.max(0, Math.round(this.base));
@@ -114,9 +113,9 @@ export class CallRecorder {
 
   private onSamples(samples: Float32Array) {
     if (!this.windows || !this.clock) return;
-    // A suspended AudioContext makes no samples, which would leave every later time behind the call.
+    // The first samples set the clock. After that, a suspended AudioContext makes no samples, which would leave every later time behind the call.
     const drift = this.clock() - (this.base + this.windows.durationMs);
-    if (Math.abs(drift) > MAX_DRIFT_MS) this.base += drift;
+    if (this.windows.durationMs === 0 || Math.abs(drift) > MAX_DRIFT_MS) this.base += drift;
     this.windows.push(samples);
   }
 
