@@ -21,6 +21,7 @@ function LiveCall({ consultationId, room, choice, forceRelay, navigate }: { cons
   const goHome = useCallback(() => {
     if (left.current) return;
     left.current = true;
+    setNotice('상담을 마치고 있습니다. 마지막 기록을 보내는 중입니다.');
     void (sessionRef.current?.finish() ?? Promise.resolve()).finally(() => navigate(room.home));
   }, [navigate, room.home]);
   const onClosedForGood = useCallback((code: number) => {
