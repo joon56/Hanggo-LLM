@@ -88,9 +88,10 @@ jobs:
           cache: npm
       - run: npm ci
       - name: Install video, Korean font, and browser dependencies
+        timeout-minutes: 8
         run: |
           sudo apt-get update
-          sudo apt-get install -y ffmpeg fonts-noto-cjk
+          sudo apt-get install -y -o Acquire::Retries=3 ffmpeg fonts-nanum
           npx playwright install --with-deps chrome ffmpeg
       - run: npm run build
       - name: Record both screens through one coaching loop

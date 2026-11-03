@@ -7,7 +7,7 @@ import { characterErrorRate } from '../scripts/speech-metrics.ts';
 import { loadLocalEnv, readConfig } from '../server/config.ts';
 import type { Consultation, Segment, Speaker } from '../src/domain/coaching.ts';
 import { termRecall } from '../src/domain/speech-terms.ts';
-import { createCaseAsTrainer, enterAsGuardian, enterAsTrainer, joinAsGuardian, launch, room, startServer } from './helpers/two-way.ts';
+import { createCaseAsTrainer, enterAsGuardian, enterAsTrainer, ensureMedia, joinAsGuardian, launch, room, startServer } from './helpers/two-way.ts';
 
 // Usage: node e2e/verify-real-speech.ts [--note] [--human <clips>] [dialogue,...]
 // Plays speech through two fake microphones into the real server and the real speech model.
@@ -167,6 +167,7 @@ function humanDialogue(clips: number): Dialogue {
 }
 
 loadLocalEnv();
+ensureMedia();
 const args = process.argv.slice(2);
 const withNote = args.includes('--note');
 const humanAt = args.indexOf('--human');
