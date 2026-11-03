@@ -1,11 +1,10 @@
 import { spawn, type ChildProcess } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
 import { statSync } from 'node:fs';
-import { createServer } from 'node:net';
 import { resolve } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import type { Config } from './config.ts';
-import { assertLocalModel } from './local-model.ts';
+import { freePort } from './ai/free-port.ts';
 
 export type SpeechCandidate = Exclude<Config['liveSpeechModel'], ''>;
 export type LiveSpeechService = {
@@ -51,17 +50,6 @@ export function parseSpeechResponse(candidate: SpeechCandidate, raw: unknown): s
   return text.replace(/<\|(?:im_end|endoftext)\|>/g, '').trim();
 }
 
-async function freePort(): Promise<number> {
-  const server = createServer();
-  return new Promise((resolvePort, reject) => {
-    server.once('error', reject);
-    server.listen(0, '127.0.0.1', () => {
-      const address = server.address();
-      server.close(error => error ? reject(error) : resolvePort((address as { port: number }).port));
-    });
-  });
-}
-
 async function boundedJson(response: Response) {
   if (!response.ok || !response.body) throw new Error(`음성 모델 요청 실패 (${response.status}).`);
   const reader = response.body.getReader();
@@ -90,15 +78,6 @@ export function createLiveSpeech(config: Config, hooks: { unloadTextModel?: () =
       await new Promise<void>(resolveExit => { owned.once('close', () => resolveExit()); owned.kill(); });
     }
   }
-  async function unloadTextModel() {
-    if (hooks.unloadTextModel) return hooks.unloadTextModel();
-    const signal = AbortSignal.timeout(15_000);
-    await assertLocalModel(config, signal);
-    const response = await fetch(`${config.ollamaBaseUrl}/api/generate`, { method: 'POST', redirect: 'error', signal,
-      headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ model: config.textModel, keep_alive: 0 }) });
-    if (!response.ok) throw new Error('텍스트 모델의 GPU 메모리를 해제하지 못했습니다.');
-    await response.body?.cancel();
-  }
   return {
     async prepare() {
       if (ready) return;
@@ -107,7 +86,7 @@ export function createLiveSpeech(config: Config, hooks: { unloadTextModel?: () =
       lifetime = new AbortController();
       const signal = AbortSignal.any([lifetime.signal, AbortSignal.timeout(config.sttTimeoutMs)]);
       starting = (async () => {
-        await unloadTextModel(); signal.throwIfAborted();
+        await hooks.unloadTextModel?.(); signal.throwIfAborted();
         const port = await freePort(); signal.throwIfAborted();
         token = randomBytes(24).toString('hex');
         const command = buildSpeechCommand(config, port, token); baseUrl = command.baseUrl;

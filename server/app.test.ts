@@ -14,7 +14,7 @@ const make = (extra = {}) => {
 it('allows local text generation without any external API key', async () => {
   const { app, generate } = make();
   const session = await request(app).get('/api/session').expect(200);
-  expect(session.body).toMatchObject({ provider: 'ollama', configured: true });
+  expect(session.body).toMatchObject({ provider: 'local', configured: true });
   await request(app).post('/api/notes').set('Origin', origin).send({ text: '관찰했습니다.', sourceKind: 'trainer_summary_text', consent: true }).expect(200);
   expect(generate).toHaveBeenCalledOnce();
 });

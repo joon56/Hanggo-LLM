@@ -1,6 +1,7 @@
 import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { parseEnv } from 'node:util';
+import { isLlmModel } from './ai/llm/models.ts';
 
 /** Real environment and .env win. An empty value counts as unset so a blank .env line cannot hide a secret. */
 export function loadLocalEnv(env: NodeJS.ProcessEnv = process.env, pointer = '.hanggo-home') {
@@ -14,9 +15,6 @@ export function loadLocalEnv(env: NodeJS.ProcessEnv = process.env, pointer = '.h
 }
 
 export function readConfig(env: NodeJS.ProcessEnv = process.env) {
-  const ollamaUrl = new URL(env.OLLAMA_BASE_URL || 'http://127.0.0.1:11434');
-  if (ollamaUrl.protocol !== 'http:' || !['127.0.0.1', '[::1]'].includes(ollamaUrl.hostname) || ollamaUrl.username || ollamaUrl.password || ollamaUrl.pathname !== '/' || ollamaUrl.search || ollamaUrl.hash)
-    throw new Error('OLLAMA_BASE_URL must be a loopback HTTP origin (127.0.0.1 or [::1]).');
   const production = env.NODE_ENV === 'production';
   const host = env.HOST || '127.0.0.1';
   if (!production && !['127.0.0.1', 'localhost', '::1'].includes(host))
@@ -37,30 +35,31 @@ export function readConfig(env: NodeJS.ProcessEnv = process.env) {
     if (!Number.isInteger(n) || n < 1 || n > max) throw new Error(`Invalid ${name}`);
     return n;
   };
-  const ollamaTimeoutMs = number('OLLAMA_TIMEOUT_MS', 120000, 600000);
+  const llmModel = env.LLM_MODEL || 'qwen35-9b';
+  if (!isLlmModel(llmModel)) throw new Error('Invalid LLM_MODEL');
   const liveSpeechModel = env.LIVE_SPEECH_MODEL || '';
   if (!['', 'whisper-turbo', 'whisper-large', 'qwen-asr'].includes(liveSpeechModel)) throw new Error('Invalid LIVE_SPEECH_MODEL');
   const liveConsultationEnabled = env.FEATURE_LIVE_CONSULTATION_ENABLED === 'true';
   if (liveConsultationEnabled && !liveSpeechModel) throw new Error('Select LIVE_SPEECH_MODEL before enabling live consultation.');
   return { home, profile, aiProvider: env.AI_PROVIDER === 'stub' ? 'stub' as const : 'local' as const,
-    production, host, password, publicOrigin, provider: 'ollama' as const,
+    production, host, password, publicOrigin, provider: 'local' as const,
     liveConsultationEnabled, liveSpeechModel: liveSpeechModel as '' | 'whisper-turbo' | 'whisper-large' | 'qwen-asr',
     consultationDirectory: env.CONSULTATION_DIRECTORY || path.join(home, 'data', 'consultations'),
     liveModelDirectory: env.LIVE_MODEL_DIRECTORY || path.join(home, 'models', 'stt'),
     whisperServer: env.WHISPER_SERVER || path.join(home, 'runtime', 'whisper-cpp', 'Release', 'whisper-server.exe'),
     llamaServer: env.LLAMA_SERVER || path.join(home, 'runtime', 'llama-cpp', 'llama-server.exe'),
-    ollamaBaseUrl: ollamaUrl.origin, ollamaContextSize: number('OLLAMA_CONTEXT_SIZE', 8192, 32768),
+    llmModel, contextSize: number('LLM_CONTEXT_SIZE', 8192, 262144),
     whisperExecutable: env.WHISPER_EXECUTABLE || '.local-ai/whisper/whisper-cli.exe',
     whisperModelPath: env.WHISPER_MODEL_PATH || '.local-ai/models/ggml-medium-q5_0.bin',
     ffmpegPath: env.FFMPEG_PATH || 'ffmpeg', sttTimeoutMs: number('LOCAL_STT_TIMEOUT_MS', 180000, 600000),
     port: number('PORT', 3001, 65535),
     aiEnabled: env.AI_ENABLED === 'true',
     features: { ownerLog: env.FEATURE_OWNER_LOG_ENABLED === 'true', brief: env.FEATURE_BRIEF_ENABLED === 'true', shelter: env.FEATURE_SHELTER_ENABLED === 'true' },
-    textModel: env.OLLAMA_MODEL || 'qwen3.5:9b',
+    textModel: llmModel,
     sttModel: `${path.basename(env.WHISPER_MODEL_PATH || 'ggml-medium-q5_0.bin')} (CPU)`,
     ffprobePath: env.FFPROBE_PATH || 'ffprobe',
     lessonCatalogPath: env.LESSON_CATALOG_PATH || '',
-    timeoutMs: ollamaTimeoutMs, dailyLimit: number('AI_DAILY_LIMIT', 200, 10000),
+    timeoutMs: number('LLM_TIMEOUT_MS', 300000, 1800000), dailyLimit: number('AI_DAILY_LIMIT', 200, 10000),
     trustProxy: env.TRUST_PROXY === '1' ? 1 : false as false | number,
   };
 }

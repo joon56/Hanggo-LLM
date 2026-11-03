@@ -36,14 +36,7 @@ const report: { createdAt: string; kind: string; results: unknown[]; limitations
 await mkdir(dirname(outputPath), { recursive: true });
 for (const candidate of selected) {
   const config = readConfig({ ...process.env, LIVE_SPEECH_MODEL: candidate });
-  const speech = createLiveSpeech(config, { unloadTextModel: async () => {
-    // The comparison is standalone. Refuse to benchmark with another Ollama model in GPU memory.
-    try {
-      const response = await fetch(`${config.ollamaBaseUrl}/api/ps`, { signal: AbortSignal.timeout(2000) });
-      const body = await response.json() as { models?: unknown[] };
-      if (body.models?.length) throw new Error('Unload Ollama models before comparing speech candidates.');
-    } catch (error) { if (error instanceof Error && error.message.includes('Unload')) throw error; }
-  } });
+  const speech = createLiveSpeech(config);
   const started = performance.now();
   try {
     await speech.prepare();

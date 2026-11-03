@@ -1,6 +1,7 @@
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
-import { readConfig } from '../server/config.ts';
-import { createOllamaServices } from '../server/ollama.ts';
+import { loadLocalEnv, readConfig } from '../server/config.ts';
+import { createAiServices } from '../server/ai/services.ts';
+import { createLlmProvider } from '../server/providers.ts';
 import { evaluateDraft, Fixture } from './evaluation.ts';
 import { validateOwnerDraft } from '../src/domain/owner-log.ts';
 import { validateShelterDraft } from '../src/domain/shelter.ts';
@@ -12,11 +13,13 @@ const args = process.argv.slice(2); let model: string | undefined; let all = fal
 for (let i = 0; i < args.length; i++) {
   if (args[i] === '--all') all = true;
   else if (args[i] === '--model' && args[i + 1] && !args[i + 1].startsWith('--')) model = args[++i];
-  else if (args[i] === '--help') { console.info('npm run llm:eval:local -- [--model qwen3.5:9b] [--all]\n기본 16개 사례 / --all 82개. 실제 로컬 모델 호출, 외부 API 사용 없음.'); process.exit(0); }
+  else if (args[i] === '--help') { console.info('npm run llm:eval:local -- [--model qwen38-27b] [--all]\n기본 16개 사례 / --all 82개. 실제 로컬 모델 호출, 외부 API 사용 없음.'); process.exit(0); }
   else throw new Error(`지원하지 않는 인자: ${args[i]}`);
 }
-const config = readConfig({ ...process.env, ...(model ? { OLLAMA_MODEL: model } : {}) });
-const services = createOllamaServices(config);
+loadLocalEnv();
+const config = readConfig({ ...process.env, ...(model ? { LLM_MODEL: model } : {}) });
+const llm = createLlmProvider(config);
+const services = createAiServices(config, llm);
 // Pick a fixed, visible subset; never choose cases based on a model's outputs.
 const smokeCases: Record<string, string[]> = {
   'session-notes': ['N06', 'N09', 'N11', 'N15', 'N23', 'N29'],
@@ -69,8 +72,9 @@ for (const file of ['session-notes', 'owner-logs', 'briefs', 'shelter-profiles']
     console.info(`${file}/${fixture.id}: ${failures.length ? 'FAIL' : 'PASS'} ${(latencyMs / 1000).toFixed(1)}s ${failures.join(' / ')}`);
     // Persist after every case so interrupted long evaluations remain reviewable.
     await mkdir('test-output', { recursive: true });
-    await writeFile(`test-output/local-${config.textModel.replace(/[^a-zA-Z0-9._-]/g, '_')}-${all ? 'all' : 'smoke'}.json`, JSON.stringify({ model: config.textModel, contextSize: config.ollamaContextSize, createdAt: new Date().toISOString(), automaticChecksOnly: true, reports }, null, 2));
+    await writeFile(`test-output/local-${config.textModel.replace(/[^a-zA-Z0-9._-]/g, '_')}-${all ? 'all' : 'smoke'}.json`, JSON.stringify({ model: config.textModel, contextSize: config.contextSize, createdAt: new Date().toISOString(), automaticChecksOnly: true, reports }, null, 2));
   }
 }
 console.info(`${config.textModel}: ${reports.filter(r => r.passed).length}/${reports.length} 자동 조건 통과. 원문 누락·의미는 별도 검토가 필요합니다.`);
+await llm.release();
 if (reports.some(r => !r.passed)) process.exitCode = 1;

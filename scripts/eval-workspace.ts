@@ -1,6 +1,6 @@
 import { readFile, mkdir, writeFile, readdir } from 'node:fs/promises';
 import path from 'node:path';
-import { readConfig } from '../server/config.ts';
+import { loadLocalEnv, readConfig } from '../server/config.ts';
 import { createAIServices } from '../server/providers.ts';
 import { OwnerInputSchema } from '../server/owner-service.ts';
 import { BriefInputSchema } from '../server/brief-service.ts';
@@ -20,15 +20,16 @@ for (let i = 0; i < args.length; i++) {
 }
 if (args.includes('--help')) {
   console.info('npm run llm:eval:workspace -- [--feature owner|brief|shelter|all] [--case ID] [--live] [--audio-dir PATH]');
-  console.info('기본: 입력 자료와 수동 계산 검증. --live: 로컬 Ollama·Whisper 직접 호출. --audio-dir는 owner의 ID.wav/webm/mp4/mp3를 받아쓴 후 테스트합니다.');
+  console.info('기본: 입력 자료와 수동 계산 검증. --live: 로컬 LLM·Whisper 직접 호출. --audio-dir는 owner의 ID.wav/webm/mp4/mp3를 받아쓴 후 테스트합니다.');
   process.exit(0);
 }
 const feature = options.get('--feature') || 'all';
 if (!['owner', 'brief', 'shelter', 'all'].includes(feature)) throw new Error('지원하지 않는 기능입니다.');
 const audioDir = options.get('--audio-dir');
 if (audioDir && (!live || feature !== 'owner')) throw new Error('음성 테스트는 --feature owner --live가 필요합니다.');
+loadLocalEnv();
 const config = readConfig();
-if (live && !config.aiEnabled) throw new Error('.env에 AI_ENABLED=true를 설정하고 로컬 모델을 준비하세요.');
+if (live && !config.aiEnabled) throw new Error('settings.env에 AI_ENABLED=true를 설정하고 로컬 모델을 준비하세요.');
 const services = live ? createAIServices(config) : null;
 const files = audioDir ? await readdir(audioDir) : [];
 const reports: Record<string, unknown>[] = [];
@@ -97,4 +98,5 @@ if (live) {
   console.info(`상세 결과: ${file}. 원문 누락·의미·실제 사용성은 직접 검토하세요.`);
 } else console.info('AI 모델 호출은 실행하지 않았습니다. owner는 입력 스키마, brief/shelter는 수동 계산도 검증했습니다.');
 console.info(`통과 ${reports.filter(r => r.passed).length}/${reports.length}`);
+await services?.llm.release();
 if (reports.some(r => !r.passed)) process.exitCode = 1;

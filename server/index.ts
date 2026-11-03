@@ -14,6 +14,7 @@ const app = createApp(config, {
   },
   transcribe: services.transcribe,
   liveSpeech: services.liveSpeech,
+  vision: services.vision,
   async generateOwner(...args) { const result = await services.generateOwner(...args); logResult('owner_log', result); return result; },
   async generateBrief(...args) { const result = await services.generateBrief(...args); logResult('brief', result); return result; },
   async generateShelter(...args) { const result = await services.generateShelter(...args); logResult('shelter', result); return result; },
@@ -34,7 +35,7 @@ for (const event of ['SIGINT', 'SIGTERM'] as const) process.on(event, () => {
   shutdownTask = (async () => {
     await Promise.all([closed, (async () => {
       try { await app.shutdown(); }
-      finally { await services.liveSpeech.release(); }
+      finally { await Promise.all([services.liveSpeech.release(), services.llm.release()]); }
     })()]);
   })();
   void shutdownTask.then(() => { clearTimeout(fallback); process.exit(0); }, () => { clearTimeout(fallback); server.closeAllConnections(); process.exit(1); });

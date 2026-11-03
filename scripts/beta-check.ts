@@ -11,7 +11,7 @@ export async function checkBeta(config: Config, warmup = false): Promise<string[
   const api = `http://${config.host === '::1' ? '[::1]' : config.host}:${config.port}`;
   const status = await getLocalStatus(config);
   if (!status.configured || !status.sttReady) throw new Error(status.statusMessage);
-  const lines = [`모델: ${config.textModel}`, 'Ollama·Whisper·FFmpeg 준비 완료'];
+  const lines = [`모델: ${config.textModel}`, 'LLM·Whisper·FFmpeg 준비 완료'];
   let cookie = '';
   const call = async (base: string, endpoint: string, init: RequestInit = {}) => {
     let response: Response;
@@ -27,7 +27,7 @@ export async function checkBeta(config: Config, warmup = false): Promise<string[
   for (const base of [api, ui.origin]) {
     const { body } = await call(base, '/api/session');
     if (body.textModel !== config.textModel) throw new Error('실행 중인 서버의 모델 설정이 현재 .env와 다릅니다. 개발 서버를 다시 시작하세요.');
-    if (!body.aiEnabled || body.provider !== 'ollama' || !['ownerLog', 'brief', 'shelter'].every(key => body.features?.[key] === true))
+    if (!body.aiEnabled || body.provider !== 'local' || !['ownerLog', 'brief', 'shelter'].every(key => body.features?.[key] === true))
       throw new Error('네 기능을 활성화해 주세요. settings.env 확인 후 개발 서버를 다시 시작하세요.');
     if (body.authenticated && (!body.configured || !body.sttReady)) throw new Error('실행 중인 서버의 모델·음성 준비 상태를 확인하세요.');
     if (base === api && !body.authenticated) lines.push('접근 비밀번호 사용 중: 시연 화면에서 로그인하세요.');

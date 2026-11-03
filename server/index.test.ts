@@ -2,7 +2,7 @@
 import { afterEach, expect, it, vi } from 'vitest';
 const lifecycle=vi.hoisted(()=>({handlers:new Map<string,()=>void>(),shutdown:vi.fn(),release:vi.fn(async()=>{}),close:vi.fn((callback:()=>void)=>callback()),closeAllConnections:vi.fn()}));
 vi.mock('./config.ts',()=>({loadLocalEnv:vi.fn(),readConfig:()=>({port:0,host:'127.0.0.1',timeoutMs:100,sttTimeoutMs:100})}));
-vi.mock('./providers.ts',()=>({createAIServices:()=>({liveSpeech:{release:lifecycle.release}})}));
+vi.mock('./providers.ts',()=>({createAIServices:()=>({liveSpeech:{release:lifecycle.release},llm:{release:async()=>{}}})}));
 vi.mock('./app.ts',()=>({createApp:()=>({shutdown:lifecycle.shutdown,listen:()=>({close:lifecycle.close,closeAllConnections:lifecycle.closeAllConnections,on:vi.fn()})})}));
 afterEach(()=>{vi.restoreAllMocks();vi.useRealTimers();vi.resetModules();lifecycle.handlers.clear();vi.clearAllMocks();});
 it('waits application settlement and speech release before graceful exit, including repeated signals',async()=>{

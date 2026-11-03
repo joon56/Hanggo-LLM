@@ -5,7 +5,7 @@ import { checkBeta } from '../scripts/beta-check.ts';
 
 vi.mock('../server/local-status.ts', () => ({ getLocalStatus: vi.fn(async () => ({ configured: true, sttReady: true, statusMessage: 'Ready' })) }));
 const config = () => readConfig({ AI_ENABLED: 'true', FEATURE_OWNER_LOG_ENABLED: 'true', FEATURE_BRIEF_ENABLED: 'true', FEATURE_SHELTER_ENABLED: 'true' });
-const session = { authenticated: true, aiEnabled: true, configured: true, provider: 'ollama', textModel: 'qwen3.5:9b', sttReady: true, features: { ownerLog: true, brief: true, shelter: true } };
+const session = { authenticated: true, aiEnabled: true, configured: true, provider: 'local', textModel: 'qwen35-9b', sttReady: true, features: { ownerLog: true, brief: true, shelter: true } };
 afterEach(() => vi.unstubAllGlobals());
 it('checks local readiness without generating or saving a record by default', async () => {
   const fetcher = vi.fn(async () => Response.json(session)); vi.stubGlobal('fetch', fetcher);

@@ -1,7 +1,8 @@
 import { spawnSync } from 'node:child_process';
-import { readConfig } from '../server/config.ts';
+import { loadLocalEnv, readConfig } from '../server/config.ts';
 import { getLocalStatus } from '../server/local-status.ts';
 
+loadLocalEnv();
 const config = readConfig();
 const status = await getLocalStatus(config);
 console.info(`텍스트 모델: ${config.textModel}\n${status.statusMessage}`);
