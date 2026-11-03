@@ -86,7 +86,7 @@ test('catching a moment saves the scenes before the press from both sides', asyn
   const [moment] = consultation.moments;
   expect(moment).toMatchObject({ createdBy: 'guardian', text: '귀가 먼저 움직임' });
   const times = consultation.frames.filter(frame => moment.frameIds.includes(frame.id)).map(frame => frame.atMs);
-  expect(Math.min(...times)).toBeLessThanOrEqual(moment.atMs - 3500);
+  expect(Math.min(...times)).toBeLessThanOrEqual(moment.atMs - 4000);
   expect(Math.max(...times)).toBeGreaterThanOrEqual(moment.atMs);
   expect(moment.frameIds.length).toBeLessThanOrEqual(16);
   const image = await trainer.page.request.get(`${server.origin}/api/coaching/consultations/${id}/frames/${moment.frameIds[0]}`);

@@ -132,7 +132,7 @@ describe('scenes', () => {
     recorder.start(clock); await advance(40000);
     expect(uploadFrame).not.toHaveBeenCalled();
   });
-  it('uploads frames from five seconds before to two seconds after a moment', async () => {
+  it('uploads frames from at least five seconds before to two seconds after a moment', async () => {
     const { recorder, clock, uploadFrame, advance } = build('trainer');
     recorder.start(clock); await advance(8000);
     const atMs = clock();
@@ -142,10 +142,9 @@ describe('scenes', () => {
     await advance(1200);
     const times = uploadFrame.mock.calls.map(call => call[0].atMs);
     expect(uploadFrame.mock.calls.every(call => call[1] === 'moment-1')).toBe(true);
-    expect(times.length).toBeGreaterThanOrEqual(7);
-    expect(times.length).toBeLessThanOrEqual(8);
-    expect(Math.min(...times)).toBeLessThanOrEqual(atMs - 4000);
-    expect(Math.min(...times)).toBeGreaterThanOrEqual(atMs - 5000);
+    expect(times).toHaveLength(8);
+    expect(Math.min(...times)).toBeLessThanOrEqual(atMs - 5000);
+    expect(Math.min(...times)).toBeGreaterThanOrEqual(atMs - 6000);
     expect(Math.max(...times)).toBeGreaterThanOrEqual(atMs + 1000);
     expect(Math.max(...times)).toBeLessThanOrEqual(atMs + 2000);
   });

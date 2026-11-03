@@ -2,7 +2,8 @@ export type FrameSource = 'camera' | 'screen';
 export type BufferedFrame = { id: string; atMs: number; source: FrameSource; bytes: Blob };
 
 const KEEP_MS = 10000;
-const BEFORE_MS = 5000;
+// Photos come once a second, so looking back slightly further guarantees one from at least five seconds before.
+const BEFORE_MS = 6000;
 const AFTER_MS = 2000;
 const MAX_PER_SOURCE = 8;
 
@@ -16,7 +17,7 @@ export class FrameRing {
 
   around(atMs: number, beforeMs = BEFORE_MS, afterMs = AFTER_MS) {
     const inRange = this.frames.filter(item => item.atMs >= atMs - beforeMs && item.atMs <= atMs + afterMs).sort((left, right) => left.atMs - right.atMs);
-    return (['camera', 'screen'] as const).flatMap(source => inRange.filter(item => item.source === source).slice(0, MAX_PER_SOURCE));
+    return (['camera', 'screen'] as const).flatMap(source => inRange.filter(item => item.source === source).slice(-MAX_PER_SOURCE));
   }
 
   clear() { this.frames = []; }
