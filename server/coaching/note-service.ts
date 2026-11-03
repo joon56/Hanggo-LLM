@@ -151,7 +151,8 @@ export function createNoteService({ llm, now = Date.now, callTimeoutMs = DEFAULT
   async function summarize(notes: CoachingNote, source: NoteSource, petName: string, createdAt: string, signal?: AbortSignal) {
     const aliasOf = new Map(source.lines.map(line => [`${line.evidence.kind}:${line.evidence.id}`, line.alias]));
     const statement = (item: { text: string; evidence: Claim['evidence'] }) => ({ text: item.text, aliases: item.evidence.map(entry => aliasOf.get(`${entry.kind}:${entry.id}`)!) });
-    const statements = [...notes.concerns, ...notes.guardianReports, ...notes.guidance, ...notes.tasks].map(statement);
+    const behaviors = notes.behaviors.flatMap(entry => [...entry.context, ...entry.behavior, ...entry.response]);
+    const statements = [...notes.concerns, ...behaviors, ...notes.guardianReports, ...notes.guidance, ...notes.tasks].map(statement);
     if (!statements.length) return null;
     const raw = await ask({ ...buildSummaryRequest(petName, statements), signal }, json => RawSummarySchema.parse(json));
     if (!raw) return null;

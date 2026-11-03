@@ -223,6 +223,14 @@ describe('long consultations', () => {
     expect(note.warnings.join()).toContain('16:00');
     expect(note.uncitedSegmentIds).toEqual(['c', 'd']);
   });
+  it('gives the summary what was written under behaviors, which is where most of what a guardian said now lives', async () => {
+    const { service, requests } = buildLong(request => {
+      if (request.user.includes('문장 목록')) return reply({ summary: [] });
+      return reply({ ...blank, behaviors: request.user.includes('[s01') ? [{ title: '초인종에 짖음', context: [{ text: '초인종이 울리면 세 번쯤 짖음', evidence: ['s01'] }], behavior: [], response: [], unknown: [] }] : [] });
+    });
+    await service.generate(consultation(long), info);
+    expect(requests.at(-1)!.user).toContain('초인종이 울리면 세 번쯤 짖음');
+  });
   it('still returns the parts when the summary fails', async () => {
     const { service } = buildLong(request => request.user.includes('문장 목록') ? reply(null) : chunkReply(request));
     const note = await service.generate(consultation(long), info);
