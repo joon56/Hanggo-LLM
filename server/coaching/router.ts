@@ -30,6 +30,9 @@ export type CoachingDeps = {
   isTrainer: (headers: Headers) => boolean;
   /** Tells connected participants that consultation state changed. */
   notify?: (consultation: Consultation) => void;
+  /** Behind a tunnel every visitor comes through one local address, and the tunnel states who they really are. */
+  behindTunnel?: boolean;
+  closeGuardian?: (consultationId: string) => void;
   broadcast?: (consultationId: string, message: unknown) => void;
   /** Organizes a guardian's words into events. Without it the guardian still saves the plain text. */
   generateOwner?: (input: OwnerInput, signal?: AbortSignal) => Promise<{ draft: OwnerDraft }>;
@@ -37,10 +40,14 @@ export type CoachingDeps = {
 };
 
 const name = z.string().trim().min(1).max(200);
+/** Limits one visitor when they can be told apart. Elsewhere the header could be forged, so everyone shares one limit. */
+export const visitorKey = (behindTunnel: boolean | undefined, shared: string) => (req: Request) => (behindTunnel && req.headers['cf-connecting-ip']?.toString()) || shared;
 const CaseInput = z.object({ petName: name, guardianName: name, trainerName: name }).strict();
 const JoinInput = z.object({ token: z.string().min(1).max(200) }).strict();
 const ConsentInput = z.object({ value: z.boolean() }).strict();
 const CLOCK_SLACK_MS = 5000;
+const MIN_AUDIO_MS = 300;
+const MAX_AUDIO_WINDOWS_PER_MINUTE = 60;
 const MAX_FRAMES = 1000;
 const MAX_MOMENTS = 200;
 const MERGE_MOMENTS_MS = 1000;
@@ -90,7 +97,7 @@ export function createCoachingRouter(deps: CoachingDeps) {
   const { store, sessions, notify, transcription, postProcess, graceMs, broadcast, generateOwner, now = Date.now } = deps;
   const router = express.Router();
   const resolveActor = createActorResolver(deps);
-  const joinLimit = rateLimit({ windowMs: 60_000, limit: 10, keyGenerator: () => 'join', standardHeaders: 'draft-8', legacyHeaders: false,
+  const joinLimit = rateLimit({ windowMs: 60_000, limit: 10, keyGenerator: visitorKey(deps.behindTunnel, 'join'), validate: false, standardHeaders: 'draft-8', legacyHeaders: false,
     message: { error: '잠시 후 다시 시도해 주세요.', code: 'RATE_LIMIT' } });
   const cookieOptions = { httpOnly: true, secure: deps.secureCookies, sameSite: 'strict' as const, path: '/api', maxAge: sessions.maxAgeMs };
 
@@ -141,7 +148,9 @@ export function createCoachingRouter(deps: CoachingDeps) {
   router.post('/cases/:id/invite', async (req, res) => {
     const id = param(req, 'id');
     if (!allowed(req, res, 'case:invite', id)) return;
-    res.json({ inviteToken: await store.reissueInvite(id) });
+    const inviteToken = await store.reissueInvite(id);
+    for (const { id: consultationId, state } of await store.listConsultations(id)) if (state === 'live') deps.closeGuardian?.(consultationId);
+    res.json({ inviteToken });
   });
   router.post('/cases/:id/consultations', async (req, res) => {
     const id = param(req, 'id');
@@ -219,7 +228,11 @@ export function createCoachingRouter(deps: CoachingDeps) {
     if (consultation) res.json(viewFor(actorOf(req), consultation));
   });
   router.get('/consultations/:id/ice', async (req, res) => {
-    if (await consultationFor(req, res, 'call:join')) res.json(iceConfig(deps.turn));
+    const consultation = await consultationFor(req, res, 'call:join');
+    if (!consultation) return;
+    // Relay credentials are shared with whoever holds an invite, so only for as long as the call lasts.
+    if (consultation.state !== 'live') { res.status(409).json({ error: '진행 중인 상담이 아닙니다.', code: 'NOT_LIVE' }); return; }
+    res.json(iceConfig(deps.turn));
   });
   router.post('/consultations/:id/consent', async (req, res) => {
     const consultation = await consultationFor(req, res, 'consent:set');
@@ -248,12 +261,14 @@ export function createCoachingRouter(deps: CoachingDeps) {
     return consultation;
   }
   const elapsed = (consultation: Consultation) => (consultation.endedAt ?? now()) - consultation.recordingStartedAt!;
-  router.put('/consultations/:id/audio/:startMs', express.raw({ type: 'audio/wav', limit: '600kb' }), async (req, res) => {
+  const audioLimit = rateLimit({ windowMs: 60_000, limit: MAX_AUDIO_WINDOWS_PER_MINUTE, keyGenerator: req => `${String(req.params.id)}:${actorOf(req).role}`, validate: false, standardHeaders: 'draft-8', legacyHeaders: false,
+    message: { error: '잠시 후 다시 보냅니다.', code: 'RATE_LIMIT' } });
+  router.put('/consultations/:id/audio/:startMs', audioLimit, express.raw({ type: 'audio/wav', limit: '600kb' }), async (req, res) => {
     const consultation = await recordingFor(req, res);
     if (!consultation) return;
     const times = AudioParams.parse({ startMs: param(req, 'startMs'), endMs: req.query.endMs });
     if (times.endMs > elapsed(consultation) + CLOCK_SLACK_MS) throw new StoreError('INPUT', '기록 시간을 벗어났습니다.');
-    if (isSilentWav(req.body, times.startMs, times.endMs)) { res.json({ dropped: true }); return; }
+    if (isSilentWav(req.body, times.startMs, times.endMs) || times.endMs - times.startMs < MIN_AUDIO_MS) { res.json({ dropped: true }); return; }
     const segment = await transcription.accept(consultation.id, roleOf(actorOf(req)), times, req.body);
     res.status(202).json({ id: segment.id });
   });

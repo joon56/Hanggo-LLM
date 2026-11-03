@@ -12,7 +12,7 @@ import type { Config } from './config.ts';
 import type { LlmProvider } from './ai/llm/types.ts';
 import type { SpeechProvider } from './ai/speech/types.ts';
 import { createGuardianSessions } from './coaching/guardian-session.ts';
-import { createActorResolver, createCoachingRouter, type CoachingDeps } from './coaching/router.ts';
+import { createActorResolver, createCoachingRouter, visitorKey, type CoachingDeps } from './coaching/router.ts';
 import { attachSignal } from './coaching/signal.ts';
 import { createPostProcess } from './coaching/post-process.ts';
 import { createFileStore } from './coaching/store.ts';
@@ -79,7 +79,8 @@ export function createApp(config: Config, services: Services) {
   const sessionInfo = (req: Request) => ({ authenticated: authenticated(req), requirePassword: !!config.password,
     aiEnabled: config.aiEnabled, provider: config.provider, configured: false, textModel: config.textModel, sttModel: config.sttModel, features: config.features });
   app.get('/api/session', async (req, res) => res.json({ ...sessionInfo(req), ...(config.aiEnabled && authenticated(req) && services.status ? await services.status() : {}) }));
-  const loginLimit = rateLimit({ windowMs: 60_000, limit: 10, keyGenerator: () => 'login', standardHeaders: 'draft-8', legacyHeaders: false,
+  const behindTunnel = config.profile === 'tunnel';
+  const loginLimit = rateLimit({ windowMs: 60_000, limit: 10, keyGenerator: visitorKey(behindTunnel, 'login'), validate: false, standardHeaders: 'draft-8', legacyHeaders: false,
     message: { error: '잠시 후 다시 로그인해 주세요.', code: 'RATE_LIMIT' } });
   app.post('/api/session', loginLimit, async (req, res) => {
     const supplied = typeof req.body?.password === 'string' && req.body.password.length <= 256 ? req.body.password : '';
@@ -102,7 +103,7 @@ export function createApp(config: Config, services: Services) {
   const broadcast = (consultationId: string, message: unknown) => signal?.broadcast(consultationId, message);
   const transcription = createTranscription({ store: coachingStore, speech: config.aiEnabled ? services.liveSpeech : undefined, broadcast, graceMs: config.coachingGraceMs });
   const postProcess = createPostProcess({ store: coachingStore, transcription, llm: config.aiEnabled ? services.llm : undefined, callTimeoutMs: config.timeoutMs * 2, notify: notifyCoaching });
-  app.use('/api/coaching', createCoachingRouter({ ...coachingAccess, turn: config.turn, secureCookies: config.production, transcription, postProcess, graceMs: config.coachingGraceMs, notify: notifyCoaching, broadcast,
+  app.use('/api/coaching', createCoachingRouter({ ...coachingAccess, behindTunnel, closeGuardian: consultationId => signal?.closeGuardian(consultationId), turn: config.turn, secureCookies: config.production, transcription, postProcess, graceMs: config.coachingGraceMs, notify: notifyCoaching, broadcast,
     generateOwner: config.aiEnabled && services.generateOwner ? (services.generateOwner as NonNullable<CoachingDeps['generateOwner']>) : undefined }));
   app.use('/api', (req, res, next) => {
     if (!authenticated(req)) { res.status(401).json({ error: '로그인이 필요합니다.', code: 'AUTH', requestId: res.locals.requestId }); return; }

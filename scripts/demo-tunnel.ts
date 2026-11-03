@@ -1,4 +1,4 @@
-import { execFileSync, spawn, type ChildProcess } from 'node:child_process';
+import { execFileSync, spawn, spawnSync, type ChildProcess } from 'node:child_process';
 import { mkdirSync } from 'node:fs';
 import path from 'node:path';
 import { loadLocalEnv, readConfig } from '../server/config.ts';
@@ -16,11 +16,16 @@ console.info('화면을 빌드합니다.');
 execFileSync(process.platform === 'win32' ? 'npm.cmd' : 'npm', ['run', '-s', 'build'], { stdio: 'inherit', shell: process.platform === 'win32' });
 
 const children: ChildProcess[] = [];
+/** On Windows a plain kill skips the server's cleanup, so its model processes would keep the GPU. */
+function endTree(child: ChildProcess) {
+  if (process.platform === 'win32' && child.pid) spawnSync('taskkill', ['/T', '/F', '/PID', String(child.pid)], { windowsHide: true, stdio: 'ignore' });
+  else child.kill();
+}
 let stopping = false;
 function stop(code = 0) {
   if (stopping) return;
   stopping = true;
-  for (const child of children) if (child.exitCode === null) child.kill();
+  for (const child of children) if (child.exitCode === null) endTree(child);
   process.exitCode = code;
   setTimeout(() => process.exit(code), 1000).unref();
 }

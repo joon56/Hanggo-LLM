@@ -207,3 +207,11 @@ test('rejoining shows consent still on, and unchecking it stops the recording be
   expect(uploads.guardian.total()).toBe(before);
   await expect(room(guardian.page)).toHaveAttribute('data-recording', 'false');
 });
+
+test('reissuing the invite ends the call of whoever holds the old one', async () => {
+  const { trainer, guardian } = await connected();
+  const { cases: [{ id }] } = await (await trainer.page.request.get(`${server.origin}/api/coaching/cases`)).json() as { cases: { id: string }[] };
+  await trainer.page.request.post(`${server.origin}/api/coaching/cases/${id}/invite`, { headers: { Origin: server.origin } });
+  await expect(guardian.page.getByText(/다른 탭이나 기기에서 입장/)).toBeVisible();
+  await expect(room(trainer.page)).toHaveAttribute('data-peer-online', 'false');
+});

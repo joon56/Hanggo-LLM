@@ -209,6 +209,13 @@ it('tells participants when the recording clock started', async () => {
   await expect(trainer.next('state')).resolves.toMatchObject({ recording: true, recordingStartedAt: 1234 });
 });
 
+it('closes only the guardian when their invite is replaced, so the old holder cannot stay in the call', async () => {
+  const trainer = await connect(trainerCookie); const guardian = await connect(guardianCookie);
+  hub.closeGuardian(consultationId);
+  await expect(guardian.closed).resolves.toBe(4001);
+  expect(trainer.socket.readyState).toBe(WebSocket.OPEN);
+});
+
 describe('malformed upgrades from anyone', () => {
   const raw = (target: string) => new Promise<void>((resolve, reject) => {
     const socket = netConnect(port, '127.0.0.1', () => socket.write(`GET ${target} HTTP/1.1\r\nHost: x\r\nConnection: Upgrade\r\nUpgrade: websocket\r\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\nSec-WebSocket-Version: 13\r\n\r\n`));

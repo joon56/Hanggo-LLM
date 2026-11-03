@@ -7,11 +7,13 @@ import type { SpeechProvider, SpeechResult } from '../ai/speech/types.ts';
 import { StoreError, type CoachingStore } from './store.ts';
 
 const MAX_WAITING = 64;
+// One person's share, so a flood from one browser cannot silence the other.
+const MAX_WAITING_PER_SPEAKER = MAX_WAITING / 2;
 // Dictation is a convenience. It must never fill the queue a live call depends on.
 const MAX_WAITING_DICTATION = 8;
 const OVERLAP_TOLERANCE_MS = 500;
 const PREPARE_RETRY_MS = 30_000;
-type Item = { consultationId: string; segmentId: string; wav: Buffer };
+type Item = { consultationId: string; segmentId: string; speaker: Speaker; wav: Buffer };
 type Dictation = { wav: Buffer; resolve: (text: string) => void; reject: (error: Error) => void };
 const IDLE_RELEASE_MS = 60_000;
 const NO_ROOM = '';
@@ -138,7 +140,7 @@ export function createTranscription({ store, speech, broadcast, graceMs, now = D
     /** The start time identifies a window, so a browser retrying after a lost reply cannot transcribe it twice. */
     async accept(consultationId: string, speaker: Speaker, times: { startMs: number; endMs: number }, wav: Buffer) {
       if (!speech) throw new StoreError('SPEECH_OFF', '받아쓰기를 사용할 수 없습니다.', 503);
-      if (waiting.length >= MAX_WAITING) throw new StoreError('BUSY', '받아쓰기가 밀려 있습니다. 잠시 후 다시 보냅니다.', 429);
+      if (waiting.length >= MAX_WAITING || waiting.filter(item => 'speaker' in item && item.speaker === speaker).length >= MAX_WAITING_PER_SPEAKER) throw new StoreError('BUSY', '받아쓰기가 밀려 있습니다. 잠시 후 다시 보냅니다.', 429);
       let segment!: Segment; let added = false;
       await store.updateConsultation(consultationId, current => {
         const mine = current.segments.filter(item => item.speaker === speaker);
@@ -151,7 +153,7 @@ export function createTranscription({ store, speech, broadcast, graceMs, now = D
         return { ...current, segments: [...current.segments, segment].sort((left, right) => left.startMs - right.startMs) };
       });
       if (added) {
-        waiting.push({ consultationId, segmentId: segment.id, wav });
+        waiting.push({ consultationId, segmentId: segment.id, speaker, wav });
         running ??= run().finally(() => { running = undefined; });
       }
       return segment;
