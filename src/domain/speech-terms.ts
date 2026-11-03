@@ -10,11 +10,14 @@ const tearableNamed = new RegExp(`(?<![가-힣])(?:${TEARABLE})`);
 const objectRightBefore = new RegExp(`(?<![가-힣])(?:${REAL_OBJECTS})[을를은는]?\\s$`);
 const OBJECT_PARTICLE = /[가-힣][을를]\s/;
 // An object before one of these belongs to an earlier verb, as in 사람을 보면 짖어요.
-const CLAUSE_END = /(?:면|서|니까|는데|때)\s/;
+const CLAUSE_END = /(?:면|서|니까|는데|때|보고|듣고)\s/;
 const ABOUT_BARKING = /짖|초인종|택배|현관|소리|흥분|횟수|다른\s*개|낯선|벨|오래|계속|다시|많이|자꾸|또/;
 
-function meansWhatItSays(wrong: string, before: string, sentence: string) {
-  if (OBJECT_PARTICLE.test(before.split(CLAUSE_END).at(-1)!) || objectRightBefore.test(before)) return true;
+function meansWhatItSays(wrong: string, ending: string, before: string, sentence: string) {
+  if (objectRightBefore.test(before)) return true;
+  // 짓어요 is not a form of anything, so without something being built it can only be a misheard 짖어요.
+  if (wrong === '짓' && /^[어었]/.test(ending)) return false;
+  if (OBJECT_PARTICLE.test(before.split(CLAUSE_END).at(-1)!)) return true;
   // 짚 and 짓 have everyday meanings of their own, so they also need the sentence to be about barking.
   return wrong === '찢' ? tearableNamed.test(before) : !ABOUT_BARKING.test(sentence);
 }
@@ -26,7 +29,7 @@ function meansWhatItSays(wrong: string, before: string, sentence: string) {
 export function correctTerms(heard: string) {
   // Sentence by sentence, because what tells these apart is whether something is being torn or built, and that may be several words back.
   let text = heard.split(/(?<=[.?!])/).map(sentence => sentence.replace(BARK, (match, wrong: string, ending: string, offset: number) =>
-    meansWhatItSays(wrong, sentence.slice(0, offset), sentence) ? match : `짖${ending}`)).join('');
+    meansWhatItSays(wrong, ending, sentence.slice(0, offset), sentence) ? match : `짖${ending}`)).join('');
   text = text.replace(/메트(?=로\s*(?:가|보|이동|올라|앉)|에|를|을|위|로\s)/g, '매트').replace(/메트$/g, '매트');
   text = text.replace(/한에스|하네수|한네스/g, '하네스');
   if (GEAR_CONTEXT.test(text)) text = text.replace(/한혜수(?!\s?(?:씨|님))/g, '하네스');

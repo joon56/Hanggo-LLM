@@ -138,6 +138,36 @@ describe('regenerate', () => {
   });
 });
 
+describe('regenerating', () => {
+  it('keeps the earlier draft when the new answer has nothing in it', async () => {
+    const stub = createStubLlm();
+    let empty = false;
+    const nothing = { summary: [], concerns: [], behaviors: [], guardianReports: [], trainerObservations: [], guidance: [], tasks: [], followUps: [], safetyFlags: [], methodReview: false };
+    const llm = failing({ structured: async request => empty && !request.images ? { json: nothing, finished: true } : stub.structured(request) });
+    const { process } = build(llm);
+    await process.finish(id);
+    const before = (await store.getConsultation(id)).note;
+    empty = true;
+    await process.regenerate(id);
+    await expect.poll(async () => (await store.getConsultation(id)).noteGenerating).toBeUndefined();
+    expect((await store.getConsultation(id)).note).toEqual(before);
+  });
+});
+
+describe('when recording a failure fails too', () => {
+  it('still opens the review, because a consultation left in processing blocks every new call', async () => {
+    let broken = false;
+    const flaky: CoachingStore = { ...store,
+      getCase: async () => { broken = true; throw new Error('disk'); },
+      updateConsultation: (consultationId, change) => {
+        if (broken) { broken = false; return Promise.reject(new Error('disk full')); }
+        return store.updateConsultation(consultationId, change);
+      } };
+    await createPostProcess({ store: flaky, transcription: { settle: async () => {}, close: async () => {} }, llm: createStubLlm(), retryDelayMs: 1 }).finish(id);
+    expect((await store.getConsultation(id)).state).toBe('review');
+  });
+});
+
 describe('a write that fails once', () => {
   it('tries again before leaving the consultation stuck', async () => {
     const realUpdate = store.updateConsultation;

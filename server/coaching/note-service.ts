@@ -1,5 +1,5 @@
 import type { Consultation } from '../../src/domain/coaching.ts';
-import { assembleNote, buildNoteSource, emptyNote, uncited, type BehaviorEntry, type Claim, type CoachingNote, type CoachingTask, type NoteLine, type NoteSource, type NoteViolation, type RawNote } from '../../src/domain/coaching-note.ts';
+import { assembleNote, buildNoteSource, emptyNote, sameFact, uncited, type BehaviorEntry, type Claim, type CoachingNote, type CoachingTask, type NoteLine, type NoteSource, type NoteViolation, type RawNote } from '../../src/domain/coaching-note.ts';
 import type { LlmProvider } from '../ai/llm/types.ts';
 import { buildNoteRequest, buildSummaryRequest, RawNoteSchema, RawSummarySchema } from './note-prompt.ts';
 import { noteSchema } from './note-schema.ts';
@@ -8,6 +8,8 @@ import { noteSchema } from './note-schema.ts';
 const PART_CHARACTERS = 1500;
 const OVERLAP_CHARACTERS = 200;
 const SMALL_TAIL_CHARACTERS = 300;
+// Lower than for sentences that merely look alike, since these two also rest on the same line.
+const OVERLAP_SIMILARITY = 0.4;
 type CaseInfo = { petName: string; guardianName: string; trainerName: string };
 const DEFAULT_CALL_TIMEOUT_MS = 10 * 60 * 1000;
 type Deps = { llm: LlmProvider; now?: () => number; callTimeoutMs?: number };
@@ -27,7 +29,8 @@ const lengthOf = (lines: NoteLine[]) => lines.reduce((sum, line) => sum + line.e
 function splitIntoParts(lines: NoteLine[]) {
   const parts: NoteLine[][] = [];
   let current: NoteLine[] = [];
-  for (const line of lines) {
+  // Memos are listed after the speech, but belong where they were written.
+  for (const line of [...lines].sort((left, right) => left.evidence.startMs - right.evidence.startMs)) {
     current.push(line);
     if (lengthOf(current) >= PART_CHARACTERS) { parts.push(current); current = []; }
   }
@@ -43,27 +46,32 @@ function splitIntoParts(lines: NoteLine[]) {
   });
 }
 
-const idsOf = (items: { evidence: Claim['evidence'] }[]) => new Set(items.flatMap(item => item.evidence.map(entry => entry.id)));
+const sharesLine = (left: { evidence: Claim['evidence'] }, right: { evidence: Claim['evidence'] }) => left.evidence.some(entry => right.evidence.some(other => other.id === entry.id));
+const sameLinesAgain = (left: Claim | CoachingTask, right: Claim | CoachingTask) => sharesLine(left, right) && sameFact(left.text, right.text, OVERLAP_SIMILARITY);
 
 /** Parts overlap, so a later part can organize lines an earlier one already did, in other words. */
 function mergeClaims(parts: Claim[][]) {
   const kept: Claim[] = [];
   for (const part of parts) {
-    const cited = idsOf(kept);
-    const fresh = part.filter(item => !item.evidence.every(entry => cited.has(entry.id)));
-    kept.push(...fresh.filter(item => !kept.some(other => compact(other.text) === compact(item.text))));
+    const earlier = [...kept];
+    for (const item of part) {
+      if (kept.some(other => compact(other.text) === compact(item.text)) || earlier.some(other => sameLinesAgain(other, item))) continue;
+      kept.push(item);
+    }
   }
   return kept;
 }
 
 /** Of two tasks from the same lines in different parts, the one that read more of the conversation is the whole task. */
 function mergeTasks(parts: CoachingTask[][]) {
-  let kept: CoachingTask[] = [];
+  const kept: CoachingTask[] = [];
   for (const part of parts) {
-    const earlier = kept;
-    const shares = (left: CoachingTask, right: CoachingTask) => left.evidence.some(entry => right.evidence.some(other => other.id === entry.id));
-    const replaced = part.filter(task => earlier.every(other => !shares(task, other) || task.evidence.length > other.evidence.length));
-    kept = [...earlier.filter(other => !replaced.some(task => shares(task, other))), ...replaced];
+    const earlier = [...kept];
+    for (const task of part) {
+      const twin = earlier.find(other => sameLinesAgain(other, task) && (!other.who || !task.who || other.who === task.who));
+      if (!twin) kept.push(task);
+      else if (task.evidence.length > twin.evidence.length) kept[kept.indexOf(twin)] = task;
+    }
   }
   return kept;
 }
@@ -72,8 +80,7 @@ function mergeBehaviors(parts: BehaviorEntry[][]) {
   const kept: BehaviorEntry[] = [];
   for (const part of parts) {
     const earlier = kept.flatMap(entry => [...entry.context, ...entry.behavior, ...entry.response]);
-    const cited = idsOf(earlier);
-    const fresh = (claims: Claim[]) => claims.filter(item => !item.evidence.every(entry => cited.has(entry.id)));
+    const fresh = (claims: Claim[]) => claims.filter(item => !earlier.some(other => sameLinesAgain(other, item)));
     for (const entry of part) {
       const trimmed = { ...entry, context: fresh(entry.context), behavior: fresh(entry.behavior), response: fresh(entry.response) };
       if (!trimmed.context.length && !trimmed.behavior.length && !trimmed.response.length) continue;
@@ -106,12 +113,13 @@ function withRepairs(first: CoachingNote, repaired: CoachingNote, source: NoteSo
   return { ...first, ...sections, safetyFlags: [...new Set([...first.safetyFlags, ...repaired.safetyFlags])], methodReview: first.methodReview || repaired.methodReview, uncitedSegmentIds: uncited(sections, source) };
 }
 
-/** A sentence counts as fixed when the repair added one to its section, so one warning remains for each sentence still missing. */
-function stillWrong(violations: NoteViolation[], repaired: CoachingNote) {
+/** A sentence counts as fixed when the repair really added one to its section, so one warning remains for each sentence still missing. */
+function stillWrong(violations: NoteViolation[], repaired: CoachingNote, first: CoachingNote) {
+  const added = (more: { text: string }[], kept: { text: string }[]) => more.filter(item => !kept.some(other => compact(other.text) === compact(item.text))).length;
   const addedTo = (section: string) => {
-    const [head, field] = section.split('.') as [keyof CoachingNote, 'context' | 'behavior' | 'response' | 'title' | undefined];
-    if (head !== 'behaviors') return (repaired[head] as unknown[]).length;
-    return field === 'title' || !field ? repaired.behaviors.length : repaired.behaviors.flatMap(entry => entry[field]).length;
+    const [head, field] = section.split('.') as [keyof CoachingNote, 'context' | 'behavior' | 'response'];
+    if (head !== 'behaviors') return added(repaired[head] as { text: string }[], first[head] as { text: string }[]);
+    return added(repaired.behaviors.flatMap(entry => entry[field]), first.behaviors.flatMap(entry => entry[field]));
   };
   const fixed = new Map<string, number>();
   return violations.filter(({ section }) => {
@@ -145,7 +153,7 @@ export function createNoteService({ llm, now = Date.now, callTimeoutMs = DEFAULT
     // Only what failed goes back, so a retry takes seconds and cannot lose what the first answer got right.
     const repair = await attempt(first.violations);
     if (!repair) return first;
-    return { note: withRepairs(first.note, repair.note, source), violations: stillWrong(first.violations, repair.note) };
+    return { note: withRepairs(first.note, repair.note, source), violations: stillWrong(first.violations, repair.note, first.note) };
   }
 
   async function summarize(notes: CoachingNote, source: NoteSource, petName: string, createdAt: string, signal?: AbortSignal) {
@@ -156,7 +164,8 @@ export function createNoteService({ llm, now = Date.now, callTimeoutMs = DEFAULT
     if (!statements.length) return null;
     const raw = await ask({ ...buildSummaryRequest(petName, statements), signal }, json => RawSummarySchema.parse(json));
     if (!raw) return null;
-    return assembleNote({ summary: raw.summary, concerns: [], behaviors: [], guardianReports: [], trainerObservations: [], guidance: [], tasks: [], followUps: [], safetyFlags: [], methodReview: false }, source, createdAt).note.summary;
+    const { note, violations } = assembleNote({ summary: raw.summary, concerns: [], behaviors: [], guardianReports: [], trainerObservations: [], guidance: [], tasks: [], followUps: [], safetyFlags: [], methodReview: false }, source, createdAt);
+    return { summary: note.summary, violations };
   }
 
   return {
@@ -185,9 +194,10 @@ export function createNoteService({ llm, now = Date.now, callTimeoutMs = DEFAULT
       warnings.push(...attempts.flatMap(attempt => attempt.violations.map(warningFor)));
       const note = merge(attempts.map(attempt => attempt.note), source, createdAt, warnings);
       if (parts.length === 1) return note;
-      const summary = await summarize(note, source, info.petName, createdAt, signal);
-      if (!summary) return { ...note, summary: [], warnings: [...warnings, '전체 요약을 만들지 못했습니다.'] };
-      const summarized = { ...note, summary };
+      const made = await summarize(note, source, info.petName, createdAt, signal);
+      const summaryWarnings = (made?.violations ?? []).map(warningFor);
+      if (!made?.summary.length) return { ...note, summary: [], warnings: [...warnings, ...summaryWarnings, '전체 요약을 만들지 못했습니다.'] };
+      const summarized = { ...note, summary: made.summary, warnings: [...warnings, ...summaryWarnings] };
       return { ...summarized, uncitedSegmentIds: uncited(summarized, source) };
   }
 }

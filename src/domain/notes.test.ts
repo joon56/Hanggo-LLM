@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { approveDraft, createDraft, getReviewSignals, validateDraft, type Draft } from './notes';
-import { flagsFromSource, methodPattern } from './notes';
+import { flagsFromSource, mentionsForcefulMethod } from './notes';
 
 describe('createDraft', () => {
   it('extracts only source sentences with exact provenance', () => {
@@ -115,6 +115,31 @@ describe('safety words in ordinary sentences', () => {
 });
 describe('forceful methods in ordinary sentences', () => {
   it('catches past tense and jerking the leash', () => {
-    for (const text of ['목줄을 세게 당겼어요', '줄을 확 잡아채요', '목줄을 강하게 당긴 적이 있어요']) expect(methodPattern.test(text), text).toBe(true);
+    for (const text of ['목줄을 세게 당겼어요', '줄을 확 잡아채요', '목줄을 강하게 당긴 적이 있어요']) expect(mentionsForcefulMethod(text), text).toBe(true);
+  });
+});
+
+describe('more ways of saying it', () => {
+  const flags = (text: string) => flagsFromSource(text);
+  it('catches forms the rules used to miss', () => {
+    expect(flags('으르렁거리고 물었어요')).toContain('물림');
+    expect(flags('아이 손을 물어요')).toContain('물림');
+    expect(flags('피가 났어요')).toContain('출혈');
+    expect(flags('자꾸 토하고 힘이 없어요')).toContain('구토');
+    expect(flags('어제 많이 아팠어요')).toContain('통증');
+    expect(flags('뒷다리를 저는 것 같아요')).toContain('절뚝거림');
+  });
+  it('still does not read asking as biting', () => {
+    for (const text of ['뭐라고 물었어요', '괜찮냐고 물었어요', '그렇다고 물었어요']) expect(flags(text), text).not.toContain('물림');
+  });
+});
+describe('advice against a forceful method', () => {
+  it('is not itself a forceful method', () => {
+    for (const text of ['목줄을 세게 당기지 마세요', '억지로 하지는 마세요', '체벌은 하지 마세요', '혼내면 안 돼요', '때리거나 목줄을 세게 당기는 방법은 쓰지 말아야 함', '혼내지 말 것'])
+      expect(mentionsForcefulMethod(text), text).toBe(false);
+  });
+  it('still catches every tense of the real thing', () => {
+    for (const text of ['혼낸 적이 있어요', '혼낼 때가 있어요', '때릴 때도 있어요', '코를 때렸어요', '목줄을 세게 당겼어요', '줄을 확 잡아채요', '억지로 앉혀요', '체벌을 했어요', '코를 때렸는데 이제 안 그래요'])
+      expect(mentionsForcefulMethod(text), text).toBe(true);
   });
 });

@@ -295,6 +295,15 @@ describe('PreJoin', () => {
     await userEvent.click(screen.getByRole('button', { name: '입장' }));
     expect(onJoin).toHaveBeenCalledWith(expect.objectContaining({ consent: false }));
   });
+  it('stays on this screen and says why when consent could not be saved', async () => {
+    const onJoin = vi.fn().mockRejectedValueOnce(new Error('Forbidden')).mockResolvedValueOnce(undefined);
+    render(<PreJoin petName="초코" role="guardian" relayAvailable openPreview={async () => ({ stream: stream(), missing: [] })} onJoin={onJoin} />);
+    await userEvent.click(await screen.findByRole('button', { name: '입장' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('다시 시도해 주세요');
+    expect(screen.getByRole('alert')).not.toHaveTextContent('Forbidden');
+    await userEvent.click(screen.getByRole('button', { name: '입장' }));
+    expect(onJoin).toHaveBeenCalledTimes(2);
+  });
   it('shows consent given earlier as checked, so rejoining cannot hide that recording is on', async () => {
     const onJoin = vi.fn();
     render(<PreJoin petName="초코" role="guardian" relayAvailable consented openPreview={async () => ({ stream: stream(), missing: [] })} onJoin={onJoin} />);

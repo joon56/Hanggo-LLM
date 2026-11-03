@@ -139,6 +139,18 @@ describe('ReviewRoom', () => {
     await waitFor(() => expect(api.saveNote).toHaveBeenCalledTimes(2));
     expect(api.saveNote.mock.calls[1][1].summary[0].text).toBe('저장 중에 더 고침');
   });
+  it('shows what was delivered after approving, even if someone typed while it went through', async () => {
+    let finish!: (value: Consultation) => void;
+    api.approveConsultation.mockReturnValueOnce(new Promise(resolve => { finish = resolve; }));
+    api.saveNote.mockResolvedValue(consultation());
+    await open();
+    await userEvent.click(screen.getByRole('button', { name: '확정하고 보호자에게 전달' }));
+    await waitFor(() => expect(api.approveConsultation).toHaveBeenCalled());
+    fireEvent.change(screen.getByLabelText('핵심 요약 문장'), { target: { value: '확정 중에 친 글자' } });
+    finish(consultation({ state: 'approved', note: note({ approvedAt: 'x' }) }));
+    await waitFor(() => expect(screen.queryByText('확정 중에 친 글자')).toBeNull());
+    expect(screen.queryByDisplayValue('확정 중에 친 글자')).toBeNull();
+  });
   it('lets the trainer mark a safety flag as not applying, and undo it', async () => {
     api.getConsultation.mockResolvedValue(consultation({ note: note({ safetyFlags: ['통증', '구토'] }) }));
     api.saveNote.mockResolvedValue(consultation());

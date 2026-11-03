@@ -88,3 +88,35 @@ describe('numbers tied to their units', () => {
     expect(numbersSupported('3번', ['그게 3이에요'])).toEqual([]);
   });
 });
+
+describe('numbers as people say them', () => {
+  it('reads every spelling of a count', () => {
+    expect(extractNumbers('세 차례')).toEqual([3]);
+    expect(extractNumbers('한두 번')).toEqual([1, 2]);
+    expect(extractNumbers('세네 번')).toEqual([3, 4]);
+    expect(extractNumbers('네다섯 번')).toEqual([4, 5]);
+    expect(extractNumbers('3,4번')).toEqual([3, 4]);
+    expect(extractNumbers('1,000원')).toEqual([1000]);
+    expect(extractNumbers('1~2회')).toEqual([1, 2]);
+  });
+  it('does not read words that only look like numbers', () => {
+    for (const text of ['사회화 부족', '구분해 주세요', '이분법으로', '육회를 먹어요', '일회용 패드', '오일을 발라요', '일도 안 해요']) expect(extractNumbers(text), text).toEqual([]);
+  });
+  it('keeps the same quantity the same across spellings', () => {
+    expect(numbersSupported('세 개월', ['3개월 됐어요'])).toEqual([]);
+    expect(numbersSupported('3km', ['3킬로미터 걸어요'])).toEqual([]);
+    expect(numbersSupported('주 1회', ['일주일에 한번 해요'])).toEqual([]);
+    expect(numbersSupported('하루 1번', ['하루에 한번 해요'])).toEqual([]);
+    expect(numbersSupported('1~2회', ['한두 번 해 주세요'])).toEqual([]);
+  });
+  it('notices an invented count in a spelling it used to skip', () => {
+    expect(numbersSupported('다섯 차례', ['세 번 짖어요'])).toEqual([5]);
+  });
+  it('gives the start of a range the unit at its end', () => {
+    expect(numbersSupported('30번', ['30~40분 걸려요'])).toEqual([30]);
+    expect(numbersSupported('30분', ['30~40분 걸려요'])).toEqual([]);
+  });
+  it('still leaves a casual once alone', () => {
+    expect(extractNumbers('한번 해 볼게요')).toEqual([]);
+  });
+});

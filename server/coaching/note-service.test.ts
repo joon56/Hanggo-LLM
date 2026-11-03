@@ -86,6 +86,13 @@ describe('createNoteService', () => {
     expect(note.guidance).toHaveLength(1);
     expect(note.warnings).toHaveLength(1);
   });
+  it('still warns when the retry only repeats a sentence it already had', async () => {
+    const first: RawNote = { ...blank, guardianReports: [{ text: '초인종이 울리면 하루에 세 번쯤 짖는다', evidence: ['s01'] }, { text: '초인종이 울리면 하루에 다섯 번 짖는다', evidence: ['s01'] }] };
+    const { service } = build(reply(first), reply({ ...blank, guardianReports: [first.guardianReports[0]] }));
+    const note = await service.generate(consultation(short), info);
+    expect(note.guardianReports).toHaveLength(1);
+    expect(note.warnings.join()).toContain('다섯 번');
+  });
   it('adds a repaired sentence to the behavior it belongs to', async () => {
     const behavior = (claims: Partial<RawNote['behaviors'][number]>) => ({ title: '초인종 짖음', context: [], behavior: [], response: [], unknown: [], ...claims });
     const first: RawNote = { ...blank, behaviors: [behavior({ context: [{ text: '초인종이 울리면', evidence: ['s01'] }], behavior: [{ text: '하루에 다섯 번 짖는다', evidence: ['s01'] }] })] };
@@ -199,6 +206,31 @@ describe('long consultations', () => {
     expect(note.guidance).toHaveLength(1);
   });
   const task = (text: string, evidence: string[]) => ({ text, who: null, frequency: null, until: null, successCriteria: null, evidence });
+  it('keeps a different sentence that happens to rest on an overlapping line', async () => {
+    const { service } = buildLong(request => {
+      if (request.user.includes('문장 목록')) return reply({ summary: [] });
+      return reply({ ...blank, guidance: [{ text: request.user.includes('[s01') ? '매트로 가는 연습을 하라고 안내함' : '그런 식으로 계속 그렇다고 안내함', evidence: ['s02'] }] });
+    });
+    const note = await service.generate(consultation(long), info);
+    expect(note.guidance).toHaveLength(2);
+  });
+  it('does not fold different people\u2019s tasks together because they share a line', async () => {
+    const both = (who: string, text: string, evidence: string[]) => ({ ...task(text, evidence), who });
+    const { service } = buildLong(request => {
+      if (request.user.includes('문장 목록')) return reply({ summary: [] });
+      return reply({ ...blank, tasks: request.user.includes('[s01') ? [both('아빠', '매트로 가는 연습', ['s02']), both('엄마', '거리를 두고 간식을 주기', ['s02'])] : [both('아빠', '매트로 가는 연습을 하세요', ['s02', 's04'])] });
+    });
+    const note = await service.generate(consultation(long), info);
+    expect(note.tasks.map(item => item.who).sort()).toEqual(['아빠', '엄마']);
+  });
+  it('keeps a new task that shares only a line with an earlier one', async () => {
+    const { service } = buildLong(request => {
+      if (request.user.includes('문장 목록')) return reply({ summary: [] });
+      return reply({ ...blank, tasks: request.user.includes('[s01') ? [task('매트로 가는 연습', ['s01', 's02'])] : [task('거리를 두고 간식을 주기', ['s02', 's04'])] });
+    });
+    const note = await service.generate(consultation(long), info);
+    expect(note.tasks).toHaveLength(2);
+  });
   it('keeps the fuller of two tasks made from the same lines in different parts', async () => {
     const { service } = buildLong(request => {
       if (request.user.includes('문장 목록')) return reply({ summary: [] });
@@ -230,6 +262,23 @@ describe('long consultations', () => {
     });
     await service.generate(consultation(long), info);
     expect(requests.at(-1)!.user).toContain('초인종이 울리면 세 번쯤 짖음');
+  });
+  it('puts a memo where it happened, not at the end', async () => {
+    const { service, requests } = buildLong(() => reply(blank));
+    await service.generate(consultation(long, { moments: [{ id: 'm', atMs: 5 * minute, createdBy: 'trainer', text: '현관 앞 매트 위치 확인', frameIds: [] }] }), info);
+    expect(requests[0].user).toContain('[m01');
+    expect(requests[1].user).not.toContain('[m01');
+  });
+  it('labels a part that failed with its real times', async () => {
+    const { service } = buildLong(request => request.user.includes('[s03') ? reply(null) : chunkReply(request));
+    const note = await service.generate(consultation(long, { moments: [{ id: 'm', atMs: 5 * minute, createdBy: 'trainer', text: '현관 앞 매트 위치 확인', frameIds: [] }] }), info);
+    expect(note.warnings.join()).toContain('16:00부터 31:03까지');
+  });
+  it('says so when the summary it wrote could not be used', async () => {
+    const { service } = buildLong(request => request.user.includes('문장 목록') ? reply({ summary: [{ text: '초인종에 하루 아흔 번 짖는다', evidence: ['s01'] }] }) : chunkReply(request));
+    const note = await service.generate(consultation(long), info);
+    expect(note.summary).toEqual([]);
+    expect(note.warnings.join()).toContain('아흔 번');
   });
   it('still returns the parts when the summary fails', async () => {
     const { service } = buildLong(request => request.user.includes('문장 목록') ? reply(null) : chunkReply(request));

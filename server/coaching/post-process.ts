@@ -26,7 +26,8 @@ export function createPostProcess({ store, transcription, llm, callTimeoutMs, no
   const stopping = new AbortController();
   const running = new Set<Promise<unknown>>();
   const track = <T>(work: Promise<T>) => { running.add(work); void work.finally(() => running.delete(work)).catch(() => {}); return work; };
-  const addError = (id: string, code: string, message: string) => store.updateConsultation(id, current => ({ ...current, errors: [...current.errors, { code, message }] }));
+  /** Writing down a failure must not become a second failure that holds everything else up. */
+  const addError = (id: string, code: string, message: string) => store.updateConsultation(id, current => ({ ...current, errors: [...current.errors, { code, message }] })).then(() => {}, () => {});
 
   /** Only a display, so a write that fails here must not stop the work it describes. */
   const reportStage = (id: string, stage: OrganizingProgress['stage']) => (done: number, total: number) =>
@@ -38,20 +39,22 @@ export function createPostProcess({ store, transcription, llm, callTimeoutMs, no
     const note = notes ? await notes.generate(consultation, info, stopping.signal, reportStage(id, 'note'))
       : emptyNote(buildNoteSource(consultation, info), new Date(now()).toISOString(), ['AI 기능이 꺼져 있어 빈 양식을 만들었습니다.']);
     // A blank form is better than nothing, but not better than a draft the trainer already has.
-    if (replacing && note.fallbackUsed) throw new Error('No new draft.');
+    const hasAnything = [note.summary, note.concerns, note.behaviors, note.guardianReports, note.trainerObservations, note.guidance, note.tasks, note.followUps].some(section => section.length);
+    if (replacing && (note.fallbackUsed || !hasAnything)) throw new Error('No new draft.');
     await store.updateConsultation(id, current => ({ ...current, note }));
   }
 
-  /** A consultation left in processing blocks every new call on this GPU, so one failed write gets more chances. */
-  async function openReview(id: string) {
+  /** These states block every new call on this GPU, so leaving one gets more than one chance to be written. */
+  async function persisted(change: Parameters<CoachingStore['updateConsultation']>[1], id: string) {
     for (let attempt = 1; ; attempt += 1) {
-      try { return await store.updateConsultation(id, ({ organizing: _organizing, ...current }) => transition(current, 'processed', now())); }
+      try { return await store.updateConsultation(id, change); }
       catch (error) {
         if (attempt >= OPEN_REVIEW_ATTEMPTS) throw error;
         await delay(retryDelayMs, undefined, { ref: false });
       }
     }
   }
+  const openReview = (id: string) => persisted(({ organizing: _organizing, ...current }) => transition(current, 'processed', now()), id);
 
   /** A failure here must not hold the review back, because the transcript is still worth reading. */
   async function organize(id: string) {
@@ -75,7 +78,8 @@ export function createPostProcess({ store, transcription, llm, callTimeoutMs, no
         await transcription.settle(id);
         if (stopping.signal.aborted) return;
         await organize(id);
-        notify?.(await openReview(id));
+        const opened = await openReview(id);
+        notify?.(opened);
       })().catch(error => { if (!stopping.signal.aborted) throw error; }));
     },
     /** Returns once the work has started. A draft can take minutes, longer than a tunnel will hold a request open. */
@@ -85,7 +89,7 @@ export function createPostProcess({ store, transcription, llm, callTimeoutMs, no
         try { await draftNote(id, true); }
         catch (error) { if (stopping.signal.aborted) return; await addError(id, 'NOTE_REGENERATE', '일지를 다시 만들지 못했습니다. 이전 내용을 유지합니다.'); }
         finally { await llm?.release().catch(() => {}); }
-        await store.updateConsultation(id, ({ noteGenerating: _noteGenerating, organizing: _organizing, ...current }) => current);
+        await persisted(({ noteGenerating: _noteGenerating, organizing: _organizing, ...current }) => current, id);
       })().catch(() => {}));
     },
     /** Interrupted work is left for recovery, which marks it on the next start. */
