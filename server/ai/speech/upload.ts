@@ -2,13 +2,7 @@ import { spawn } from 'node:child_process';
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-
-export type LocalSpeechOptions = {
-  executable: string;
-  modelPath: string;
-  ffmpegPath: string;
-  timeoutMs: number;
-};
+import type { SpeechProvider } from './types.ts';
 
 type Result = 'ok' | 'failed' | 'unavailable' | 'timeout' | 'output-limit';
 
@@ -42,12 +36,12 @@ async function run(executable: string, args: string[], input: Buffer | undefined
   });
 }
 
-export function createLocalTranscriber(options: LocalSpeechOptions) {
+/** Short uploads hold the GPU only for the request, so the text model can load right after. */
+export function createUploadTranscriber(options: { speech: SpeechProvider; ffmpegPath: string; timeoutMs: number }) {
   return async (buffer: Buffer, _filename: string, _petName: string, signal?: AbortSignal): Promise<string> => {
     signal?.throwIfAborted();
     const directory = await mkdtemp(join(tmpdir(), 'hanggo-speech-'));
     const wavPath = join(directory, 'audio.wav');
-    const outputPath = join(directory, 'transcript');
     try {
       const converted = await run(options.ffmpegPath, [
         '-v', 'error', '-nostdin', '-y', '-protocol_whitelist', 'pipe',
@@ -55,12 +49,12 @@ export function createLocalTranscriber(options: LocalSpeechOptions) {
         '-vn', '-ac', '1', '-ar', '16000', '-c:a', 'pcm_s16le', '-f', 'wav', wavPath,
       ], buffer, signal, options.timeoutMs);
       if (converted !== 'ok') throw new Error('Audio conversion failed.');
-      const inferred = await run(options.executable, [
-        '-m', options.modelPath, '-f', wavPath, '-l', 'ko', '-otxt', '-of', outputPath,
-        '-np', '-nt', '-ng',
-      ], undefined, signal, options.timeoutMs);
-      if (inferred !== 'ok') throw new Error('Local transcription unavailable.');
-      return (await readFile(`${outputPath}.txt`, 'utf8')).trim();
+      const wav = await readFile(wavPath);
+      try {
+        await options.speech.prepare();
+        return (await options.speech.transcribe(wav, signal)).text.trim();
+      } catch { signal?.throwIfAborted(); throw new Error('Local transcription unavailable.'); }
+      finally { await options.speech.release(); }
     } finally {
       await rm(directory, { recursive: true, force: true });
     }

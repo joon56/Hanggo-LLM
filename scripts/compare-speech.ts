@@ -1,8 +1,8 @@
 import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import { execFileSync } from 'node:child_process';
 import { resolve, dirname } from 'node:path';
-import { readConfig } from '../server/config.ts';
-import { createLiveSpeech, type SpeechCandidate } from '../server/live-speech.ts';
+import { loadLocalEnv, readConfig } from '../server/config.ts';
+import { createSpeechProvider } from '../server/ai/speech/index.ts';
 
 // Usage: node --env-file-if-exists=.env scripts/compare-speech.ts manifest.json [output.json] [candidate,...]
 // Manifest: {kind:'synthetic'|'human', samples:[{file:'relative.wav', expected:'reference transcript'}]}.
@@ -10,8 +10,9 @@ const manifestPath = resolve(process.argv[2] || '.tmp/speech-samples/manifest.js
 const outputPath = resolve(process.argv[3] || '.tmp/speech-comparison.json');
 const manifest = JSON.parse(await readFile(manifestPath, 'utf8').then(text => text.replace(/^\uFEFF/, '')));
 if (!['synthetic', 'human'].includes(manifest.kind) || !Array.isArray(manifest.samples) || !manifest.samples.length) throw new Error('Invalid comparison manifest.');
-const selected = (process.argv[4] || 'whisper-turbo,whisper-large,qwen-asr').split(',') as SpeechCandidate[];
-if (selected.some(value => !['whisper-turbo', 'whisper-large', 'qwen-asr'].includes(value))) throw new Error('Invalid comparison candidate.');
+const selected = (process.argv[4] || 'cohere,whisper-turbo,qwen-asr').split(',');
+if (selected.some(value => !['cohere', 'whisper-turbo', 'qwen-asr'].includes(value))) throw new Error('Invalid comparison candidate.');
+loadLocalEnv();
 const normalized = (value: string) => Array.from(value.normalize('NFKC').replace(/[\p{P}\p{Z}\s]/gu, ''));
 function characterErrorRate(reference: string, actual: string) {
   const a = normalized(reference), b = normalized(actual);
@@ -35,8 +36,8 @@ const report: { createdAt: string; kind: string; results: unknown[]; limitations
 };
 await mkdir(dirname(outputPath), { recursive: true });
 for (const candidate of selected) {
-  const config = readConfig({ ...process.env, LIVE_SPEECH_MODEL: candidate });
-  const speech = createLiveSpeech(config);
+  const config = readConfig({ ...process.env, SPEECH_MODEL: candidate });
+  const speech = createSpeechProvider(config);
   const started = performance.now();
   try {
     await speech.prepare();

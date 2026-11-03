@@ -8,7 +8,7 @@ import rateLimit from 'express-rate-limit';
 import multer from 'multer';
 import { z } from 'zod';
 import type { Config } from './config.ts';
-import type { LiveSpeechService } from './live-speech.ts';
+import type { SpeechProvider } from './ai/speech/types.ts';
 import { createConsultationRouter } from './consultation-router.ts';
 import type { VisionService } from './consultation-vision.ts';
 import { ConsultationError } from './consultation-store.ts';
@@ -26,7 +26,7 @@ import { validateDraft, type Draft } from '../src/domain/notes.ts';
 
 type Services = {
   vision?: VisionService;
-  liveSpeech?: LiveSpeechService;
+  liveSpeech?: SpeechProvider;
   status?: () => Promise<{ configured: boolean; sttReady: boolean; statusMessage: string }>;
   generateOwner?: (input: OwnerInput, signal?: AbortSignal) => Promise<unknown>;
   generateBrief?: (input: BriefInput, signal?: AbortSignal, consultation?: BriefConsultationContext) => Promise<unknown>;

@@ -3,37 +3,34 @@ import { randomBytes } from 'node:crypto';
 import { statSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
-import type { Config } from './config.ts';
-import { freePort } from './ai/free-port.ts';
+import type { Config } from '../../config.ts';
+import { freePort } from '../free-port.ts';
+import type { SpeechProvider } from './types.ts';
 
-export type SpeechCandidate = Exclude<Config['liveSpeechModel'], ''>;
-export type LiveSpeechService = {
-  prepare(): Promise<void>;
-  transcribe(wav: Buffer, signal?: AbortSignal): Promise<{ text: string; model: string; latencyMs: number }>;
-  release(): Promise<void>;
-};
+export type SpeechCandidate = Exclude<Config['liveSpeechModel'], 'cohere'>;
+export const cohereModelPath = (config: Config) => resolve(config.liveModelDirectory, 'cohere-transcribe-03-2026-Q8_0.gguf');
 
 export function buildSpeechCommand(config: Config, port: number, token: string) {
   const candidate = config.liveSpeechModel;
-  if (!candidate) throw new Error('LIVE_SPEECH_MODEL을 선택해 주세요.');
+  if (candidate === 'cohere') throw new Error('Cohere Transcribe does not run through a server command.');
   const origin = `http://127.0.0.1:${port}`;
   if (candidate === 'qwen-asr') {
-    const model = resolve(config.liveModelDirectory, 'Qwen3-ASR-1.7B-bf16.gguf');
-    const projector = resolve(config.liveModelDirectory, 'mmproj-Qwen3-ASR-1.7B-bf16.gguf');
+    const model = resolve(config.liveModelDirectory, 'Qwen3-ASR-1.7B-Q8_0.gguf');
+    const projector = resolve(config.liveModelDirectory, 'mmproj-Qwen3-ASR-1.7B-Q8_0.gguf');
     const executable = resolve(config.llamaServer);
     return { executable, files: [executable, model, projector], baseUrl: origin,
       args: ['-m', model, '--mmproj', projector, '-ngl', '99', '-c', '4096', '-np', '1', '-t', '6',
         '--flash-attn', 'on', '--host', '127.0.0.1', '--port', String(port), '--api-key', token, '--no-webui', '--jinja'] };
   }
-  const model = resolve(config.liveModelDirectory, candidate === 'whisper-turbo' ? 'ggml-large-v3-turbo.bin' : 'ggml-large-v3.bin');
+  const model = resolve(config.liveModelDirectory, 'ggml-large-v3-turbo.bin');
   const executable = resolve(config.whisperServer);
   return { executable, files: [executable, model], baseUrl: `${origin}/internal-${token}`,
     args: ['-m', model, '-l', 'ko', '-t', '6', '-bs', '5', '-bo', '5', '-nt', '--host', '127.0.0.1',
-      '--port', String(port), '--request-path', `/internal-${token}`, '--public', resolve('.local-ai/empty-public')] };
+      '--port', String(port), '--request-path', `/internal-${token}`, '--public', resolve(config.home, 'runtime', 'empty-public')] };
 }
 
 export function speechInstalled(config: Config): boolean {
-  try { return buildSpeechCommand(config, 1, 'check').files.every(file => { const s = statSync(file); return s.isFile() && s.size > 0; }); }
+  try { return (config.liveSpeechModel === 'cohere' ? [cohereModelPath(config)] : buildSpeechCommand(config, 1, 'check').files).every(file => { const s = statSync(file); return s.isFile() && s.size > 0; }); }
   catch { return false; }
 }
 
@@ -65,7 +62,7 @@ async function boundedJson(response: Response) {
   } finally { await reader.cancel().catch(() => {}); reader.releaseLock(); }
 }
 
-export function createLiveSpeech(config: Config, hooks: { unloadTextModel?: () => Promise<void> } = {}): LiveSpeechService {
+export function createLiveSpeech(config: Config, hooks: { unloadTextModel?: () => Promise<void> } = {}): SpeechProvider {
   let child: ChildProcess | undefined;
   let starting: Promise<void> | undefined;
   let lifetime: AbortController | undefined;
@@ -114,9 +111,9 @@ export function createLiveSpeech(config: Config, hooks: { unloadTextModel?: () =
     },
     async transcribe(wav, signal) {
       signal?.throwIfAborted();
-      if (!ready || !lifetime || !config.liveSpeechModel) throw new Error('음성 모델 준비가 필요합니다.');
+      if (!ready || !lifetime || config.liveSpeechModel === 'cohere') throw new Error('음성 모델 준비가 필요합니다.');
       if (busy) throw new Error('이전 음성 구간을 처리 중입니다.');
-      if (wav.length > 1024 * 1024) throw new Error('음성 구간이 너무 큽니다.');
+      if (wav.length > 2.5 * 1024 * 1024) throw new Error('음성 구간이 너무 큽니다.');
       busy = true;
       const started = performance.now();
       const combined = AbortSignal.any([lifetime.signal, AbortSignal.timeout(config.sttTimeoutMs), ...(signal ? [signal] : [])]);
