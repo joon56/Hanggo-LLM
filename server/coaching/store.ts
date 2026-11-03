@@ -87,7 +87,8 @@ export function createFileStore(directory: string, options: { now?: () => number
   const readRecords = (caseId: string) => load(recordsPath(caseId), caseRecordsSchema).catch(error => { if (error instanceof StoreError && error.code === 'NOT_FOUND') return { taskLogs: [], guardianLogs: [] }; throw error; });
   const names = (folder: string) => readdir(path.join(root, folder)).catch(error => { if (error.code === 'ENOENT') return [] as string[]; throw error; });
   const allCases = async () => Promise.all((await names('cases')).filter(file => file.endsWith('.json')).map(file => load(path.join(root, 'cases', file), caseSchema)));
-  const allConsultations = async () => Promise.all((await names('consultations')).map(id => load(consultationPath(id), consultationSchema)));
+  // A folder can lose its record if deleting it was interrupted. One leftover must not take every list down with it.
+  const allConsultations = async () => (await Promise.all((await names('consultations')).map(id => load(consultationPath(id), consultationSchema).catch(error => { if (error instanceof StoreError) return null; throw error; })))).filter((item): item is Consultation => item !== null);
 
   async function issue(id: string) {
     const token = randomBytes(32).toString('hex');
@@ -121,7 +122,7 @@ export function createFileStore(directory: string, options: { now?: () => number
       await load(casePath(id), caseSchema);
       const consultations = (await allConsultations()).filter(item => item.caseId === id);
       if (consultations.some(item => item.state === 'live' || item.state === 'processing')) throw new StoreError('ACTIVE_CONSULTATION', 'A consultation of this case is still running.', 409);
-      for (const item of consultations) await rm(path.dirname(consultationPath(item.id)), { recursive: true, force: true });
+      for (const item of consultations) await rm(path.dirname(consultationPath(item.id)), { recursive: true, force: true, maxRetries: 3, retryDelay: 200 });
       await rm(recordsPath(id), { force: true });
       // Last, so a failure part way leaves a case the trainer can see and delete again.
       await rm(casePath(id), { force: true });
@@ -158,6 +159,9 @@ export function createFileStore(directory: string, options: { now?: () => number
     listTaskLogs: caseId => queued(async () => (await readRecords(caseId)).taskLogs),
     addGuardianLog: (caseId, log, limit = MAX_RECORDS) => queued(async () => {
       const records = await readRecords(caseId);
+      // A retry after a lost reply carries the same draft, and must not count twice in the brief.
+      const saved = records.guardianLogs.find(item => item.draft.id === log.draft.id);
+      if (saved) return saved;
       if (records.guardianLogs.length >= limit) throw new StoreError('RECORD_LIMIT', '저장할 수 있는 기록 수를 넘었습니다.', 429);
       await save(recordsPath(caseId), { ...records, guardianLogs: [...records.guardianLogs, log] });
       return log;

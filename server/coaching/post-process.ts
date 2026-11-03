@@ -1,3 +1,4 @@
+import { setTimeout as delay } from 'node:timers/promises';
 import { transition } from '../../src/domain/coaching.ts';
 import type { Consultation } from '../../src/domain/coaching.ts';
 import { buildNoteSource, emptyNote } from '../../src/domain/coaching-note.ts';
@@ -7,17 +8,19 @@ import { createSceneService } from './scene-service.ts';
 import type { CoachingStore } from './store.ts';
 import type { Transcription } from './transcription.ts';
 
+const OPEN_REVIEW_ATTEMPTS = 3;
 type Deps = {
   store: CoachingStore; transcription: Pick<Transcription, 'settle' | 'close'>; llm?: LlmProvider;
   /** Slower machines can raise the limit on a single model call. */
   callTimeoutMs?: number;
+  retryDelayMs?: number;
   notify?: (consultation: Consultation) => void;
   now?: () => number;
 };
 export type PostProcess = ReturnType<typeof createPostProcess>;
 
 /** Everything after a call, in the order one GPU allows: speech model out, then scenes, then the note. */
-export function createPostProcess({ store, transcription, llm, callTimeoutMs, notify, now = Date.now }: Deps) {
+export function createPostProcess({ store, transcription, llm, callTimeoutMs, notify, retryDelayMs = 1000, now = Date.now }: Deps) {
   const scenes = llm && createSceneService({ llm, store, callTimeoutMs });
   const notes = llm && createNoteService({ llm, now, callTimeoutMs });
   const stopping = new AbortController();
@@ -31,6 +34,17 @@ export function createPostProcess({ store, transcription, llm, callTimeoutMs, no
     const note = notes ? await notes.generate(consultation, info, stopping.signal)
       : emptyNote(buildNoteSource(consultation, info), new Date(now()).toISOString(), ['AI 기능이 꺼져 있어 빈 양식을 만들었습니다.']);
     await store.updateConsultation(id, current => ({ ...current, note }));
+  }
+
+  /** A consultation left in processing blocks every new call on this GPU, so one failed write gets more chances. */
+  async function openReview(id: string) {
+    for (let attempt = 1; ; attempt += 1) {
+      try { return await store.updateConsultation(id, current => transition(current, 'processed', now())); }
+      catch (error) {
+        if (attempt >= OPEN_REVIEW_ATTEMPTS) throw error;
+        await delay(retryDelayMs, undefined, { ref: false });
+      }
+    }
   }
 
   /** A failure here must not hold the review back, because the transcript is still worth reading. */
@@ -55,8 +69,7 @@ export function createPostProcess({ store, transcription, llm, callTimeoutMs, no
         await transcription.settle(id);
         if (stopping.signal.aborted) return;
         await organize(id);
-        const finished = await store.updateConsultation(id, current => transition(current, 'processed', now()));
-        notify?.(finished);
+        notify?.(await openReview(id));
       })().catch(error => { if (!stopping.signal.aborted) throw error; }));
     },
     /** Returns once the work has started. A draft can take minutes, longer than a tunnel will hold a request open. */

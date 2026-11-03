@@ -593,3 +593,47 @@ describe('deleting a case', () => {
     await owner.delete(`/api/coaching/cases/${created.case.id}`).expect(403);
   });
 });
+
+describe('guardian input limits', () => {
+  async function guardianOfCase() {
+    const app = setup(); const owner = await trainer(app);
+    const created = await createCase(owner);
+    return { caseId: created.case.id, member: await guardian(app, created.inviteToken) };
+  }
+  const draftFor = async (member: ReturnType<typeof request.agent>, caseId: string, text = '오늘 초인종에 짖었어요') => (await member.post(`/api/coaching/cases/${caseId}/guardian-logs/draft`).set('Origin', origin).send({ text, sourceKind: 'nl_log_text' }).expect(200)).body;
+  it('assigns event ids itself, so a crafted or repeated id cannot break the brief', async () => {
+    const { caseId, member } = await guardianOfCase();
+    const url = `/api/coaching/cases/${caseId}/guardian-logs`;
+    const first = await draftFor(member, caseId);
+    first.events[0].id = 'record-days';
+    const saved = (await member.post(url).set('Origin', origin).send({ draft: first }).expect(201)).body;
+    expect(saved.draft.events[0].id).not.toBe('record-days');
+    const second = await draftFor(member, caseId, '어제도 초인종에 짖었어요');
+    second.events[0].id = saved.draft.events[0].id;
+    await member.post(url).set('Origin', origin).send({ draft: second }).expect(201);
+    const ids = (await member.get(url).expect(200)).body.logs.flatMap((log: { draft: { events: { id: string }[] } }) => log.draft.events.map(event => event.id));
+    expect(new Set(ids).size).toBe(2);
+  });
+  it('treats a retried save as the same log', async () => {
+    const { caseId, member } = await guardianOfCase();
+    const url = `/api/coaching/cases/${caseId}/guardian-logs`;
+    const draft = await draftFor(member, caseId);
+    const first = (await member.post(url).set('Origin', origin).send({ draft }).expect(201)).body;
+    const again = (await member.post(url).set('Origin', origin).send({ draft }).expect(201)).body;
+    expect(again.id).toBe(first.id);
+    expect((await member.get(url).expect(200)).body.logs).toHaveLength(1);
+  });
+  it('refuses an oversized log', async () => {
+    const { caseId, member } = await guardianOfCase();
+    const draft = await draftFor(member, caseId);
+    draft.clarification = 'x'.repeat(200 * 1024);
+    await member.post(`/api/coaching/cases/${caseId}/guardian-logs`).set('Origin', origin).send({ draft }).expect(400);
+  });
+  it('slows down a guardian who keeps asking for drafts', async () => {
+    const { caseId, member } = await guardianOfCase();
+    const codes: number[] = [];
+    for (let index = 0; index < 12; index++) codes.push((await member.post(`/api/coaching/cases/${caseId}/guardian-logs/draft`).set('Origin', origin).send({ text: '기록' })).status);
+    expect(codes.slice(0, 10).every(code => code === 200)).toBe(true);
+    expect(codes.at(-1)).toBe(429);
+  });
+});

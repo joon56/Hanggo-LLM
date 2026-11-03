@@ -1,5 +1,5 @@
 // @vitest-environment node
-import { mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, expect, it } from 'vitest';
@@ -211,4 +211,23 @@ it('reports a missing case when deleting', async () => {
   const store = createFileStore(directory());
   await expect(store.deleteCase('00000000-0000-4000-8000-000000000009')).rejects.toMatchObject({ code: 'NOT_FOUND' });
   await expect(store.deleteCase('../outside')).rejects.toBeInstanceOf(StoreError);
+});
+it('lists consultations despite a folder left without its record', async () => {
+  const root = directory(); const store = createFileStore(root);
+  const { case: created } = await store.createCase(input);
+  const { id } = await store.createConsultation(created.id);
+  mkdirSync(path.join(root, 'consultations', '00000000-0000-4000-8000-00000000000a', 'frames'), { recursive: true });
+  await expect(store.listConsultations(created.id)).resolves.toHaveLength(1);
+  await expect(store.recoverInterrupted()).resolves.toBeUndefined();
+  await expect(store.startConsultation(created.id)).resolves.toMatchObject({ state: 'live' });
+  await expect(store.getConsultation(id)).resolves.toMatchObject({ id });
+});
+it('treats saving the same guardian log twice as one', async () => {
+  const store = createFileStore(directory());
+  const { case: created } = await store.createCase(input);
+  const first = { id: 'saved-1', savedAt: 'now', draft: { id: 'draft-1' } } as never;
+  const retried = { id: 'saved-2', savedAt: 'later', draft: { id: 'draft-1' } } as never;
+  await expect(store.addGuardianLog(created.id, first)).resolves.toBe(first);
+  await expect(store.addGuardianLog(created.id, retried)).resolves.toEqual(first);
+  await expect(store.listGuardianLogs(created.id)).resolves.toHaveLength(1);
 });

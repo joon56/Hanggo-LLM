@@ -4,6 +4,7 @@ import type { Consultation, Segment } from '../../src/domain/coaching.ts';
 import { newConsultation } from '../../src/domain/coaching.ts';
 import type { RawNote } from '../../src/domain/coaching-note.ts';
 import type { LlmOutput, LlmRequest } from '../ai/llm/types.ts';
+import { noteSchema } from './note-schema.ts';
 import { createNoteService } from './note-service.ts';
 
 const info = { petName: '초코', guardianName: '가상 보호자', trainerName: '가상 훈련사' };
@@ -171,5 +172,22 @@ describe('a model that never answers', () => {
     const pending = service.generate(consultation(short), info, controller.signal);
     setTimeout(() => controller.abort(), 5);
     await expect(pending).rejects.toThrow();
+  });
+});
+
+describe('answers the record cannot hold', () => {
+  it('saves one copy of a repeated unknown field', async () => {
+    const answer = { ...good, behaviors: [{ title: '초인종 짖음', context: [{ text: '초인종이 울리면 짖는다', evidence: ['s01'] }], behavior: [], response: [], unknown: ['duration', 'duration', 'duration', 'response', 'response', 'trigger'] }] };
+    const { service } = build(reply(answer));
+    const note = await service.generate(consultation(short), info);
+    expect(note.behaviors[0].unknown).toEqual(['duration', 'response', 'trigger']);
+  });
+  it('falls back to a blank form rather than losing the review when an answer does not fit', async () => {
+    const answer = { ...good, behaviors: [{ title: '초'.repeat(400), context: [{ text: '초인종이 울리면 짖는다', evidence: ['s01'] }], behavior: [], response: [], unknown: [] }] };
+    const { service } = build(reply(answer));
+    const note = await service.generate(consultation(short), info);
+    expect(note.fallbackUsed).toBe(true);
+    expect(note.warnings.join()).toContain('형식');
+    expect(noteSchema.safeParse(note).success).toBe(true);
   });
 });

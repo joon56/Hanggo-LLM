@@ -116,7 +116,7 @@ export function assembleNote(raw: RawNote, source: NoteSource, createdAt: string
     return [{ id: newId(), text, evidence }];
   });
   const behaviors = raw.behaviors.flatMap((item): BehaviorEntry[] => {
-    const entry = { id: newId(), title: item.title.trim(), context: claims('behaviors.context', item.context), behavior: claims('behaviors.behavior', item.behavior), response: claims('behaviors.response', item.response), unknown: item.unknown };
+    const entry = { id: newId(), title: item.title.trim(), context: claims('behaviors.context', item.context), behavior: claims('behaviors.behavior', item.behavior), response: claims('behaviors.response', item.response), unknown: [...new Set(item.unknown)] };
     const banned = bannedIn(entry.title);
     if (banned.length) { reject('behaviors.title', entry.title, [`금지 표현입니다: ${banned.join(', ')}`]); return []; }
     return entry.context.length || entry.behavior.length || entry.response.length ? [entry] : [];

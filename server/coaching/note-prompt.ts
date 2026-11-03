@@ -39,7 +39,7 @@ export function buildNoteRequest(petName: string, lines: NoteLine[], problems: N
     properties: {
       summary: { type: 'array', maxItems: 3, items: claim }, concerns: claims,
       behaviors: { type: 'array', maxItems: 6, items: { type: 'object', additionalProperties: false, required: ['title', 'context', 'behavior', 'response', 'unknown'],
-        properties: { title: { type: 'string', maxLength: 60 }, context: claims, behavior: claims, response: claims, unknown: { type: 'array', items: { enum: ['trigger', 'frequency', 'duration', 'response'] } } } } },
+        properties: { title: { type: 'string', maxLength: 60 }, context: claims, behavior: claims, response: claims, unknown: { type: 'array', maxItems: 4, uniqueItems: true, items: { enum: ['trigger', 'frequency', 'duration', 'response'] } } } } },
       guardianReports: claims, trainerObservations: claims, guidance: claims,
       tasks: { type: 'array', maxItems: 8, items: { type: 'object', additionalProperties: false, required: ['text', 'who', 'frequency', 'until', 'successCriteria', 'evidence'],
         properties: { text: { type: 'string', maxLength: 300 }, who: nullableText, frequency: nullableText, until: nullableText, successCriteria: nullableText, evidence: claim.properties.evidence } } },

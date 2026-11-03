@@ -281,3 +281,13 @@ describe('term correction', () => {
     expect(captions(broadcast)[0].text).toBe('현관으로 뛰어가서 계속 짖어요');
   });
 });
+
+describe('dictation limits', () => {
+  it('leaves room in the queue for a live call', async () => {
+    const { speech } = controlledSpeech(); const { transcription } = build(speech);
+    const waiting = Array.from({ length: 9 }, () => transcription.dictate(wav()));
+    for (const promise of waiting.slice(0, 9)) void promise.catch(() => {});
+    await expect(transcription.dictate(wav())).rejects.toMatchObject({ code: 'BUSY', status: 429 });
+    await expect(accept(transcription, 'guardian', 0)).resolves.toMatchObject({ speaker: 'guardian' });
+  });
+});

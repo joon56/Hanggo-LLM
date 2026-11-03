@@ -2,6 +2,7 @@ import type { Consultation } from '../../src/domain/coaching.ts';
 import { assembleNote, buildNoteSource, emptyNote, uncited, type Claim, type CoachingNote, type NoteLine, type NoteSource, type NoteViolation, type RawNote } from '../../src/domain/coaching-note.ts';
 import type { LlmProvider } from '../ai/llm/types.ts';
 import { buildNoteRequest, buildSummaryRequest, RawNoteSchema, RawSummarySchema } from './note-prompt.ts';
+import { noteSchema } from './note-schema.ts';
 
 const CHUNK_MS = 15 * 60 * 1000;
 type CaseInfo = { petName: string; guardianName: string; trainerName: string };
@@ -76,6 +77,13 @@ export function createNoteService({ llm, now = Date.now, callTimeoutMs = DEFAULT
       signal?.throwIfAborted();
       const createdAt = new Date(now()).toISOString();
       const source = buildNoteSource(consultation, info);
+      const note = await compose(consultation, source, info, createdAt, signal);
+      // Whatever the model did, what comes back must be something the store can keep, or the review would open with nothing.
+      return noteSchema.safeParse(note).success ? note : emptyNote(source, createdAt, ['일지 초안의 형식이 맞지 않아 빈 양식을 만들었습니다. 전사를 보고 직접 작성해 주세요.']);
+    },
+  };
+
+  async function compose(_consultation: Consultation, source: NoteSource, info: CaseInfo, createdAt: string, signal?: AbortSignal): Promise<CoachingNote> {
       if (!source.lines.length) return emptyNote(source, createdAt, ['받아쓴 발화가 없어 빈 양식을 만들었습니다.']);
       const parts = splitByTime(source.lines);
       const attempts: Attempt[] = []; const warnings: string[] = [];
@@ -92,6 +100,5 @@ export function createNoteService({ llm, now = Date.now, callTimeoutMs = DEFAULT
       if (!summary) return { ...note, summary: [], warnings: [...warnings, '전체 요약을 만들지 못했습니다.'] };
       const summarized = { ...note, summary };
       return { ...summarized, uncitedSegmentIds: uncited(summarized, source) };
-    },
-  };
+  }
 }

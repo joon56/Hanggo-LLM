@@ -54,6 +54,7 @@ const TaskLogInput = z.object({ consultationId: z.uuid(), taskId: z.string().min
 const GuardianText = z.object({ text: z.string().trim().min(1).max(8000), sourceKind: z.enum(['nl_log_text', 'nl_log_voice']).default('nl_log_text') }).strict();
 const GuardianLogInput = z.object({ draft: z.custom<OwnerDraft>(value => typeof value === 'object' && value !== null) }).strict();
 const TIME_ZONE = 'Asia/Seoul';
+const MAX_GUARDIAN_LOG_CHARACTERS = 64 * 1024;
 const OWNER_DRAFT_TIMEOUT_MS = 80_000;
 const ObservationEdit = z.object({ text: z.string().trim().min(1).max(1000).optional(), reviewed: z.boolean().optional() }).strict();
 const isJpeg = (bytes: unknown) => Buffer.isBuffer(bytes) && bytes.length > 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff;
@@ -148,7 +149,10 @@ export function createCoachingRouter(deps: CoachingDeps) {
     res.status(201).json(await store.startConsultation(id));
   });
 
-  router.post('/cases/:id/task-logs', async (req, res) => {
+  /** One guardian's session should not be able to keep the GPU or the store busy for everyone else. */
+  const perCase = (limit: number) => rateLimit({ windowMs: 60_000, limit, keyGenerator: req => String(req.params.id), standardHeaders: 'draft-8', legacyHeaders: false, validate: false,
+    message: { error: '잠시 후 다시 시도해 주세요.', code: 'RATE_LIMIT' } });
+  router.post('/cases/:id/task-logs', perCase(60), async (req, res) => {
     const caseId = param(req, 'id');
     if (!allowed(req, res, 'task-log:write', caseId)) return;
     const { consultationId, taskId, status, text } = TaskLogInput.parse(req.body);
@@ -162,7 +166,7 @@ export function createCoachingRouter(deps: CoachingDeps) {
   });
   /** One GPU cannot organize a note and hold a speech model at once, so a guardian's log waits for neither. */
   const gpuFree = () => !postProcess.busy() && !['preparing', 'ready'].includes(transcription.status());
-  router.post('/cases/:id/guardian-logs/draft', async (req, res) => {
+  router.post('/cases/:id/guardian-logs/draft', perCase(10), async (req, res) => {
     const caseId = param(req, 'id');
     if (!allowed(req, res, 'guardian-log:write', caseId)) return;
     const { text, sourceKind } = GuardianText.parse(req.body);
@@ -171,10 +175,13 @@ export function createCoachingRouter(deps: CoachingDeps) {
     const organized = generateOwner && gpuFree() ? await generateOwner(input, AbortSignal.timeout(OWNER_DRAFT_TIMEOUT_MS)).then(result => result.draft, () => null) : null;
     res.json(organized ?? createManualOwnerDraft(input));
   });
-  router.post('/cases/:id/guardian-logs', async (req, res) => {
+  router.post('/cases/:id/guardian-logs', perCase(30), async (req, res) => {
     const caseId = param(req, 'id');
     if (!allowed(req, res, 'guardian-log:write', caseId)) return;
-    const { draft } = GuardianLogInput.parse(req.body);
+    const { draft: submitted } = GuardianLogInput.parse(req.body);
+    if (JSON.stringify(submitted).length > MAX_GUARDIAN_LOG_CHARACTERS) throw new StoreError('INPUT', '기록이 너무 깁니다.');
+    // Ids come from here, because the brief refuses to read records whose ids collide.
+    const draft = { ...submitted, events: Array.isArray(submitted.events) ? submitted.events.map(event => ({ ...event, id: randomUUID() })) : submitted.events };
     const problems = validateOwnerDraft(draft);
     if (draft.pets?.length !== 1 || draft.pets[0].id !== caseId) problems.push('이 사례의 반려동물 기록이 아닙니다.');
     if (problems.length) throw new StoreError('INPUT', problems.join(' '));
@@ -184,7 +191,7 @@ export function createCoachingRouter(deps: CoachingDeps) {
     const caseId = param(req, 'id');
     if (allowed(req, res, 'guardian-log:read', caseId)) res.json({ logs: await store.listGuardianLogs(caseId) });
   });
-  router.put('/cases/:id/voice', express.raw({ type: 'audio/wav', limit: '600kb' }), async (req, res) => {
+  router.put('/cases/:id/voice', perCase(40), express.raw({ type: 'audio/wav', limit: '600kb' }), async (req, res) => {
     const caseId = param(req, 'id');
     if (!allowed(req, res, 'guardian-log:write', caseId)) return;
     const durationMs = Buffer.isBuffer(req.body) ? Math.round((req.body.length - 44) / 32) : 0;

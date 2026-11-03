@@ -27,7 +27,7 @@ server.requestTimeout = Math.max(90_000, config.timeoutMs * 2 + config.sttTimeou
 server.headersTimeout = 15_000;
 server.on('error', () => { console.error('서버를 시작하지 못했습니다. 포트와 환경 설정을 확인해 주세요.'); process.exitCode = 1; });
 app.attachSignal(server);
-void app.recoverCoaching();
+void app.recoverCoaching().catch(() => { console.error('중단된 상담을 복구하지 못했습니다.'); });
 let shutdownTask: Promise<void> | undefined;
 for (const event of ['SIGINT', 'SIGTERM'] as const) process.on(event, () => {
   if (shutdownTask) return;

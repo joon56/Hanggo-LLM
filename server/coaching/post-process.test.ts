@@ -129,3 +129,22 @@ describe('regenerate', () => {
     expect(done.note?.warnings.join()).toContain('일지 초안을 만들지 못했습니다');
   });
 });
+
+describe('a write that fails once', () => {
+  it('tries again before leaving the consultation stuck', async () => {
+    const realUpdate = store.updateConsultation;
+    let failures = 1;
+    const flaky: CoachingStore = { ...store, updateConsultation: (consultationId, change) => {
+      const probe = change;
+      return realUpdate(consultationId, current => {
+        const next = probe(current);
+        if (next.state === 'review' && failures > 0) { failures -= 1; throw new Error('disk busy'); }
+        return next;
+      });
+    } };
+    const notify = vi.fn();
+    await createPostProcess({ store: flaky, transcription: { settle: async () => {}, close: async () => {} }, notify, retryDelayMs: 1 }).finish(id);
+    expect((await store.getConsultation(id)).state).toBe('review');
+    expect(notify).toHaveBeenCalled();
+  });
+});

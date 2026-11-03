@@ -7,6 +7,8 @@ import type { SpeechProvider, SpeechResult } from '../ai/speech/types.ts';
 import { StoreError, type CoachingStore } from './store.ts';
 
 const MAX_WAITING = 64;
+// Dictation is a convenience. It must never fill the queue a live call depends on.
+const MAX_WAITING_DICTATION = 8;
 const OVERLAP_TOLERANCE_MS = 500;
 const PREPARE_RETRY_MS = 30_000;
 type Item = { consultationId: string; segmentId: string; wav: Buffer };
@@ -156,7 +158,7 @@ export function createTranscription({ store, speech, broadcast, graceMs, now = D
     },
     dictate(wav: Buffer) {
       if (!speech) return Promise.reject(new StoreError('SPEECH_OFF', '받아쓰기를 사용할 수 없습니다.', 503));
-      if (waiting.length >= MAX_WAITING) return Promise.reject(new StoreError('BUSY', '받아쓰기가 밀려 있습니다. 잠시 후 다시 시도해 주세요.', 429));
+      if (waiting.length >= MAX_WAITING_DICTATION) return Promise.reject(new StoreError('BUSY', '받아쓰기가 밀려 있습니다. 잠시 후 다시 시도해 주세요.', 429));
       cancelIdle?.(); cancelIdle = undefined;
       return new Promise<string>((resolve, reject) => {
         waiting.push({ wav, resolve, reject });
