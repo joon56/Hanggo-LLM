@@ -1,7 +1,8 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { BookmarkSimpleIcon, CameraRotateIcon, MicrophoneIcon, MicrophoneSlashIcon, MonitorArrowUpIcon, PhoneDisconnectIcon, VideoCameraIcon, VideoCameraSlashIcon } from '@phosphor-icons/react';
 import type { CallSnapshot } from '../call/call-session';
 import type { Caption, MomentNotice, Speaker, SpeechStatus } from '../domain/coaching';
+import { consultationCoverage } from '../domain/coverage';
 import { CaseBrief } from './CaseBrief';
 import { SPEAKER_NAME } from './copy';
 
@@ -35,6 +36,14 @@ function Captions({ captions }: { captions: Caption[] }) {
     {recent.map(item => <p key={item.id} data-speaker={item.speaker} className={item.state === 'failed' ? 'is-failed' : undefined}>
       <strong>{SPEAKER_NAME[item.speaker]}</strong> {item.state === 'failed' ? '받아쓰지 못한 구간입니다.' : item.text}
     </p>)}
+  </div>;
+}
+
+function Checklist({ captions }: { captions: Caption[] }) {
+  const { items, safety } = useMemo(() => consultationCoverage(captions), [captions]);
+  return <div className="call-checklist">
+    <ul aria-label="상담에서 확인할 것">{items.map(item => <li key={item.key} data-covered={item.covered} aria-label={`${item.label} ${item.covered ? '들음' : '아직'}`}>{item.label}</li>)}</ul>
+    {safety.length > 0 && <p role="alert">안전 신호: {safety.join(', ')}. 동물병원 상담을 먼저 안내해 주세요.</p>}
   </div>;
 }
 
@@ -98,6 +107,7 @@ export function CallStage({ caseId, relayAvailable, onRetry, role, petName, canS
     </header>
     {message && <p role="status" className="call-status">{message}{call.status === 'failed' && onRetry && <button className="call-link" onClick={onRetry}>다시 연결</button>}</p>}
     {call.error && <p role="alert" className="call-status is-error">{call.error}</p>}
+    {role === 'trainer' && call.recording && <Checklist captions={call.captions} />}
     {call.lastMoment && <MomentBar key={call.lastMoment.id} moment={call.lastMoment} role={role} onMemo={onMemo} />}
     {briefOpen && caseId && <aside className="call-brief"><CaseBrief caseId={caseId} /></aside>}
     <div className="call-stage">

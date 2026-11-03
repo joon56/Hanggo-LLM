@@ -1,4 +1,4 @@
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { CallSnapshot } from '../call/call-session';
@@ -310,6 +310,28 @@ describe('PreJoin', () => {
     await userEvent.click(await screen.findByLabelText(/AI 받아쓰기와 장면 저장에 동의합니다/));
     await userEvent.click(screen.getByRole('button', { name: '입장' }));
     expect(onJoin).toHaveBeenCalledWith(expect.objectContaining({ consent: true }));
+  });
+});
+
+describe('CallStage checklist', () => {
+  const caption = (speaker: 'guardian' | 'trainer', text: string) => ({ id: text, speaker, startMs: 0, endMs: 1, text, state: 'complete' as const });
+  const actions = { onToggleMicrophone: vi.fn(), onToggleCamera: vi.fn(), onSwitchCamera: vi.fn(), onStartShare: vi.fn(), onStopShare: vi.fn(), onLeave: vi.fn(), onEnd: vi.fn(), onConsent: vi.fn(), onCatch: vi.fn(), onMemo: vi.fn() };
+  const call = (change: Partial<CallSnapshot>): CallSnapshot => ({ status: 'connected', peerOnline: true, peerMedia: { camera: true, microphone: true, screen: false }, stats: { inboundVideoFrames: 0, inboundAudioBytes: 0, inboundAudioEnergy: 0, relayed: false, roundTripMs: null }, consent: { guardian: true, trainer: true }, recording: true, localStream: null, remoteStream: null, localScreen: null, remoteScreen: null, microphoneOn: true, cameraOn: true, hasCamera: true, hasMicrophone: true, error: null, captions: [], speech: 'ready', lastMoment: null, captionLatencyMs: null, uploadLost: false, ...change }) as CallSnapshot;
+  it('shows the trainer what is still unasked while recording, and a safety signal as soon as it is heard', () => {
+    render(<CallStage role="trainer" petName="초코" canShare call={call({ captions: [caption('guardian', '하루에 세 번쯤 그래요. 어제 구토도 했어요')] })} {...actions} />);
+    const list = screen.getByRole('list', { name: '상담에서 확인할 것' });
+    expect(within(list).getByText('빈도')).toHaveAttribute('data-covered', 'true');
+    expect(within(list).getByText('언제')).toHaveAttribute('data-covered', 'false');
+    expect(screen.getByRole('alert')).toHaveTextContent('구토');
+  });
+  it('is a tool for the trainer, so the guardian does not see it', () => {
+    render(<CallStage role="guardian" petName="초코" canShare call={call({ captions: [caption('guardian', '어제 구토도 했어요')] })} {...actions} />);
+    expect(screen.queryByRole('list', { name: '상담에서 확인할 것' })).toBeNull();
+    expect(screen.queryByRole('alert')).toBeNull();
+  });
+  it('stays out of the way when nothing is being recorded', () => {
+    render(<CallStage role="trainer" petName="초코" canShare call={call({ recording: false })} {...actions} />);
+    expect(screen.queryByRole('list', { name: '상담에서 확인할 것' })).toBeNull();
   });
 });
 

@@ -44,6 +44,12 @@
 .call-moment { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; padding: 6px 14px; font-size: 13px; background: rgba(255, 255, 255, .08); }
 .call-moment form { display: flex; flex: 1; min-width: 240px; align-items: center; gap: 6px; }
 .call-moment input { flex: 1; min-width: 0; min-height: 32px; padding: 0 10px; border: 0; border-radius: 8px; background: rgba(255, 255, 255, .92); color: var(--ink); font-size: 13px; }
+.call-checklist { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; padding: 0 14px 8px; font-size: 12px; }
+.call-checklist ul { display: flex; flex-wrap: wrap; gap: 6px; margin: 0; padding: 0; list-style: none; }
+.call-checklist li { padding: 2px 8px; border: 1px solid rgba(255, 255, 255, .35); border-radius: 999px; }
+.call-checklist li[data-covered="true"] { border-color: transparent; background: rgba(255, 255, 255, .1); color: #a9afa2; }
+.call-checklist li[data-covered="true"]::before { content: '✓ '; }
+.call-checklist p { margin: 0; color: #f0c98a; }
 .call-captions { padding: 8px 14px 0; display: grid; gap: 2px; font-size: 14px; line-height: 1.45; }
 .call-captions strong { color: #cfd8c4; font-weight: 600; margin-right: 4px; }
 .call-captions p[data-speaker="trainer"] strong { color: #f0c98a; }
