@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { newConsultation, setConsent, transition, TransitionError } from './coaching';
+import { findEchoSource, newConsultation, setConsent, transition, TransitionError } from './coaching';
 
 const base = () => newConsultation({ id: 'c1', caseId: 'case-1', createdAt: '2026-11-03T00:00:00.000Z' });
 const live = (now = 1000) => transition(base(), 'start', now);
@@ -74,5 +74,26 @@ describe('setConsent', () => {
   });
   it('rejects consent changes after the live phase', () => {
     expect(() => setConsent({ ...base(), state: 'approved' }, 'guardian', true, 1)).toThrow(TransitionError);
+  });
+});
+
+describe('findEchoSource', () => {
+  const segment = (id: string, speaker: 'guardian' | 'trainer', startMs: number, text: string) => ({ id, speaker, startMs, endMs: startMs + 3000, text, originalText: text, state: 'complete' as const });
+  const heard = segment('a', 'trainer', 10000, '매트로 가면 바로 간식을 주세요');
+  it('finds the same words from the other speaker within three seconds', () => {
+    expect(findEchoSource([heard], segment('b', 'guardian', 11000, '매트로 가면 바로 간식을 주세요'))).toBe(heard);
+    expect(findEchoSource([heard], segment('b', 'guardian', 11000, '매트로 가면 바로 간식 주세요'))).toBe(heard);
+  });
+  it('ignores the same speaker, distant times, and different words', () => {
+    expect(findEchoSource([heard], segment('b', 'trainer', 11000, '매트로 가면 바로 간식을 주세요'))).toBeUndefined();
+    expect(findEchoSource([heard], segment('b', 'guardian', 20000, '매트로 가면 바로 간식을 주세요'))).toBeUndefined();
+    expect(findEchoSource([heard], segment('b', 'guardian', 11000, '오늘은 산책을 두 번 나갔습니다'))).toBeUndefined();
+  });
+  it('does not treat short replies as echoes', () => {
+    const short = segment('a', 'trainer', 10000, '네, 맞아요');
+    expect(findEchoSource([short], segment('b', 'guardian', 10500, '네, 맞아요'))).toBeUndefined();
+  });
+  it('skips empty and failed segments', () => {
+    expect(findEchoSource([{ ...heard, state: 'failed' }], segment('b', 'guardian', 11000, '매트로 가면 바로 간식을 주세요'))).toBeUndefined();
   });
 });

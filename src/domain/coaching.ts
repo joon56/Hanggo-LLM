@@ -6,19 +6,28 @@ export type CoachingCase = {
 };
 export type ConsultationState = 'scheduled' | 'live' | 'processing' | 'review' | 'approved' | 'interrupted';
 export type RecordingGap = { startMs: number; endMs?: number };
+export type SegmentState = 'queued' | 'complete' | 'failed';
+export type Segment = {
+  id: string; speaker: Speaker; startMs: number; endMs: number; text: string; originalText: string; state: SegmentState;
+  /** Likely the other speaker heard through this microphone. The text stays, but notes must not cite it. */
+  echoSuspect?: boolean; model?: string; latencyMs?: number;
+};
+export type Moment = { id: string; atMs: number; createdBy: Speaker; text?: string; frameIds: string[] };
+export type FrameRef = { id: string; atMs: number; source: 'camera' | 'screen'; speaker: Speaker; bytes: number };
 export type Consultation = {
   id: string; caseId: string; createdAt: string; state: ConsultationState;
   /** Whether transcription and scene capture may run. Separate from state because the call continues without it. */
   recording: boolean; consent: Record<Speaker, boolean>;
   startedAt?: number; endedAt?: number; recordingStartedAt?: number;
   recordingGaps: RecordingGap[]; errors: { code: string; message: string }[];
+  segments: Segment[]; moments: Moment[]; frames: FrameRef[];
 };
 export type ConsultationEvent = 'start' | 'end' | 'processed' | 'approve' | 'interrupt';
 
 export class TransitionError extends Error {}
 
 export function newConsultation(input: { id: string; caseId: string; createdAt: string }): Consultation {
-  return { ...input, state: 'scheduled', recording: false, consent: { guardian: false, trainer: false }, recordingGaps: [], errors: [] };
+  return { ...input, state: 'scheduled', recording: false, consent: { guardian: false, trainer: false }, recordingGaps: [], errors: [], segments: [], moments: [], frames: [] };
 }
 
 const nextState: Partial<Record<ConsultationState, Partial<Record<ConsultationEvent, ConsultationState>>>> = {
@@ -62,4 +71,31 @@ export function setConsent(consultation: Consultation, role: Speaker, value: boo
   if (consultation.state !== 'scheduled' && consultation.state !== 'live') throw new TransitionError(`Cannot change consent on a ${consultation.state} consultation.`);
   if (consultation.consent[role] === value) return consultation;
   return syncRecording({ ...consultation, consent: { ...consultation.consent, [role]: value } }, now);
+}
+
+const ECHO_WINDOW_MS = 3000;
+const ECHO_MIN_CHARACTERS = 6;
+const ECHO_MIN_SIMILARITY = 0.7;
+const comparable = (text: string) => text.toLowerCase().replace(/[^\p{L}\p{N}]/gu, '');
+function similarity(left: string, right: string) {
+  const counts = new Map<string, number>();
+  for (let index = 0; index < left.length - 1; index += 1) { const pair = left.slice(index, index + 2); counts.set(pair, (counts.get(pair) ?? 0) + 1); }
+  let shared = 0;
+  for (let index = 0; index < right.length - 1; index += 1) {
+    const pair = right.slice(index, index + 2); const remaining = counts.get(pair) ?? 0;
+    if (remaining) { shared += 1; counts.set(pair, remaining - 1); }
+  }
+  return 2 * shared / (left.length + right.length - 2);
+}
+
+/** Short replies repeat naturally in conversation, so only longer text counts as an echo. */
+export function findEchoSource(segments: Segment[], candidate: Segment): Segment | undefined {
+  const words = comparable(candidate.text);
+  if (words.length < ECHO_MIN_CHARACTERS) return undefined;
+  return segments.find(other => {
+    if (other.speaker === candidate.speaker || other.state !== 'complete') return false;
+    if (candidate.startMs - other.endMs > ECHO_WINDOW_MS || other.startMs - candidate.endMs > ECHO_WINDOW_MS) return false;
+    const heard = comparable(other.text);
+    return heard.length >= ECHO_MIN_CHARACTERS && similarity(words, heard) >= ECHO_MIN_SIMILARITY;
+  });
 }

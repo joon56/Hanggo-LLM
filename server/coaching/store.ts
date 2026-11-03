@@ -15,10 +15,17 @@ const NO_INVITE = '';
 const hash = (token: string) => createHash('sha256').update(token).digest('hex');
 const name = z.string().trim().min(1).max(200);
 const caseSchema = z.object({ id: z.uuid(), petName: name, guardianName: name, trainerName: name, createdAt: z.string(), inviteHash: z.string(), inviteExpiresAt: z.string(), guardianGeneration: z.number().int().min(0) }).strict();
+const speaker = z.enum(['guardian', 'trainer']);
+const segmentSchema = z.object({ id: z.uuid(), speaker, startMs: z.number().min(0), endMs: z.number().min(0), text: z.string(), originalText: z.string(), state: z.enum(['queued', 'complete', 'failed']),
+  echoSuspect: z.boolean().optional(), model: z.string().optional(), latencyMs: z.number().optional() }).strict();
+const momentSchema = z.object({ id: z.uuid(), atMs: z.number().min(0), createdBy: speaker, text: z.string().optional(), frameIds: z.array(z.uuid()) }).strict();
+const frameSchema = z.object({ id: z.uuid(), atMs: z.number().min(0), source: z.enum(['camera', 'screen']), speaker, bytes: z.number().int().min(0) }).strict();
 const consultationSchema = z.object({ id: z.uuid(), caseId: z.uuid(), createdAt: z.string(), state: z.enum(['scheduled', 'live', 'processing', 'review', 'approved', 'interrupted']),
   recording: z.boolean(), consent: z.object({ guardian: z.boolean(), trainer: z.boolean() }),
   startedAt: z.number().optional(), endedAt: z.number().optional(), recordingStartedAt: z.number().optional(),
-  recordingGaps: z.array(z.object({ startMs: z.number(), endMs: z.number().optional() })), errors: z.array(z.object({ code: z.string(), message: z.string() })) }).strict();
+  recordingGaps: z.array(z.object({ startMs: z.number(), endMs: z.number().optional() })), errors: z.array(z.object({ code: z.string(), message: z.string() })),
+  // Records written before transcription existed have none of these.
+  segments: z.array(segmentSchema).default([]), moments: z.array(momentSchema).default([]), frames: z.array(frameSchema).default([]) }).strict();
 
 export type CaseInput = Pick<CoachingCase, 'petName' | 'guardianName' | 'trainerName'>;
 export type CoachingStore = {
@@ -33,6 +40,8 @@ export type CoachingStore = {
   getConsultation(id: string): Promise<Consultation>;
   listConsultations(caseId: string): Promise<Consultation[]>;
   updateConsultation(id: string, change: (current: Consultation) => Consultation): Promise<Consultation>;
+  putFrame(consultationId: string, frameId: string, bytes: Uint8Array): Promise<void>;
+  readFrame(consultationId: string, frameId: string): Promise<Buffer>;
   recoverInterrupted(): Promise<void>;
 };
 
@@ -46,15 +55,18 @@ export function createFileStore(directory: string, options: { now?: () => number
   const safeId = (id: string) => { if (!/^[0-9a-f-]{36}$/.test(id)) throw new StoreError('INPUT', 'Invalid ID.'); return id; };
   const casePath = (id: string) => path.join(root, 'cases', `${safeId(id)}.json`);
   const consultationPath = (id: string) => path.join(root, 'consultations', safeId(id), 'consultation.json');
+  const framePath = (id: string, frameId: string) => path.join(root, 'consultations', safeId(id), 'frames', `${safeId(frameId)}.jpg`);
 
-  async function save(file: string, value: unknown) {
+  async function replace(file: string, content: string | Uint8Array) {
     await mkdir(path.dirname(file), { recursive: true });
     const temporary = `${file}.${randomUUID()}.tmp`;
-    await writeFile(temporary, JSON.stringify(value), { flag: 'wx' });
+    await writeFile(temporary, content, { flag: 'wx' });
     try { await rename(temporary, file); } finally { await rm(temporary, { force: true }); }
   }
+  const save = (file: string, value: unknown) => replace(file, JSON.stringify(value));
+  const notFound = (error: NodeJS.ErrnoException): never => { if (error.code === 'ENOENT') throw new StoreError('NOT_FOUND', 'Record not found.', 404); throw error; };
   async function load<T>(file: string, schema: z.ZodType<T>): Promise<T> {
-    const source = await readFile(file, 'utf8').catch(error => { if (error.code === 'ENOENT') throw new StoreError('NOT_FOUND', 'Record not found.', 404); throw error; });
+    const source = await readFile(file, 'utf8').catch(notFound);
     return schema.parse(JSON.parse(source));
   }
   const names = (folder: string) => readdir(path.join(root, folder)).catch(error => { if (error.code === 'ENOENT') return [] as string[]; throw error; });
@@ -110,6 +122,8 @@ export function createFileStore(directory: string, options: { now?: () => number
       await save(consultationPath(id), next);
       return next;
     }),
+    putFrame: (consultationId, frameId, bytes) => queued(() => replace(framePath(consultationId, frameId), bytes)),
+    readFrame: (consultationId, frameId) => queued(() => readFile(framePath(consultationId, frameId)).catch(notFound)),
     recoverInterrupted: () => queued(async () => {
       for (const item of await allConsultations()) if (item.state === 'live' || item.state === 'processing') await save(consultationPath(item.id), transition(item, 'interrupt', now()));
     }),
