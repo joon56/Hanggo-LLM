@@ -1,5 +1,6 @@
 import { createHash, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
 import { existsSync } from 'node:fs';
+import type { Server } from 'node:http';
 import path from 'node:path';
 import express from 'express';
 import type { ErrorRequestHandler, Request } from 'express';
@@ -10,6 +11,10 @@ import { z } from 'zod';
 import type { Config } from './config.ts';
 import type { SpeechProvider } from './ai/speech/types.ts';
 import { createConsultationRouter } from './consultation-router.ts';
+import { createGuardianSessions } from './coaching/guardian-session.ts';
+import { createActorResolver, createCoachingRouter } from './coaching/router.ts';
+import { attachSignal } from './coaching/signal.ts';
+import { createFileStore } from './coaching/store.ts';
 import type { VisionService } from './consultation-vision.ts';
 import { ConsultationError } from './consultation-store.ts';
 import type { SourceKind } from '../src/domain/notes.ts';
@@ -48,8 +53,8 @@ export function createApp(config: Config, services: Services) {
   const sessions = new Map<string, number>();
   const cookieName = 'hanggo_session';
   const cookieOptions = { httpOnly: true, secure: config.production, sameSite: 'strict' as const, path: '/api', maxAge: 8 * 60 * 60 * 1000 };
-  const token = (req: Request) => req.headers.cookie?.split(';').map(part => part.trim()).find(part => part.startsWith(`${cookieName}=`))?.slice(cookieName.length + 1) || '';
-  const authenticated = (req: Request) => !config.password || (sessions.get(token(req)) || 0) > Date.now();
+  const token = (req: { headers: { cookie?: string } }) => req.headers.cookie?.split(';').map(part => part.trim()).find(part => part.startsWith(`${cookieName}=`))?.slice(cookieName.length + 1) || '';
+  const authenticated = (req: { headers: { cookie?: string } }) => !config.password || (sessions.get(token(req)) || 0) > Date.now();
   const origins = new Set([config.publicOrigin, ...(!config.production ? ['http://127.0.0.1:5173', `http://127.0.0.1:${config.port}`, 'http://localhost:5173'] : [])]);
   const hosts = new Set([...origins].map(origin => new URL(origin).hostname));
   hosts.add('127.0.0.1'); hosts.add('localhost');
@@ -86,6 +91,11 @@ export function createApp(config: Config, services: Services) {
     res.cookie(cookieName, value, cookieOptions).json({ ...sessionInfo(req), authenticated: true, ...(config.aiEnabled && services.status ? await services.status() : {}) });
   });
   app.delete('/api/session', (req, res) => { sessions.delete(token(req)); res.clearCookie(cookieName, cookieOptions).json(sessionInfo(req)); });
+  // Guardians join by invite without the trainer password, so coaching applies its own identity rules first.
+  const coachingStore = createFileStore(config.coachingDirectory);
+  const coachingAccess = { store: coachingStore, sessions: createGuardianSessions(config.coachingDirectory), isTrainer: (headers: { cookie?: string }) => authenticated({ headers }) };
+  let signal: ReturnType<typeof attachSignal> | undefined;
+  app.use('/api/coaching', createCoachingRouter({ ...coachingAccess, turn: config.turn, secureCookies: config.production, notify: consultation => signal?.notify(consultation) }));
   app.use('/api', (req, res, next) => {
     if (!authenticated(req)) { res.status(401).json({ error: '로그인이 필요합니다.', code: 'AUTH', requestId: res.locals.requestId }); return; }
     next();
@@ -197,5 +207,9 @@ export function createApp(config: Config, services: Services) {
     res.status(large ? 413 : malformed ? 400 : 502).json({ error: large ? '파일은 10MB 이하, 텍스트는 8,000자 이하로 입력해 주세요.' : malformed ? '요청 형식을 확인해 주세요.' : 'AI 요청을 완료하지 못했습니다. 입력은 유지됩니다. 잠시 후 다시 시도해 주세요.', code: large ? 'TOO_LARGE' : malformed ? 'INPUT' : 'UPSTREAM', requestId: res.locals.requestId });
   };
   app.use(errors);
-  return Object.assign(app, { shutdown: () => { stopping = true; return consultation.shutdown(); } });
+  return Object.assign(app, {
+    attachSignal(server: Server) { signal = attachSignal(server, { store: coachingStore, allowedOrigins: origins, resolveActor: createActorResolver(coachingAccess) }); },
+    recoverCoaching: () => coachingStore.recoverInterrupted(),
+    shutdown: () => { stopping = true; signal?.close(); return consultation.shutdown(); },
+  });
 }

@@ -2,6 +2,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { parseEnv } from 'node:util';
 import { isLlmModel } from './ai/llm/models.ts';
+import { readTurn } from './turn.ts';
 
 /** Real environment and .env win. An empty value counts as unset so a blank .env line cannot hide a secret. */
 export function loadLocalEnv(env: NodeJS.ProcessEnv = process.env, pointer = '.hanggo-home') {
@@ -43,6 +44,7 @@ export function readConfig(env: NodeJS.ProcessEnv = process.env) {
   return { home, profile, aiProvider: env.AI_PROVIDER === 'stub' ? 'stub' as const : 'local' as const,
     production, host, password, publicOrigin, provider: 'local' as const,
     liveConsultationEnabled, liveSpeechModel: liveSpeechModel as 'whisper-turbo' | 'qwen-asr' | 'cohere',
+    turn: readTurn(env), coachingDirectory: path.join(home, 'data', 'coaching'),
     consultationDirectory: env.CONSULTATION_DIRECTORY || path.join(home, 'data', 'consultations'),
     liveModelDirectory: env.LIVE_MODEL_DIRECTORY || path.join(home, 'models', 'stt'),
     whisperServer: env.WHISPER_SERVER || path.join(home, 'runtime', 'whisper-cpp', 'Release', 'whisper-server.exe'),

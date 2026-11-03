@@ -28,6 +28,8 @@ export type CoachingStore = {
   getCase(id: string): Promise<CoachingCase>;
   listCases(): Promise<CoachingCase[]>;
   createConsultation(caseId: string): Promise<Consultation>;
+  /** One GPU serves one conversation, so only one consultation may be live at a time. */
+  startConsultation(caseId: string): Promise<Consultation>;
   getConsultation(id: string): Promise<Consultation>;
   listConsultations(caseId: string): Promise<Consultation[]>;
   updateConsultation(id: string, change: (current: Consultation) => Consultation): Promise<Consultation>;
@@ -93,6 +95,13 @@ export function createFileStore(directory: string, options: { now?: () => number
       const created = newConsultation({ id: randomUUID(), caseId, createdAt: new Date(now()).toISOString() });
       await save(consultationPath(created.id), created);
       return created;
+    }),
+    startConsultation: caseId => queued(async () => {
+      await load(casePath(caseId), caseSchema);
+      if ((await allConsultations()).some(item => item.state === 'live')) throw new StoreError('ACTIVE_CONSULTATION', 'Another consultation is live.', 409);
+      const started = transition(newConsultation({ id: randomUUID(), caseId, createdAt: new Date(now()).toISOString() }), 'start', now());
+      await save(consultationPath(started.id), started);
+      return started;
     }),
     getConsultation: id => queued(() => load(consultationPath(id), consultationSchema)),
     listConsultations: caseId => queued(async () => (await allConsultations()).filter(item => item.caseId === caseId).sort((a, b) => b.createdAt.localeCompare(a.createdAt))),

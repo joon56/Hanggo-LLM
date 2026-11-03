@@ -100,6 +100,16 @@ it('lists a case with its consultations newest first', async () => {
   const second = await store.createConsultation(created.id);
   expect((await store.listConsultations(created.id)).map(item => item.id)).toEqual([second.id, first.id]);
 });
+it('starts a consultation and refuses a second live one on the same server', async () => {
+  const store = createFileStore(directory());
+  const first = await store.createCase(input); const second = await store.createCase(input);
+  const started = await store.startConsultation(first.case.id);
+  expect(started).toMatchObject({ state: 'live', caseId: first.case.id });
+  expect(started.startedAt).toBeTypeOf('number');
+  await expect(store.startConsultation(second.case.id)).rejects.toMatchObject({ code: 'ACTIVE_CONSULTATION', status: 409 });
+  await store.updateConsultation(started.id, current => ({ ...current, state: 'interrupted' }));
+  await expect(store.startConsultation(second.case.id)).resolves.toMatchObject({ state: 'live' });
+});
 it('leaves no temporary files behind', async () => {
   const root = directory(); const store = createFileStore(root);
   const { case: created } = await store.createCase(input);
