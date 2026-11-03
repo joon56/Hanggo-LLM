@@ -179,3 +179,36 @@ it('limits how many records a case can hold', async () => {
   for (let index = 0; index < 3; index++) await store.addTaskLog(created.id, log(index), 3);
   await expect(store.addTaskLog(created.id, log(4), 3)).rejects.toMatchObject({ code: 'RECORD_LIMIT', status: 429 });
 });
+it('deletes a case with everything recorded under it, and nothing of other cases', async () => {
+  const root = directory(); const store = createFileStore(root);
+  const { case: gone } = await store.createCase(input);
+  const { case: kept } = await store.createCase(input);
+  const finished = await store.startConsultation(gone.id);
+  await store.updateConsultation(finished.id, current => ({ ...current, state: 'approved' }));
+  await store.putFrame(finished.id, '00000000-0000-4000-8000-000000000001', Buffer.from([255, 216, 255]));
+  await store.addTaskLog(gone.id, { id: '00000000-0000-4000-8000-000000000002', caseId: gone.id, consultationId: finished.id, taskId: 't', at: 'now', status: 'done' });
+  const other = await store.startConsultation(kept.id);
+  await store.updateConsultation(other.id, current => ({ ...current, state: 'review' }));
+  await store.addTaskLog(kept.id, { id: '00000000-0000-4000-8000-000000000003', caseId: kept.id, consultationId: other.id, taskId: 't', at: 'now', status: 'done' });
+  await store.deleteCase(gone.id);
+  await expect(store.getCase(gone.id)).rejects.toMatchObject({ code: 'NOT_FOUND' });
+  await expect(store.getConsultation(finished.id)).rejects.toMatchObject({ code: 'NOT_FOUND' });
+  await expect(store.listTaskLogs(gone.id)).resolves.toEqual([]);
+  expect(allFiles(root).some(file => file.includes(finished.id) || file.includes(gone.id))).toBe(false);
+  await expect(store.getConsultation(other.id)).resolves.toMatchObject({ id: other.id });
+  await expect(store.listTaskLogs(kept.id)).resolves.toHaveLength(1);
+});
+it('refuses to delete a case while a consultation is running or being organized', async () => {
+  const store = createFileStore(directory());
+  const { case: created } = await store.createCase(input);
+  const { id } = await store.startConsultation(created.id);
+  await expect(store.deleteCase(created.id)).rejects.toMatchObject({ code: 'ACTIVE_CONSULTATION', status: 409 });
+  await store.updateConsultation(id, current => ({ ...current, state: 'processing' }));
+  await expect(store.deleteCase(created.id)).rejects.toMatchObject({ code: 'ACTIVE_CONSULTATION' });
+  await expect(store.getCase(created.id)).resolves.toMatchObject({ id: created.id });
+});
+it('reports a missing case when deleting', async () => {
+  const store = createFileStore(directory());
+  await expect(store.deleteCase('00000000-0000-4000-8000-000000000009')).rejects.toMatchObject({ code: 'NOT_FOUND' });
+  await expect(store.deleteCase('../outside')).rejects.toBeInstanceOf(StoreError);
+});

@@ -131,6 +131,12 @@ export function createCoachingRouter(deps: CoachingDeps) {
     if (!allowed(req, res, 'case:read', id)) return;
     res.json({ ...publicCase(await store.getCase(id)), consultations: (await store.listConsultations(id)).map(item => viewFor(actorOf(req), item)) });
   });
+  router.delete('/cases/:id', async (req, res) => {
+    const id = param(req, 'id');
+    if (!allowed(req, res, 'case:delete', id)) return;
+    await store.deleteCase(id);
+    res.status(204).end();
+  });
   router.post('/cases/:id/invite', async (req, res) => {
     const id = param(req, 'id');
     if (!allowed(req, res, 'case:invite', id)) return;

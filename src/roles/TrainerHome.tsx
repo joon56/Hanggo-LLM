@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { CopyIcon, PawPrintIcon } from '@phosphor-icons/react';
 import { login } from '../api';
-import { createCase, getCase, getMe, listCases, reissueInvite, startConsultation } from '../coaching-api';
+import { createCase, deleteCase, getCase, getMe, listCases, reissueInvite, startConsultation } from '../coaching-api';
 import type { CaseDetail } from '../coaching-api';
 import { CaseBrief } from './CaseBrief';
 import { apiMessage, STATE_LABEL } from './copy';
@@ -101,6 +101,9 @@ export function TrainerHome({ navigate, hostname = location.hostname }: { naviga
                 : <button className="button primary" aria-label={`${item.petName} 상담 시작`} disabled={pending} onClick={() => void act(async () => navigate(`/room/${(await startConsultation(item.id)).id}`))}>상담 시작</button>}
             </div></div>
           {briefCase === item.id && <CaseBrief caseId={item.id} />}
+          <button className="call-link coach-link coach-delete" disabled={pending || !!live} aria-label={`${item.petName} 사례 삭제`} onClick={() => {
+            if (window.confirm(`${item.petName} 사례를 삭제할까요? 전사, 사진, 일지, 보호자 기록이 모두 지워지고 되돌릴 수 없습니다.`)) void act(async () => { await deleteCase(item.id); await load(); });
+          }}>사례 삭제</button>
           {invite?.caseId === item.id && <Invite token={invite.token} hostname={hostname} reissued={invite.reissued} />}
           {item.consultations.some(consultation => consultation.state !== 'live') && <ul className="coach-history" aria-label={`${item.petName} 지난 상담`}>
             {item.consultations.filter(consultation => consultation.state !== 'live').map(consultation => <li key={consultation.id}>

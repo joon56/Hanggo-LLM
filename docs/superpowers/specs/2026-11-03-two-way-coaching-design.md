@@ -119,6 +119,7 @@ REST는 `/api/coaching` 아래에 둔다. 모든 입력은 Zod로 검증한다.
 |---|---|---|
 | `POST /cases` | 훈련사 | 사례와 초대 링크 생성 |
 | `POST /cases/:id/invite` | 훈련사 | 초대 재발급, 기존 보호자 세션 무효화 |
+| `DELETE /cases/:id` | 훈련사 | 사례와 그 아래 전사, 사진, 일지, 보호자 기록 삭제. 진행·정리 중이면 거부 |
 | `POST /join` | 공개 | 초대 토큰을 보호자 세션으로 교환 |
 | `GET /cases`, `GET /cases/:id` | 훈련사, 해당 보호자 | 역할별 투영 응답 |
 | `POST /cases/:id/consultations` | 훈련사 | 상담 시작, 전사 모델 준비 |

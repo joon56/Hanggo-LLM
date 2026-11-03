@@ -575,3 +575,21 @@ describe('task records, guardian logs, and the brief', () => {
     expect(brief.dataGaps.join()).toContain('확정 상담일지');
   });
 });
+
+describe('deleting a case', () => {
+  it('lets only the trainer delete, ends the guardian session, and removes the records', async () => {
+    const app = setup(); const owner = await trainer(app);
+    const created = await createCase(owner);
+    const member = await guardian(app, created.inviteToken);
+    const url = `/api/coaching/cases/${created.case.id}`;
+    await member.delete(url).set('Origin', origin).expect(403);
+    await owner.delete(url).set('Origin', origin).expect(204);
+    await owner.get(url).expect(404);
+    await member.get('/api/coaching/me').expect(401);
+  });
+  it('requires the app origin', async () => {
+    const app = setup(); const owner = await trainer(app);
+    const created = await createCase(owner);
+    await owner.delete(`/api/coaching/cases/${created.case.id}`).expect(403);
+  });
+});

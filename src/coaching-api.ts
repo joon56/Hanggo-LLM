@@ -20,6 +20,7 @@ export const getMe = () => request<Me>(`${base}/me`);
 export const listCases = () => request<{ cases: CaseView[] }>(`${base}/cases`);
 export const getCase = (id: string) => request<CaseDetail>(`${base}/cases/${id}`);
 export const createCase = (input: CaseInput) => post<{ case: CaseView; inviteToken: string }>(`${base}/cases`, input);
+export const deleteCase = (id: string) => request<null>(`${base}/cases/${id}`, { method: 'DELETE' });
 export const reissueInvite = (id: string) => post<{ inviteToken: string }>(`${base}/cases/${id}/invite`);
 export const joinWithInvite = (token: string) => post<{ case: CaseView }>(`${base}/join`, { token });
 export const startConsultation = (caseId: string) => post<Consultation>(`${base}/cases/${caseId}/consultations`);

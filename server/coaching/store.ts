@@ -41,6 +41,8 @@ export type CoachingStore = {
   reissueInvite(caseId: string): Promise<string>;
   redeemInvite(token: string): Promise<CoachingCase>;
   getCase(id: string): Promise<CoachingCase>;
+  /** Removes the case and everything recorded under it. This cannot be undone. */
+  deleteCase(id: string): Promise<void>;
   listCases(): Promise<CoachingCase[]>;
   createConsultation(caseId: string): Promise<Consultation>;
   /** One GPU serves one conversation, so only one consultation may be live at a time. */
@@ -115,6 +117,15 @@ export function createFileStore(directory: string, options: { now?: () => number
       return redeemed;
     }),
     getCase: id => queued(() => load(casePath(id), caseSchema)),
+    deleteCase: id => queued(async () => {
+      await load(casePath(id), caseSchema);
+      const consultations = (await allConsultations()).filter(item => item.caseId === id);
+      if (consultations.some(item => item.state === 'live' || item.state === 'processing')) throw new StoreError('ACTIVE_CONSULTATION', 'A consultation of this case is still running.', 409);
+      for (const item of consultations) await rm(path.dirname(consultationPath(item.id)), { recursive: true, force: true });
+      await rm(recordsPath(id), { force: true });
+      // Last, so a failure part way leaves a case the trainer can see and delete again.
+      await rm(casePath(id), { force: true });
+    }),
     listCases: () => queued(allCases),
     createConsultation: caseId => queued(async () => {
       await load(casePath(caseId), caseSchema);

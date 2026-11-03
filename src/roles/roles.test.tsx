@@ -11,7 +11,7 @@ import { PreJoin } from './PreJoin';
 import { TrainerHome } from './TrainerHome';
 import { deviceAdvice, isInAppBrowser } from './copy';
 
-const api = vi.hoisted(() => ({ getMe: vi.fn(), listCases: vi.fn(), getCase: vi.fn(), createCase: vi.fn(), reissueInvite: vi.fn(), joinWithInvite: vi.fn(), startConsultation: vi.fn(), setConsent: vi.fn(), getDelivery: vi.fn(), frameUrl: vi.fn(), listTaskLogs: vi.fn(), addTaskLog: vi.fn(), draftGuardianLog: vi.fn(), saveGuardianLog: vi.fn(), transcribeVoice: vi.fn(), getCaseBrief: vi.fn() }));
+const api = vi.hoisted(() => ({ getMe: vi.fn(), listCases: vi.fn(), getCase: vi.fn(), createCase: vi.fn(), reissueInvite: vi.fn(), joinWithInvite: vi.fn(), startConsultation: vi.fn(), setConsent: vi.fn(), getDelivery: vi.fn(), frameUrl: vi.fn(), listTaskLogs: vi.fn(), addTaskLog: vi.fn(), draftGuardianLog: vi.fn(), saveGuardianLog: vi.fn(), transcribeVoice: vi.fn(), getCaseBrief: vi.fn(), deleteCase: vi.fn() }));
 vi.mock('../coaching-api', () => api);
 const login = vi.hoisted(() => vi.fn());
 vi.mock('../api', async original => ({ ...await original<typeof import('../api')>(), login }));
@@ -93,6 +93,26 @@ describe('CaseBrief', () => {
     api.getCaseBrief.mockRejectedValue(new ApiError('권한이 없습니다.', 'FORBIDDEN'));
     render(<CaseBrief caseId="case-1" />);
     expect(await screen.findByRole('alert')).toHaveTextContent('권한이 없습니다.');
+  });
+});
+
+describe('TrainerHome deleting a case', () => {
+  beforeEach(() => { api.getMe.mockResolvedValue({ role: 'trainer' }); api.listCases.mockResolvedValue({ cases: [aCase] }); api.getCase.mockResolvedValue({ ...aCase, consultations: [] }); });
+  afterEach(() => { vi.restoreAllMocks(); });
+  it('deletes only after a clear warning, then refreshes', async () => {
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true);
+    api.deleteCase.mockResolvedValue(undefined);
+    render(<TrainerHome navigate={vi.fn()} />);
+    await userEvent.click(await screen.findByRole('button', { name: '초코 사례 삭제' }));
+    expect(confirm.mock.calls[0][0]).toContain('되돌릴 수 없');
+    expect(api.deleteCase).toHaveBeenCalledWith('case-1');
+    await waitFor(() => expect(api.listCases).toHaveBeenCalledTimes(2));
+  });
+  it('does nothing when the trainer backs out', async () => {
+    vi.spyOn(window, 'confirm').mockReturnValue(false);
+    render(<TrainerHome navigate={vi.fn()} />);
+    await userEvent.click(await screen.findByRole('button', { name: '초코 사례 삭제' }));
+    expect(api.deleteCase).not.toHaveBeenCalled();
   });
 });
 
