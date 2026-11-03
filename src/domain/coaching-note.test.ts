@@ -381,3 +381,17 @@ describe('more that must not pass', () => {
     expect(entry('민수 씨 귀가 때 짖음').note.behaviors).toEqual([]);
   });
 });
+
+describe('a short answer and its question', () => {
+  const asked = consultation({ segments: [segment('q', 'trainer', 0, '한 번 짖기 시작하면 얼마나 오래 짖나요?'), segment('a', 'guardian', 3000, '삼십 초 정도요.')] });
+  const report = (text: string) => assembleNote({ ...blank, guardianReports: [claim(text, 's02')] }, buildNoteSource(asked, info), 'now');
+  it('may use the words of the question, so the sentence says what the answer was about', () => {
+    expect(report('한 번 짖기 시작하면 삼십 초 정도 짖음').violations).toEqual([]);
+  });
+  it('still needs its numbers in the answer itself', () => {
+    expect(report('한 번 짖기 시작하면 사십 초 정도 짖음').violations).toHaveLength(1);
+  });
+  it('still rejects words from nowhere', () => {
+    expect(report('산책 나가면 낯선 사람에게 달려듦').violations).toHaveLength(1);
+  });
+});

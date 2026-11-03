@@ -19,6 +19,7 @@ export type MomentNotice = Pick<Moment, 'id' | 'atMs' | 'createdBy'>;
 export type Caption = Pick<Segment, 'id' | 'speaker' | 'startMs' | 'endMs' | 'text' | 'state' | 'echoSuspect'>;
 export type Moment = { id: string; atMs: number; createdBy: Speaker; text?: string; frameIds: string[] };
 export type FrameRef = { id: string; atMs: number; source: 'camera' | 'screen'; speaker: Speaker; bytes: number };
+export type OrganizingProgress = { stage: 'scenes' | 'note'; done: number; total: number };
 export type Consultation = {
   id: string; caseId: string; createdAt: string; state: ConsultationState;
   /** Whether transcription and scene capture may run. Separate from state because the call continues without it. */
@@ -29,6 +30,8 @@ export type Consultation = {
   scenes: Scene[]; note?: CoachingNote;
   /** A draft is being generated, so the review screen waits instead of offering stale text. */
   noteGenerating?: boolean;
+  /** How far work after the call has got, since a long consultation can take many minutes. */
+  organizing?: OrganizingProgress;
 };
 export const captionOf = ({ id, speaker, startMs, endMs, text, state, echoSuspect }: Segment): Caption => ({ id, speaker, startMs, endMs, text, state, echoSuspect });
 export type TaskLogStatus = 'done' | 'partial' | 'skipped';

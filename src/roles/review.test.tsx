@@ -52,6 +52,11 @@ describe('ReviewRoom', () => {
       expect(await screen.findByDisplayValue('초인종에 짖는다')).toBeInTheDocument();
     } finally { vi.useRealTimers(); }
   });
+  it('says which part it is on during a long wait', async () => {
+    api.getConsultation.mockResolvedValue(consultation({ state: 'processing', note: undefined, organizing: { stage: 'note', done: 1, total: 4 } }));
+    render(<ReviewRoom consultationId="c" navigate={vi.fn()} />);
+    expect(await screen.findByText(/상담을 정리하고 있습니다/)).toHaveTextContent('일지 2/4 작성 중');
+  });
   it('highlights the evidence for a sentence, with speaker and time', async () => {
     await open();
     const line = document.querySelector('[data-segment="a"]')!;

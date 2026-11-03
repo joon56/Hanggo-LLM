@@ -34,6 +34,14 @@ function build(llm?: LlmProvider) {
 const failing = (change: Partial<LlmProvider>): LlmProvider => ({ ...createStubLlm(), ...change });
 
 describe('finish', () => {
+  it('records how far it has got, so a long wait shows progress, and clears that when done', async () => {
+    const seen: unknown[] = [];
+    const stub = createStubLlm();
+    const llm: LlmProvider = { ...stub, structured: async request => { seen.push((await store.getConsultation(id)).organizing); return stub.structured(request); } };
+    await build(llm).process.finish(id);
+    expect(seen).toEqual([{ stage: 'scenes', done: 0, total: 1 }, { stage: 'note', done: 0, total: 1 }]);
+    expect((await store.getConsultation(id)).organizing).toBeUndefined();
+  });
   it('moves through speech, scenes, and the note in order, then opens the review', async () => {
     const order: string[] = [];
     const stub = createStubLlm();

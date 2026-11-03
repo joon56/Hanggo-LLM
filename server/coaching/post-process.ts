@@ -1,6 +1,6 @@
 import { setTimeout as delay } from 'node:timers/promises';
 import { transition } from '../../src/domain/coaching.ts';
-import type { Consultation } from '../../src/domain/coaching.ts';
+import type { Consultation, OrganizingProgress } from '../../src/domain/coaching.ts';
 import { buildNoteSource, emptyNote } from '../../src/domain/coaching-note.ts';
 import type { LlmProvider } from '../ai/llm/types.ts';
 import { createNoteService } from './note-service.ts';
@@ -28,10 +28,14 @@ export function createPostProcess({ store, transcription, llm, callTimeoutMs, no
   const track = <T>(work: Promise<T>) => { running.add(work); void work.finally(() => running.delete(work)).catch(() => {}); return work; };
   const addError = (id: string, code: string, message: string) => store.updateConsultation(id, current => ({ ...current, errors: [...current.errors, { code, message }] }));
 
+  /** Only a display, so a write that fails here must not stop the work it describes. */
+  const reportStage = (id: string, stage: OrganizingProgress['stage']) => (done: number, total: number) =>
+    store.updateConsultation(id, current => ({ ...current, organizing: { stage, done, total } })).then(() => {}, () => {});
+
   async function draftNote(id: string, replacing = false) {
     const consultation = await store.getConsultation(id);
     const info = await store.getCase(consultation.caseId);
-    const note = notes ? await notes.generate(consultation, info, stopping.signal)
+    const note = notes ? await notes.generate(consultation, info, stopping.signal, reportStage(id, 'note'))
       : emptyNote(buildNoteSource(consultation, info), new Date(now()).toISOString(), ['AI 기능이 꺼져 있어 빈 양식을 만들었습니다.']);
     // A blank form is better than nothing, but not better than a draft the trainer already has.
     if (replacing && note.fallbackUsed) throw new Error('No new draft.');
@@ -41,7 +45,7 @@ export function createPostProcess({ store, transcription, llm, callTimeoutMs, no
   /** A consultation left in processing blocks every new call on this GPU, so one failed write gets more chances. */
   async function openReview(id: string) {
     for (let attempt = 1; ; attempt += 1) {
-      try { return await store.updateConsultation(id, current => transition(current, 'processed', now())); }
+      try { return await store.updateConsultation(id, ({ organizing: _organizing, ...current }) => transition(current, 'processed', now())); }
       catch (error) {
         if (attempt >= OPEN_REVIEW_ATTEMPTS) throw error;
         await delay(retryDelayMs, undefined, { ref: false });
@@ -53,7 +57,7 @@ export function createPostProcess({ store, transcription, llm, callTimeoutMs, no
   async function organize(id: string) {
     try {
       if (scenes) {
-        const analyzed = await scenes.analyze(await store.getConsultation(id), stopping.signal);
+        const analyzed = await scenes.analyze(await store.getConsultation(id), stopping.signal, reportStage(id, 'scenes'));
         await store.updateConsultation(id, current => ({ ...current, scenes: analyzed }));
       }
       await draftNote(id);
@@ -81,7 +85,7 @@ export function createPostProcess({ store, transcription, llm, callTimeoutMs, no
         try { await draftNote(id, true); }
         catch (error) { if (stopping.signal.aborted) return; await addError(id, 'NOTE_REGENERATE', '일지를 다시 만들지 못했습니다. 이전 내용을 유지합니다.'); }
         finally { await llm?.release().catch(() => {}); }
-        await store.updateConsultation(id, ({ noteGenerating: _noteGenerating, ...current }) => current);
+        await store.updateConsultation(id, ({ noteGenerating: _noteGenerating, organizing: _organizing, ...current }) => current);
       })().catch(() => {}));
     },
     /** Interrupted work is left for recovery, which marks it on the next start. */

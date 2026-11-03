@@ -360,9 +360,14 @@ describe('review and delivery', () => {
   type Agent = ReturnType<typeof request.agent>;
   const words: Record<string, string> = { guardian: '초인종이 울리면 현관으로 뛰어가 짖어요', trainer: '하루 두 번 매트로 가는 연습을 해 주세요' };
   async function reviewed(env: NodeJS.ProcessEnv = {}) {
+    const ready = await ended(env);
+    await expect.poll(async () => (await ready.owner.get(`/api/coaching/consultations/${ready.id}`)).body.state).toBe('review');
+    return ready;
+  }
+  async function ended(env: NodeJS.ProcessEnv = {}, llm: LlmProvider = createStubLlm()) {
     let turn = 0;
     const speech: SpeechProvider = { prepare: async () => {}, release: async () => {}, transcribe: async () => ({ text: Object.values(words)[turn++ % 2], model: 'fake', latencyMs: 1 }) };
-    const app = setup({ AI_ENABLED: 'true', AI_PROVIDER: 'stub', ...env }, speech, createStubLlm());
+    const app = setup({ AI_ENABLED: 'true', AI_PROVIDER: 'stub', ...env }, speech, llm);
     const owner = await trainer(app);
     const created = await createCase(owner);
     const member = await guardian(app, created.inviteToken);
@@ -374,7 +379,6 @@ describe('review and delivery', () => {
     await member.put(`/api/coaching/consultations/${id}/frames/${frame}?atMs=0&source=camera`).set('Origin', origin).set('Content-Type', 'image/jpeg').send(Buffer.from([0xff, 0xd8, 0xff, 1])).expect(201);
     await expect.poll(async () => (await owner.get(`/api/coaching/consultations/${id}`)).body.segments.filter((item: { state: string }) => item.state === 'complete').length).toBe(2);
     await owner.post(`/api/coaching/consultations/${id}/end`).set('Origin', origin).send({}).expect(200);
-    await expect.poll(async () => (await owner.get(`/api/coaching/consultations/${id}`)).body.state).toBe('review');
     const read = async (agent: Agent = owner) => (await agent.get(`/api/coaching/consultations/${id}`).expect(200)).body as Consultation;
     return { app, owner, member, id, frame, read, caseId: created.case.id };
   }
@@ -463,6 +467,17 @@ describe('review and delivery', () => {
     expect(delivery.note.aiObservations).toEqual([]);
     expect(delivery.scenes).toEqual([]);
     await member.get(url(id, `/frames/${frame}`)).expect(403);
+  });
+  it('shows the trainer how far the draft has got, and not the guardian', async () => {
+    let release = () => {};
+    const gate = new Promise<void>(resolve => { release = resolve; });
+    const stub = createStubLlm();
+    const { member, read } = await ended({}, { ...stub, structured: async request => { await gate; return stub.structured(request); } });
+    await expect.poll(async () => (await read()).organizing).toMatchObject({ total: 1 });
+    expect(await read(member)).not.toHaveProperty('organizing');
+    release();
+    await expect.poll(async () => (await read()).state).toBe('review');
+    expect(await read()).not.toHaveProperty('organizing');
   });
   it('freezes everything once approved', async () => {
     const { owner, id, read } = await reviewed();

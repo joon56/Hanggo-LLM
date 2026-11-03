@@ -67,6 +67,14 @@ export function buildNoteSource(consultation: Pick<Consultation, 'segments' | 'm
   ] };
 }
 
+/** A short answer only means something with its question, so a sentence may use the question's words. Numbers still have to be in the answer. */
+function linesBefore(evidence: Evidence[], source: NoteSource) {
+  return evidence.flatMap(item => {
+    const at = source.lines.findIndex(line => line.evidence.kind === item.kind && line.evidence.id === item.id);
+    return at > 0 ? [source.lines[at - 1].evidence.quote] : [];
+  });
+}
+
 function problemsWith(section: string, text: string, evidence: Evidence[], source: NoteSource) {
   if (!evidence.length) return ['근거 발화가 없습니다.'];
   const quotes = evidence.map(item => item.quote);
@@ -78,7 +86,7 @@ function problemsWith(section: string, text: string, evidence: Evidence[], sourc
   // A guardian may relay what someone told them. Anywhere else the note would be making the claim itself.
   const banned = bannedIn(text).filter(word => section !== 'guardianReports' || !quotes.some(quote => quote.includes(word)));
   if (banned.length) reasons.push(`금지 표현입니다: ${banned.join(', ')}`);
-  if (supportOf(text, [...quotes, ...source.names]) < MIN_CLAIM_SUPPORT) reasons.push('문장이 근거와 거의 겹치지 않습니다.');
+  if (supportOf(text, [...quotes, ...linesBefore(evidence, source), ...source.names]) < MIN_CLAIM_SUPPORT) reasons.push('문장이 근거와 거의 겹치지 않습니다.');
   return reasons;
 }
 

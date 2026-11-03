@@ -164,6 +164,12 @@ describe('long consultations', () => {
     expect(requests[1].user).toContain('[s02');
     expect(requests[1].user).not.toContain('[s01');
   });
+  it('reports each part before starting it', async () => {
+    const { service } = buildLong(chunkReply);
+    const progress: [number, number][] = [];
+    await service.generate(consultation(long), info, undefined, async (done, total) => { progress.push([done, total]); });
+    expect(progress).toEqual([[0, 2], [1, 2]]);
+  });
   it('sends a short conversation as one part, however long the call ran', async () => {
     const { service, requests } = buildLong(chunkReply);
     await service.generate(consultation([segment('a', 'guardian', 0, '초인종이 울리면 세 번쯤 짖어요'), segment('b', 'trainer', 40 * minute, '매트로 가는 연습을 하세요')]), info);

@@ -12,6 +12,7 @@ type CaseInfo = { petName: string; guardianName: string; trainerName: string };
 const DEFAULT_CALL_TIMEOUT_MS = 10 * 60 * 1000;
 type Deps = { llm: LlmProvider; now?: () => number; callTimeoutMs?: number };
 type Attempt = { note: CoachingNote; violations: NoteViolation[] };
+export type Progress = (done: number, total: number) => Promise<void>;
 
 const timeLabel = (ms: number) => `${String(Math.floor(ms / 60000)).padStart(2, '0')}:${String(Math.floor(ms / 1000) % 60).padStart(2, '0')}`;
 const compact = (text: string) => text.replace(/\s/g, '');
@@ -159,21 +160,22 @@ export function createNoteService({ llm, now = Date.now, callTimeoutMs = DEFAULT
 
   return {
     /** Never throws for a bad answer: the trainer gets a blank form and the whole transcript instead. Cancellation still throws. */
-    async generate(consultation: Consultation, info: CaseInfo, signal?: AbortSignal): Promise<CoachingNote> {
+    async generate(consultation: Consultation, info: CaseInfo, signal?: AbortSignal, onProgress?: Progress): Promise<CoachingNote> {
       signal?.throwIfAborted();
       const createdAt = new Date(now()).toISOString();
       const source = buildNoteSource(consultation, info);
-      const note = await compose(source, info, createdAt, signal);
+      const note = await compose(source, info, createdAt, signal, onProgress);
       // Whatever the model did, what comes back must be something the store can keep, or the review would open with nothing.
       return noteSchema.safeParse(note).success ? note : emptyNote(source, createdAt, ['일지 초안의 형식이 맞지 않아 빈 양식을 만들었습니다. 전사를 보고 직접 작성해 주세요.']);
     },
   };
 
-  async function compose(source: NoteSource, info: CaseInfo, createdAt: string, signal?: AbortSignal): Promise<CoachingNote> {
+  async function compose(source: NoteSource, info: CaseInfo, createdAt: string, signal?: AbortSignal, onProgress?: Progress): Promise<CoachingNote> {
       if (!source.lines.length) return emptyNote(source, createdAt, ['받아쓴 발화가 없어 빈 양식을 만들었습니다.']);
       const parts = splitIntoParts(source.lines);
       const attempts: Attempt[] = []; const warnings: string[] = [];
-      for (const part of parts) {
+      for (const [index, part] of parts.entries()) {
+        await onProgress?.(index, parts.length);
         const attempt = await organize(part.lines, source, info.petName, createdAt, signal);
         if (attempt) attempts.push(attempt);
         else warnings.push(`${timeLabel(part.from)}부터 ${timeLabel(part.to)}까지 일지로 정리하지 못했습니다. 전사를 확인해 주세요.`);

@@ -28,7 +28,8 @@ const consultationSchema = z.object({ id: z.uuid(), caseId: z.uuid(), createdAt:
   recordingGaps: z.array(z.object({ startMs: z.number(), endMs: z.number().optional() })), errors: z.array(z.object({ code: z.string(), message: z.string() })),
   // Records written before transcription existed have none of these.
   segments: z.array(segmentSchema).default([]), moments: z.array(momentSchema).default([]), frames: z.array(frameSchema).default([]),
-  scenes: z.array(sceneSchema).default([]), note: noteSchema.optional(), noteGenerating: z.boolean().optional() }).strict();
+  scenes: z.array(sceneSchema).default([]), note: noteSchema.optional(), noteGenerating: z.boolean().optional(),
+  organizing: z.object({ stage: z.enum(['scenes', 'note']), done: z.number().int().min(0), total: z.number().int().min(0) }).strict().optional() }).strict();
 
 const taskLogSchema: z.ZodType<TaskLog> = z.object({ id: z.uuid(), caseId: z.uuid(), consultationId: z.uuid(), taskId: z.string().min(1).max(100), at: z.string(), status: z.enum(['done', 'partial', 'skipped']), text: z.string().max(2000).optional() }).strict();
 // Saved logs were checked by validateOwnerDraft when they arrived.

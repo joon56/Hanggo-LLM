@@ -63,7 +63,7 @@ const publicCase = ({ inviteHash: _inviteHash, inviteExpiresAt: _inviteExpiresAt
 /** The guardian's copy comes from the delivery route. Drafts, edits, scenes, and memos stay with the trainer. */
 const viewFor = (actor: Actor, consultation: Consultation): Consultation => {
   if (actor.role === 'trainer') return consultation;
-  const { note: _note, noteGenerating: _noteGenerating, ...shared } = consultation;
+  const { note: _note, noteGenerating: _noteGenerating, organizing: _organizing, ...shared } = consultation;
   return { ...shared, segments: [], frames: [], moments: [], scenes: [], errors: [] };
 };
 /** Photos the confirmed note cites, which are the only ones a guardian may open. */
