@@ -1,5 +1,5 @@
 import { loadLocalEnv } from '../server/config.ts';
-import { createCaseAsTrainer, enterAsGuardian, enterAsTrainer, ensureMedia, expectFlowing, joinAsGuardian, launch, room } from './helpers/two-way.ts';
+import { createCaseAsTrainer, enterAsGuardian, enterAsTrainer, ensureMedia, expectFlowing, joinAsGuardian, launch, removeCase, room } from './helpers/two-way.ts';
 
 // Runs a full call through a public tunnel address with two local browsers. Usage: npm.cmd run check:tunnel -- https://example.trycloudflare.com
 loadLocalEnv();
@@ -17,4 +17,6 @@ try {
   await Promise.all([expectFlowing(trainer.page), expectFlowing(guardian.page)]);
   const attribute = (name: string) => room(trainer.page).getAttribute(name);
   console.info(JSON.stringify({ result: 'pass', status: await attribute('data-call-status'), relayed: await attribute('data-relayed'), inboundVideoFrames: await attribute('data-inbound-video-frames'), inboundAudioBytes: await attribute('data-inbound-audio-bytes') }));
+  // An open consultation would stop the real demo from starting one, so this leaves nothing behind.
+  await removeCase(trainer.page, origin, '터널시험');
 } finally { await trainer.browser.close(); await guardian.browser.close(); }

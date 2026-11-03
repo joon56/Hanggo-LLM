@@ -124,6 +124,17 @@ export async function enterTogether(trainer: Page, guardian: Page, petName = 'ì´
   return /\/room\/([^/?]+)/.exec(trainer.url())![1];
 }
 
+/** Ends the case's open consultation and deletes the case, for checks that run on a server someone is about to use. */
+export async function removeCase(page: Page, origin: string, petName: string) {
+  const headers = { Origin: origin };
+  const { cases } = await (await page.request.get(`${origin}/api/coaching/cases`)).json() as { cases: { id: string; petName: string }[] };
+  const { id } = cases.find(item => item.petName === petName)!;
+  const { consultations } = await (await page.request.get(`${origin}/api/coaching/cases/${id}`)).json() as { consultations: { id: string; state: string }[] };
+  for (const item of consultations) if (item.state === 'live') await page.request.post(`${origin}/api/coaching/consultations/${item.id}/end`, { headers, data: {} });
+  // The server refuses while the consultation is still being organized.
+  await expect.poll(async () => (await page.request.delete(`${origin}/api/coaching/cases/${id}`, { headers })).status(), { timeout: 120_000, intervals: [2000] }).toBe(204);
+}
+
 export async function expectFlowing(page: Page) {
   await expect(room(page)).toHaveAttribute('data-call-status', 'connected', { timeout: 20_000 });
   const frames = await number(page, 'data-inbound-video-frames');
