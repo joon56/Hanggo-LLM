@@ -1,7 +1,8 @@
-import { readConfig } from './config.ts';
+import { loadLocalEnv, readConfig } from './config.ts';
 import { createApp } from './app.ts';
 import { createAIServices } from './providers.ts';
 
+loadLocalEnv();
 const config = readConfig();
 const services = createAIServices(config);
 const app = createApp(config, {

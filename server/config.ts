@@ -1,4 +1,17 @@
+import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
+import { parseEnv } from 'node:util';
+
+/** Real environment and .env win. An empty value counts as unset so a blank .env line cannot hide a secret. */
+export function loadLocalEnv(env: NodeJS.ProcessEnv = process.env, pointer = '.hanggo-home') {
+  if (!env.HANGGO_HOME && existsSync(pointer)) env.HANGGO_HOME = readFileSync(pointer, 'utf8').trim();
+  if (!env.HANGGO_HOME) return;
+  for (const name of ['settings.env', 'secrets.env']) {
+    const file = path.join(env.HANGGO_HOME, name);
+    if (!existsSync(file)) continue;
+    for (const [key, value] of Object.entries(parseEnv(readFileSync(file, 'utf8')))) if (!env[key] && value) env[key] = value;
+  }
+}
 
 export function readConfig(env: NodeJS.ProcessEnv = process.env) {
   const ollamaUrl = new URL(env.OLLAMA_BASE_URL || 'http://127.0.0.1:11434');
@@ -12,7 +25,11 @@ export function readConfig(env: NodeJS.ProcessEnv = process.env) {
   const publicOrigin = env.PUBLIC_ORIGIN || 'http://127.0.0.1:5173';
   const url = new URL(publicOrigin);
   if (url.origin !== publicOrigin || url.username || url.password) throw new Error('PUBLIC_ORIGIN must be an origin without path or credentials.');
-  if ((production || !['127.0.0.1', 'localhost', '::1'].includes(host)) && password.length < 16)
+  const home = env.HANGGO_HOME || '.hanggo';
+  const profile = env.HANGGO_PROFILE || 'local';
+  if (profile !== 'local' && profile !== 'tunnel' && profile !== 'cloud') throw new Error('Invalid HANGGO_PROFILE');
+  // A tunnel reaches a loopback bind from the internet, so the bind address alone proves nothing.
+  if ((production || profile !== 'local' || !['127.0.0.1', 'localhost', '::1'].includes(host)) && password.length < 16)
     throw new Error('Public deployment requires APP_ACCESS_PASSWORD with at least 16 characters.');
   if (production && url.protocol !== 'https:') throw new Error('Production PUBLIC_ORIGIN must use HTTPS.');
   const number = (name: string, fallback: number, max: number) => {
@@ -25,12 +42,13 @@ export function readConfig(env: NodeJS.ProcessEnv = process.env) {
   if (!['', 'whisper-turbo', 'whisper-large', 'qwen-asr'].includes(liveSpeechModel)) throw new Error('Invalid LIVE_SPEECH_MODEL');
   const liveConsultationEnabled = env.FEATURE_LIVE_CONSULTATION_ENABLED === 'true';
   if (liveConsultationEnabled && !liveSpeechModel) throw new Error('Select LIVE_SPEECH_MODEL before enabling live consultation.');
-  return { production, host, password, publicOrigin, provider: 'ollama' as const,
+  return { home, profile, aiProvider: env.AI_PROVIDER === 'stub' ? 'stub' as const : 'local' as const,
+    production, host, password, publicOrigin, provider: 'ollama' as const,
     liveConsultationEnabled, liveSpeechModel: liveSpeechModel as '' | 'whisper-turbo' | 'whisper-large' | 'qwen-asr',
-    consultationDirectory: env.CONSULTATION_DIRECTORY || '.local-data/consultations',
-    liveModelDirectory: env.LIVE_MODEL_DIRECTORY || '.local-ai/candidates/models',
-    whisperServer: env.WHISPER_SERVER || '.local-ai/candidates/whisper-cuda/Release/whisper-server.exe',
-    llamaServer: env.LLAMA_SERVER || '.local-ai/candidates/llama-cuda/llama-server.exe',
+    consultationDirectory: env.CONSULTATION_DIRECTORY || path.join(home, 'data', 'consultations'),
+    liveModelDirectory: env.LIVE_MODEL_DIRECTORY || path.join(home, 'models', 'stt'),
+    whisperServer: env.WHISPER_SERVER || path.join(home, 'runtime', 'whisper-cpp', 'Release', 'whisper-server.exe'),
+    llamaServer: env.LLAMA_SERVER || path.join(home, 'runtime', 'llama-cpp', 'llama-server.exe'),
     ollamaBaseUrl: ollamaUrl.origin, ollamaContextSize: number('OLLAMA_CONTEXT_SIZE', 8192, 32768),
     whisperExecutable: env.WHISPER_EXECUTABLE || '.local-ai/whisper/whisper-cli.exe',
     whisperModelPath: env.WHISPER_MODEL_PATH || '.local-ai/models/ggml-medium-q5_0.bin',
