@@ -202,7 +202,7 @@ describe('GuardianHome daily log', () => {
     expect(await screen.findByText('짖음')).toBeInTheDocument();
     expect(api.saveGuardianLog).not.toHaveBeenCalled();
     await userEvent.click(screen.getByRole('button', { name: '저장' }));
-    expect(api.saveGuardianLog).toHaveBeenCalledWith('case-1', draft);
+    expect(api.saveGuardianLog).toHaveBeenCalledWith('case-1', { ...draft, events: [{ ...draft.events[0], occurredAt: draft.now }] });
     expect(await screen.findByText(/저장했습니다/)).toBeInTheDocument();
     expect(screen.getByLabelText('일상 기록 내용')).toHaveValue('');
   });

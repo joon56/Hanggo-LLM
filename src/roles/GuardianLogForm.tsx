@@ -18,6 +18,7 @@ export function GuardianLogForm({ caseId }: { caseId: string }) {
     setPending(true); setError(''); setNotice('');
     work().catch(cause => setError(apiMessage(cause, '기록하지 못했습니다.'))).finally(() => setPending(false));
   };
+  const dated = (organized: OwnerDraft): OwnerDraft => ({ ...organized, events: organized.events.map(event => event.occurredAt ? event : { ...event, occurredAt: organized.now }) });
   const setEventDate = (eventId: string, date: string) => setDraft(current => current && { ...current, events: current.events.map(event => event.id === eventId ? { ...event, occurredAt: date ? (date === today ? current.now : dateToIso(date)) : null, edited: true } : event) });
   return <section aria-label="일상 기록" className="delivery">
     <h2>일상 기록</h2>
@@ -25,7 +26,7 @@ export function GuardianLogForm({ caseId }: { caseId: string }) {
     {!draft && <>
       <textarea aria-label="일상 기록 내용" className="delivery-input" rows={3} maxLength={8000} value={text} onChange={event => setText(event.target.value)} />
       <div className="coach-actions">
-        <button type="button" className="button primary" disabled={pending || !text.trim()} onClick={() => act(async () => setDraft(await draftGuardianLog(caseId, text.trim())))}>{pending ? '확인하는 중' : '내용 확인'}</button>
+        <button type="button" className="button primary" disabled={pending || !text.trim()} onClick={() => act(async () => setDraft(dated(await draftGuardianLog(caseId, text.trim()))))}>{pending ? '확인하는 중' : '내용 확인'}</button>
         <VoiceNote caseId={caseId} label="일상 기록" onText={spoken => setText(current => `${current}${current ? ' ' : ''}${spoken}`)} onError={setError} />
       </div>
     </>}

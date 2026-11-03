@@ -31,7 +31,7 @@
 .review-line { display: grid; gap: 3px; padding: 6px 8px; border-radius: 8px; border-left: 3px solid transparent; }
 .review-line.is-selected, .review-scene.is-selected { background: #f3f6e9; border-left-color: var(--green); }
 .review-line.is-echo { opacity: .6; }
-.review-line .call-link, .review-add.call-link { color: var(--muted); }
+.review-line .call-link, .review-add.call-link, .review-line form .call-link { color: var(--muted); }
 .review-photos { display: flex; flex-wrap: wrap; gap: 6px; }
 .review-photos img { width: 150px; max-width: 100%; aspect-ratio: 16 / 9; object-fit: contain; background: #1c1f1c; border-radius: 6px; }
 
@@ -48,7 +48,7 @@
 .voice-note { display: inline-flex; align-items: center; gap: 4px; }
 .case-brief { border-top: 1px solid var(--line); padding-top: 12px; }
 .case-brief li { font-size: 14px; line-height: 1.5; }
-.coach-link-inline { margin-left: 6px; color: var(--muted); }
+.call-link.coach-link-inline { margin-left: 6px; color: var(--muted); }
 .brief-source { display: grid; gap: 2px; margin: 6px 0; padding: 8px 10px; background: #f6f7f1; border-radius: 8px; }
 .brief-source blockquote { margin: 0; font-size: 13px; }
 
