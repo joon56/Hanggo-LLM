@@ -7,7 +7,7 @@
     "dev": "node scripts/dev.mjs",
     "dev:local": "node --env-file-if-exists=.env scripts/dev.mjs --local",
     "demo:tunnel": "node --env-file-if-exists=.env scripts/demo-tunnel.ts",
-    "check:tunnel": "node --env-file-if-exists=.env scripts/check-tunnel.ts",
+    "check:tunnel": "node --env-file-if-exists=.env e2e/check-tunnel.ts",
     "check:turn": "node --env-file-if-exists=.env scripts/check-turn.ts",
     "local:check": "node --env-file-if-exists=.env scripts/check-local.ts",
     "beta:check": "node --env-file-if-exists=.env scripts/beta-check.ts",

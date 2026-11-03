@@ -1,5 +1,5 @@
 import { loadLocalEnv } from '../server/config.ts';
-import { createCaseAsTrainer, enterAsGuardian, enterAsTrainer, ensureMedia, expectFlowing, joinAsGuardian, launch, room } from '../e2e/helpers/two-way.ts';
+import { createCaseAsTrainer, enterAsGuardian, enterAsTrainer, ensureMedia, expectFlowing, joinAsGuardian, launch, room } from './helpers/two-way.ts';
 
 // Runs a full call through a public tunnel address with two local browsers. Usage: npm.cmd run check:tunnel -- https://example.trycloudflare.com
 loadLocalEnv();
