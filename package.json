@@ -39,6 +39,7 @@
     "express-rate-limit": "^8.7.0",
     "helmet": "^8.3.0",
     "multer": "^2.4.0",
+    "qrcode-generator": "^2.0.4",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
     "ws": "8.22.1",

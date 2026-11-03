@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { CopyIcon, PawPrintIcon } from '@phosphor-icons/react';
 import { login } from '../api';
+import qrcode from 'qrcode-generator';
 import { createCase, deleteCase, getCase, getMe, listCases, reissueInvite, startConsultation } from '../coaching-api';
 import type { CaseDetail } from '../coaching-api';
 import { CaseBrief } from './CaseBrief';
@@ -23,12 +24,24 @@ function Login({ onDone }: { onDone: () => void }) {
   </form>;
 }
 
+/** Moves a long link to a phone without typing or a messenger cutting it short. */
+function InviteQr({ link }: { link: string }) {
+  const code = qrcode(0, 'M');
+  code.addData(link);
+  code.make();
+  const size = code.getModuleCount();
+  let path = '';
+  for (let row = 0; row < size; row += 1) for (let column = 0; column < size; column += 1) if (code.isDark(row, column)) path += `M${column} ${row}h1v1h-1z`;
+  return <svg className="coach-qr" role="img" aria-label="휴대폰 카메라로 찍는 초대 QR 코드" viewBox={`-2 -2 ${size + 4} ${size + 4}`}><rect x={-2} y={-2} width={size + 4} height={size + 4} fill="#fff" /><path d={path} /></svg>;
+}
+
 function Invite({ token, hostname, reissued }: { token: string; hostname: string; reissued: boolean }) {
   const [copied, setCopied] = useState(false);
   const link = inviteLink(token);
   return <div className="coach-invite">
     <label>보호자 초대 링크<input aria-label="보호자 초대 링크" readOnly value={link} onFocus={event => event.target.select()} /></label>
     <button type="button" className="button secondary" onClick={() => void navigator.clipboard.writeText(link).then(() => setCopied(true))}><CopyIcon size={16} />{copied ? '복사했습니다' : '링크 복사'}</button>
+    {!LOOPBACK.has(hostname) && <InviteQr link={link} />}
     <p className="coach-hint">{reissued ? '이전 링크와 이전 기기의 입장 정보는 더 이상 쓸 수 없습니다. ' : ''}이 링크는 한 번만 쓸 수 있고 7일 뒤 만료됩니다.</p>
     {LOOPBACK.has(hostname) && <p className="coach-warning">이 주소는 이 PC에서만 열립니다. 다른 기기로 시연하려면 <code>npm.cmd run demo:tunnel</code>로 실행해 주세요.</p>}
   </div>;
