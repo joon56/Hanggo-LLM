@@ -80,7 +80,7 @@ function SegmentRow({ segment, readOnly, selected, uncited, onSave }: { segment:
     <div className="review-meta"><strong>{SPEAKER_NAME[segment.speaker]}</strong><span>{clockLabel(segment.startMs)}</span>
       {uncited && !segment.echoSuspect && segment.state === 'complete' && <span className="review-tag">일지에 쓰이지 않음</span>}
       {segment.echoSuspect && <span className="review-tag">상대 소리가 들어온 것으로 보임</span>}
-      {segment.text !== segment.originalText && <span className="review-tag">수정함</span>}
+      {segment.text !== segment.originalText && <span className="review-tag" title={`받아쓴 원문: ${segment.originalText}`}>원문과 다름</span>}
     </div>
     {segment.state === 'failed' ? <p className="coach-hint">받아쓰지 못한 구간입니다.</p>
       : editing ? <form onSubmit={event => { event.preventDefault(); onSave({ text }); setEditing(false); }}>

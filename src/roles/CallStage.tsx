@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { BookmarkSimpleIcon, CameraRotateIcon, MicrophoneIcon, MicrophoneSlashIcon, MonitorArrowUpIcon, PhoneDisconnectIcon, VideoCameraIcon, VideoCameraSlashIcon } from '@phosphor-icons/react';
 import type { CallSnapshot } from '../call/call-session';
 import type { Caption, MomentNotice, Speaker, SpeechStatus } from '../domain/coaching';
+import { CaseBrief } from './CaseBrief';
 import { SPEAKER_NAME } from './copy';
 
 const CAPTION_LINES = 3;
@@ -58,6 +59,8 @@ function MomentBar({ moment, role, onMemo }: { moment: MomentNotice; role: Speak
 }
 
 type Props = {
+  /** Lets the trainer read the brief without leaving the call. */
+  caseId?: string;
   role: Speaker; petName: string; canShare: boolean; call: CallSnapshot; mirrorSelf?: boolean;
   onToggleMicrophone(): void; onToggleCamera(): void; onSwitchCamera(): void; onStartShare(): void; onStopShare(): void; onLeave(): void; onEnd(): void; onConsent(value: boolean): void; onCatch(): void; onMemo(momentId: string, text: string): void;
 };
@@ -70,13 +73,14 @@ function statusMessage(call: CallSnapshot) {
   return '';
 }
 
-export function CallStage({ role, petName, canShare, call, mirrorSelf, onToggleMicrophone, onToggleCamera, onSwitchCamera, onStartShare, onStopShare, onLeave, onEnd, onConsent, onCatch, onMemo }: Props) {
+export function CallStage({ caseId, role, petName, canShare, call, mirrorSelf, onToggleMicrophone, onToggleCamera, onSwitchCamera, onStartShare, onStopShare, onLeave, onEnd, onConsent, onCatch, onMemo }: Props) {
   const peerSharing = !!call.remoteScreen && call.peerMedia.screen;
   const message = statusMessage(call);
   const peerName = role === 'trainer' ? '보호자' : '훈련사';
   const ownConsent = call.consent[role];
   const cameraOff = !call.peerMedia.camera ? `${peerName} 카메라 꺼짐` : undefined;
   const speechNote = call.recording ? SPEECH_NOTE[call.speech] : '';
+  const [briefOpen, setBriefOpen] = useState(false);
   return <div className="call-room" data-call-status={call.status} data-peer-online={String(call.peerOnline)} data-inbound-video-frames={call.stats.inboundVideoFrames} data-inbound-audio-bytes={call.stats.inboundAudioBytes} data-inbound-audio-energy={call.stats.inboundAudioEnergy}
     data-relayed={String(call.stats.relayed)} data-peer-screen={String(peerSharing)} data-recording={String(call.recording)} data-peer-camera={String(call.peerMedia.camera)} data-peer-microphone={String(call.peerMedia.microphone)}
     data-caption-count={call.captions.length} data-caption-latency-ms={call.captionLatencyMs ?? ''} data-speech-status={call.speech}>
@@ -84,6 +88,7 @@ export function CallStage({ role, petName, canShare, call, mirrorSelf, onToggleM
       <strong>{petName}</strong>
       <span className={`call-chip${call.recording ? ' is-recording' : ''}`}>{call.recording ? 'AI 기록 중' : `기록 꺼짐 · ${ownConsent ? `${peerName} 동의 대기` : '양쪽 동의 필요'}`}</span>
       <button className="call-link" onClick={() => onConsent(!ownConsent)}>{ownConsent ? '기록 동의 철회' : '기록 동의'}</button>
+      {role === 'trainer' && caseId && <button className="call-link" aria-expanded={briefOpen} onClick={() => setBriefOpen(value => !value)}>브리핑</button>}
       {speechNote && <span className="call-chip">{speechNote}</span>}
       {call.uploadLost && <span className="call-chip is-recording">일부 기록을 보내지 못했습니다</span>}
       {call.stats.relayed && <span className="call-chip">중계 연결</span>}
@@ -92,6 +97,7 @@ export function CallStage({ role, petName, canShare, call, mirrorSelf, onToggleM
     {message && <p role="status" className="call-status">{message}</p>}
     {call.error && <p role="alert" className="call-status is-error">{call.error}</p>}
     {call.lastMoment && <MomentBar key={call.lastMoment.id} moment={call.lastMoment} role={role} onMemo={onMemo} />}
+    {briefOpen && caseId && <aside className="call-brief"><CaseBrief caseId={caseId} /></aside>}
     <div className="call-stage">
       {peerSharing && <Tile stream={call.remoteScreen} label="상대 공유 화면" main />}
       <Tile stream={call.remoteStream} label="상대 카메라" main={!peerSharing} off={cameraOff} />

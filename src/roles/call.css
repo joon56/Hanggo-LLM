@@ -30,6 +30,7 @@
 .call-link { color: #cfd8c4; font-size: 12px; text-decoration: underline; padding: 2px 4px; }
 .call-status { padding: 6px 14px; font-size: 13px; background: rgba(255, 255, 255, .08); }
 .call-status.is-error { background: #7a2b20; }
+.call-brief { position: absolute; z-index: 2; top: 44px; right: 10px; bottom: 80px; width: min(440px, calc(100vw - 20px)); overflow: auto; padding: 14px; border-radius: 12px; background: #fff; color: var(--ink); box-shadow: 0 8px 28px rgba(0, 0, 0, .35); }
 .call-stage { flex: 1; position: relative; min-height: 0; padding: 0 10px; display: grid; grid-template-columns: minmax(0, 1fr) 200px; grid-auto-rows: minmax(0, 1fr); gap: 8px; }
 .call-tile { position: relative; margin: 0; min-height: 0; min-width: 0; border-radius: 10px; overflow: hidden; background: #0e100e; aspect-ratio: 16 / 9; }
 .call-tile.is-main { grid-column: 1; grid-row: 1 / span 4; aspect-ratio: auto; }
@@ -53,6 +54,12 @@
 .call-control:disabled { opacity: .45; }
 .call-control.is-catch { width: auto; display: flex; align-items: center; gap: 6px; padding: 0 16px; border-radius: 24px; font-size: 14px; font-weight: 600; }
 .call-control.is-end { background: #b23a28; }
+
+@media (max-width: 480px) {
+  .call-controls { gap: 6px; padding-left: 8px; padding-right: 8px; }
+  .call-control { width: 44px; height: 44px; }
+  .call-control.is-catch { padding: 0 12px; }
+}
 
 @media (max-width: 720px) {
   .call-stage { grid-template-columns: repeat(3, minmax(0, 1fr)); grid-template-rows: minmax(0, 1fr) auto; }

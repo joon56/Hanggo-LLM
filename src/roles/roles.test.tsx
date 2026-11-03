@@ -287,6 +287,19 @@ describe('CallStage', () => {
     expect(log).not.toHaveTextContent('메아리 문장');
     expect(log).toHaveTextContent('훈련사 받아쓰지 못한 구간입니다');
   });
+  it('lets the trainer open the brief during the call, and only the trainer', async () => {
+    api.getCaseBrief.mockResolvedValue({ consultationId: null, brief: { facts: [], summary: [{ text: '핵심 상황 문장', refs: [] }], changes: [], cautions: [], questionsForOwner: [], previousTasks: [], dataGaps: [], safetyFlags: [], sources: [] } });
+    const actions = handlers();
+    render(<CallStage role="trainer" caseId="case-1" petName="초코" canShare call={snapshot()} {...actions} />);
+    expect(screen.queryByRole('region', { name: '상담 전 브리핑' })).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: '브리핑' }));
+    expect(await screen.findByRole('region', { name: '상담 전 브리핑' })).toHaveTextContent('핵심 상황 문장');
+    fireEvent.click(screen.getByRole('button', { name: '브리핑' }));
+    expect(screen.queryByRole('region', { name: '상담 전 브리핑' })).toBeNull();
+    cleanup();
+    render(<CallStage role="guardian" caseId="case-1" petName="초코" canShare call={snapshot()} {...actions} />);
+    expect(screen.queryByRole('button', { name: '브리핑' })).toBeNull();
+  });
   it('offers the catch button only while recording', () => {
     const { actions } = setup({ recording: true });
     fireEvent.click(screen.getByRole('button', { name: '캐치' }));

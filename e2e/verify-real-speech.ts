@@ -6,6 +6,7 @@ import { aggregateScores, scoreDelivered, type GoldenDialogue } from '../scripts
 import { characterErrorRate } from '../scripts/speech-metrics.ts';
 import { loadLocalEnv, readConfig } from '../server/config.ts';
 import type { Consultation, Segment, Speaker } from '../src/domain/coaching.ts';
+import { termRecall } from '../src/domain/speech-terms.ts';
 import { createCaseAsTrainer, enterAsGuardian, enterAsTrainer, joinAsGuardian, launch, room, startServer } from './helpers/two-way.ts';
 
 // Usage: node e2e/verify-real-speech.ts [--note] [--human <clips>] [dialogue,...]
@@ -138,6 +139,8 @@ async function verify(dialogue: Dialogue, withNote: boolean) {
       segments: { total: finished.segments.length, complete: judged.length, failed: finished.segments.filter(item => item.state === 'failed').length, echoSuspect: finished.segments.filter(item => item.echoSuspect).length },
       speakerLabels: { judged: judged.length, mislabeled: mislabeled.length, examples: mislabeled.slice(0, 3).map(item => ({ speaker: item.speaker, text: item.text })) },
       cer: { guardian: characterErrorRate(reference('guardian'), heard('guardian')), trainer: characterErrorRate(reference('trainer'), heard('trainer')) },
+      terms: termRecall(`${reference('guardian')} ${reference('trainer')}`, `${heard('guardian')} ${heard('trainer')}`),
+      termsBeforeCorrection: termRecall(`${reference('guardian')} ${reference('trainer')}`, finished.segments.map(item => item.originalText).join(' ')),
       windowMs: stats(judged.map(windowMs)), transcriptionMs: stats(judged.map(item => item.latencyMs ?? 0)),
       captionDelayMs: { trainerScreen: stats(delays.trainer), guardianScreen: stats(delays.guardian) },
       catch: moment && { frames: momentFrames.length, bySpeaker: { guardian: momentFrames.filter(frame => frame.speaker === 'guardian').length, trainer: momentFrames.filter(frame => frame.speaker === 'trainer').length },

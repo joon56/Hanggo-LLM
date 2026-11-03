@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { setTimeout as delay } from 'node:timers/promises';
 import { captionOf, findEchoSource } from '../../src/domain/coaching.ts';
+import { correctTerms } from '../../src/domain/speech-terms.ts';
 import type { Consultation, Segment, Speaker, SpeechStatus } from '../../src/domain/coaching.ts';
 import type { SpeechProvider, SpeechResult } from '../ai/speech/types.ts';
 import { StoreError, type CoachingStore } from './store.ts';
@@ -47,11 +48,12 @@ export function createTranscription({ store, speech, broadcast, graceMs, now = D
   }
 
   async function complete({ consultationId, segmentId }: Item, { text: raw, model, latencyMs }: SpeechResult) {
-    const text = raw.trim();
+    const heard = raw.trim();
+    const text = correctTerms(heard);
     const changed: Segment[] = [];
     await store.updateConsultation(consultationId, current => {
       if (!text) return { ...current, segments: current.segments.filter(item => item.id !== segmentId) };
-      const segment: Segment = { ...current.segments.find(item => item.id === segmentId)!, text, originalText: text, state: 'complete', model, latencyMs };
+      const segment: Segment = { ...current.segments.find(item => item.id === segmentId)!, text, originalText: heard, state: 'complete', model, latencyMs };
       const source = findEchoSource(current.segments, segment);
       // Sound reaches the far microphone after the near one, whichever window the queue happened to finish first.
       const echoId = source && (source.startMs > segment.startMs ? source.id : segment.id);

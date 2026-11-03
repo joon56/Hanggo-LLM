@@ -144,7 +144,7 @@ describe('ReviewRoom', () => {
     fireEvent.change(screen.getByLabelText('전사 수정'), { target: { value: '초인종 소리에 짖어요' } });
     await userEvent.click(screen.getByRole('button', { name: '전사 저장' }));
     await waitFor(() => expect(api.setSegment).toHaveBeenCalledWith('c', 'a', { text: '초인종 소리에 짖어요' }));
-    expect(await within(document.querySelector<HTMLElement>('[data-segment="a"]')!).findByText('수정함')).toBeInTheDocument();
+    expect(await within(document.querySelector<HTMLElement>('[data-segment="a"]')!).findByText('원문과 다름')).toHaveAttribute('title', '받아쓴 원문: 초인종에 짖어요');
   });
   it('lets the trainer clear an echo suspicion', async () => {
     const base = consultation();

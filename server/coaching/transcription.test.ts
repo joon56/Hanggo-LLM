@@ -271,3 +271,13 @@ describe('dictation', () => {
     expect(idle).toBeUndefined();
   });
 });
+
+describe('term correction', () => {
+  it('shows the corrected word and keeps what the model heard', async () => {
+    const { speech, calls } = controlledSpeech(); const { transcription, broadcast } = build(speech);
+    await accept(transcription, 'guardian', 0); await settle();
+    calls[0].resolve('현관으로 뛰어가서 계속 찢어요'); await settle();
+    expect((await segments())[0]).toMatchObject({ text: '현관으로 뛰어가서 계속 짖어요', originalText: '현관으로 뛰어가서 계속 찢어요' });
+    expect(captions(broadcast)[0].text).toBe('현관으로 뛰어가서 계속 짖어요');
+  });
+});
