@@ -54,6 +54,12 @@ jobs:
       - run: npm run build
       - name: Run two browsers through real speech and a real note
         run: node e2e/verify-real-speech.ts --note --human 12 | tee real-run.log
+      # Read speech is about unrelated topics, so the note above may rightly be empty. This one has something to say.
+      - name: Write a note from a labelled dialogue with the same small model
+        if: always()
+        run: |
+          node scripts/eval-notes.ts qwen35-4b doorbell-barking | tee note-eval.log
+          echo "::notice title=Note from the small model::$(grep '"summary"' note-eval.log | tail -1)"
       - name: Report the result where it can be read without a token
         if: always()
         run: |
