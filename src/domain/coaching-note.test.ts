@@ -565,3 +565,10 @@ describe('the next brief', () => {
     expect(context.items).toContainEqual(expect.objectContaining({ text: '초인종이 울리면 하루에 세 번쯤 짖음', category: 'owner_report' }));
   });
 });
+
+describe('record style', () => {
+  it('does not count the wording of a record against a sentence', () => {
+    const said = consultation({ segments: [segment('t', 'trainer', 0, '화내지 마시고 그냥 기다려 주세요')] });
+    expect(assembleNote({ ...blank, guidance: [claim('화내지 말 것을 안내함', 's01')] }, buildNoteSource(said, info), 'now').violations).toEqual([]);
+  });
+});

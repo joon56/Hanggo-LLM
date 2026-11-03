@@ -93,6 +93,23 @@ describe('createNoteService', () => {
     expect(note.guardianReports).toHaveLength(1);
     expect(note.warnings.join()).toContain('다섯 번');
   });
+  it('does not keep a repaired sentence that only differs by a comma', async () => {
+    const first: RawNote = { ...blank, tasks: [{ text: '매트로 가는 연습을, 하루 두 번 하기', who: null, frequency: null, until: null, successCriteria: null, evidence: ['s02'] }], summary: [{ text: '초인종에 하루 다섯 번 짖는다', evidence: ['s01'] }] };
+    const again: RawNote = { ...blank, tasks: [{ ...first.tasks[0], text: '매트로 가는 연습을 하루 두 번 하기' }] };
+    const { service } = build(reply(first), reply(again));
+    const note = await service.generate(consultation(short), info);
+    expect(note.tasks).toHaveLength(1);
+    expect(note.warnings).toHaveLength(1);
+  });
+  it('does not make a second behavior out of almost the same name', async () => {
+    const entry = (title: string, text: string) => ({ title, context: [{ text, evidence: ['s01'] }], behavior: [], response: [], unknown: [] });
+    const first: RawNote = { ...blank, behaviors: [entry('초인종이 울리면 짖음', '초인종이 울리면 짖음')], concerns: [{ text: '초인종에 하루 다섯 번 짖는다', evidence: ['s01'] }] };
+    const again: RawNote = { ...blank, behaviors: [entry('초인종이 울릴 때 짖음', '하루에 세 번쯤 짖음')] };
+    const { service } = build(reply(first), reply(again));
+    const note = await service.generate(consultation(short), info);
+    expect(note.behaviors).toHaveLength(1);
+    expect(note.behaviors[0].context).toHaveLength(2);
+  });
   it('adds a repaired sentence to the behavior it belongs to', async () => {
     const behavior = (claims: Partial<RawNote['behaviors'][number]>) => ({ title: '초인종 짖음', context: [], behavior: [], response: [], unknown: [], ...claims });
     const first: RawNote = { ...blank, behaviors: [behavior({ context: [{ text: '초인종이 울리면', evidence: ['s01'] }], behavior: [{ text: '하루에 다섯 번 짖는다', evidence: ['s01'] }] })] };
@@ -206,6 +223,16 @@ describe('long consultations', () => {
     expect(note.guidance).toHaveLength(1);
   });
   const task = (text: string, evidence: string[]) => ({ text, who: null, frequency: null, until: null, successCriteria: null, evidence });
+  it('merges behaviors with almost the same name across parts', async () => {
+    const { service } = buildLong(request => {
+      if (request.user.includes('문장 목록')) return reply({ summary: [] });
+      const first = request.user.includes('[s01');
+      return reply({ ...blank, behaviors: [{ title: first ? '초인종이 울리면 짖음' : '초인종이 울릴 때 짖음', context: [{ text: first ? '초인종이 울리면 세 번쯤 짖음' : '산책할 때 다른 개를 보면 짖음', evidence: [first ? 's01' : 's03'] }], behavior: [], response: [], unknown: [] }] });
+    });
+    const note = await service.generate(consultation(long), info);
+    expect(note.behaviors).toHaveLength(1);
+    expect(note.behaviors[0].context).toHaveLength(2);
+  });
   it('keeps a different sentence that happens to rest on an overlapping line', async () => {
     const { service } = buildLong(request => {
       if (request.user.includes('문장 목록')) return reply({ summary: [] });

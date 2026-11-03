@@ -8,6 +8,7 @@ import { noteSchema } from './note-schema.ts';
 const PART_CHARACTERS = 1500;
 const OVERLAP_CHARACTERS = 200;
 const SMALL_TAIL_CHARACTERS = 300;
+const SAME_TITLE_SIMILARITY = 0.6;
 // Lower than for sentences that merely look alike, since these two also rest on the same line.
 const OVERLAP_SIMILARITY = 0.4;
 type CaseInfo = { petName: string; guardianName: string; trainerName: string };
@@ -17,7 +18,7 @@ type Attempt = { note: CoachingNote; violations: NoteViolation[] };
 export type Progress = (done: number, total: number) => Promise<void>;
 
 const timeLabel = (ms: number) => `${String(Math.floor(ms / 60000)).padStart(2, '0')}:${String(Math.floor(ms / 1000) % 60).padStart(2, '0')}`;
-const compact = (text: string) => text.replace(/\s/g, '');
+const compact = (text: string) => text.replace(/[^\p{L}\p{N}]/gu, '');
 const warningFor = ({ text, reasons }: NoteViolation) => `일지에서 뺐습니다: "${text}" (${reasons.join(' ')})`;
 
 const lengthOf = (lines: NoteLine[]) => lines.reduce((sum, line) => sum + line.evidence.quote.length, 0);
@@ -84,7 +85,7 @@ function mergeBehaviors(parts: BehaviorEntry[][]) {
     for (const entry of part) {
       const trimmed = { ...entry, context: fresh(entry.context), behavior: fresh(entry.behavior), response: fresh(entry.response) };
       if (!trimmed.context.length && !trimmed.behavior.length && !trimmed.response.length) continue;
-      const same = kept.find(other => compact(other.title) === compact(entry.title));
+      const same = kept.find(other => sameFact(other.title, entry.title, SAME_TITLE_SIMILARITY));
       if (same) Object.assign(same, { context: [...same.context, ...trimmed.context], behavior: [...same.behavior, ...trimmed.behavior], response: [...same.response, ...trimmed.response], unknown: same.unknown.filter(item => entry.unknown.includes(item)) });
       else kept.push(trimmed);
     }
@@ -104,7 +105,7 @@ function withRepairs(first: CoachingNote, repaired: CoachingNote, source: NoteSo
   const add = <T extends { text: string }>(kept: T[], more: T[]) => [...kept, ...more.filter(item => !kept.some(other => compact(other.text) === compact(item.text)))];
   const behaviors = first.behaviors.map(entry => ({ ...entry }));
   for (const entry of repaired.behaviors) {
-    const same = behaviors.find(other => compact(other.title) === compact(entry.title));
+    const same = behaviors.find(other => sameFact(other.title, entry.title, SAME_TITLE_SIMILARITY));
     if (same) Object.assign(same, { context: add(same.context, entry.context), behavior: add(same.behavior, entry.behavior), response: add(same.response, entry.response) });
     else behaviors.push(entry);
   }

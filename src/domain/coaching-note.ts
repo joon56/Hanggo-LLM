@@ -56,13 +56,15 @@ const NOTHING_TO_REPORT = /\?$|말씀해\s*주세요\.?$|^안녕하세요|^네[,
 const NEGATION = /않|없|못|아니|안\s|말[고아]|마세/;
 const newId = () => crypto.randomUUID();
 
+// The endings a record adds to what someone said. They are in no quote, and say nothing about whether the rest was said.
+const RECORD_WORDING = /(?:라고|다고|도록|것을|것임|것)?\s*(?:안내|설명|요청|당부|언급|말|보고)(?:함|했음|했다)|(?:[을를]\s)?(?:할|말|줄)\s*것(?:을|임)?/g;
 const pairsOf = (text: string) => {
   const clean = text.replace(/[^\p{L}]/gu, '');
   return Array.from({ length: Math.max(0, clean.length - 1) }, (_, index) => clean.slice(index, index + 2));
 };
 /** How much of a sentence comes from its evidence. A rewritten sentence reuses the words; an invented one does not. */
 function supportOf(text: string, sources: string[]) {
-  const pairs = pairsOf(text);
+  const pairs = pairsOf(text.replace(RECORD_WORDING, ''));
   if (pairs.length < 3) return 1;
   const known = new Set(sources.flatMap(pairsOf));
   return pairs.filter(pair => known.has(pair)).length / pairs.length;
