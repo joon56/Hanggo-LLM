@@ -59,6 +59,10 @@ export function attachSignal(server: Server, { store, allowedOrigins, resolveAct
     send(socket, { type: 'hello', role, serverNow: now(), peerOnline: !!peer });
     // A new call means a new RTCPeerConnection, so the peer must rebuild. A socket reconnect keeps the media path alive.
     if (peer && (isFirst || isRejoin)) send(peer.socket, { type: 'peer-joined' });
+    void store.getConsultation(id).then(consultation => {
+      send(socket, stateMessage(consultation, room, role));
+      send(peer?.socket, stateMessage(consultation, room, other(role)));
+    }, () => {});
 
     let windowStart = now(); let count = 0;
     socket.on('message', raw => {

@@ -142,6 +142,8 @@ it('does not announce a rejoin when the same call reconnects its signaling socke
   const trainer = await connect(trainerCookie);
   let guardian = await connect(guardianCookie, { call: 'guardian-call' });
   await trainer.next('peer-joined');
+  await guardian.next('state');
+  await trainer.next('state'); await trainer.next('state');
   guardian.socket.close(); await guardian.closed;
   expect(await trainer.next('state')).toMatchObject({ peerOnline: false });
   guardian = await connect(guardianCookie, { call: 'guardian-call' });
@@ -156,9 +158,17 @@ it('announces a rejoin when the peer returns with a new call', async () => {
   guardian = await connect(guardianCookie, { call: 'second' });
   await expect(trainer.next('peer-joined')).resolves.toEqual({ type: 'peer-joined' });
 });
+it('tells each joining participant the current consultation state', async () => {
+  const updated = await store.updateConsultation(consultationId, current => ({ ...current, consent: { guardian: true, trainer: false } }));
+  const trainer = await connect(trainerCookie);
+  await expect(trainer.next('state')).resolves.toMatchObject({ consent: updated.consent, peerOnline: false });
+  await connect(guardianCookie);
+  await expect(trainer.next('state')).resolves.toMatchObject({ peerOnline: true });
+});
 it('broadcasts consultation changes with presence per recipient', async () => {
   const trainer = await connect(trainerCookie); const guardian = await connect(guardianCookie);
   await trainer.next('hello'); await guardian.next('hello');
+  await guardian.next('state');
   const updated = await store.updateConsultation(consultationId, current => ({ ...current, consent: { guardian: true, trainer: true }, recording: true }));
   hub.notify(updated);
   await expect(guardian.next('state')).resolves.toMatchObject({ recording: true, consent: { guardian: true, trainer: true }, state: 'live', peerOnline: true });
@@ -166,6 +176,7 @@ it('broadcasts consultation changes with presence per recipient', async () => {
 it('closes participants after the consultation leaves the live state', async () => {
   const trainer = await connect(trainerCookie);
   await trainer.next('hello');
+  await trainer.next('state');
   hub.notify(await store.updateConsultation(consultationId, current => ({ ...current, state: 'review' })));
   await expect(trainer.next('state')).resolves.toMatchObject({ state: 'review' });
   expect(await trainer.closed).toBe(1000);

@@ -13,7 +13,7 @@ export type SignalMessage =
 export type OutgoingSignal = Extract<SignalMessage, { type: 'offer' | 'answer' | 'candidate' | 'media' }> | { type: 'ping'; at: number };
 export type SignalHandler = (message: SignalMessage) => void;
 export type SignalChannel = { send(message: OutgoingSignal): void; close(): void };
-export type CallStats = { inboundVideoFrames: number; inboundAudioBytes: number; roundTripMs: number | null; relayed: boolean };
+export type CallStats = { inboundVideoFrames: number; inboundAudioBytes: number; inboundAudioEnergy: number; roundTripMs: number | null; relayed: boolean };
 export type CallStatus = 'waiting' | 'connecting' | 'connected' | 'reconnecting' | 'failed' | 'left';
 export type CallSnapshot = {
   status: CallStatus; peerOnline: boolean; peerMedia: PeerMedia; stats: CallStats; error: string;
@@ -33,7 +33,7 @@ type Options = {
 
 const DISCONNECT_GRACE_MS = 5000;
 const STATS_INTERVAL_MS = 1000;
-const NO_STATS: CallStats = { inboundVideoFrames: 0, inboundAudioBytes: 0, roundTripMs: null, relayed: false };
+const NO_STATS: CallStats = { inboundVideoFrames: 0, inboundAudioBytes: 0, inboundAudioEnergy: 0, roundTripMs: null, relayed: false };
 
 /** One participant's side of the call, kept free of React so negotiation can be tested without a browser. */
 export class CallSession {
@@ -136,7 +136,7 @@ export class CallSession {
       }
       case 'state':
         this.update({ consent: message.consent, recording: message.recording, consultationState: message.state, peerOnline: message.peerOnline,
-          ...(message.peerOnline ? {} : { status: 'waiting' as const, peerMedia: { camera: false, microphone: false, screen: false } }) });
+          ...(message.peerOnline ? this.snapshotValue.status === 'waiting' ? { status: 'connecting' as const } : {} : { status: 'waiting' as const, peerMedia: { camera: false, microphone: false, screen: false } }) });
         return;
       case 'error':
       case 'pong': return;
@@ -206,7 +206,7 @@ export class CallSession {
     const stats: CallStats = { ...NO_STATS };
     reports.forEach((report: Record<string, unknown>) => {
       if (report.type === 'inbound-rtp' && report.kind === 'video') stats.inboundVideoFrames += Number(report.framesDecoded ?? 0);
-      if (report.type === 'inbound-rtp' && report.kind === 'audio') stats.inboundAudioBytes += Number(report.bytesReceived ?? 0);
+      if (report.type === 'inbound-rtp' && report.kind === 'audio') { stats.inboundAudioBytes += Number(report.bytesReceived ?? 0); stats.inboundAudioEnergy += Number(report.totalAudioEnergy ?? 0); }
       if (report.type === 'candidate-pair' && report.nominated && report.state === 'succeeded') {
         if (typeof report.currentRoundTripTime === 'number') stats.roundTripMs = Math.round(report.currentRoundTripTime * 1000);
         const local = reports.get(String(report.localCandidateId)) as { candidateType?: string } | undefined;

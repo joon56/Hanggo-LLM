@@ -253,6 +253,7 @@ export default function App() {
   return <div className="app-shell">
     <aside className="sidebar" aria-label="상담 기록 탐색">
       <a className="brand" href="#main"><span className="brand-symbol"><PawPrintIcon weight="fill" size={25} /></span><span>행고<span className="brand-dot">.</span></span></a>
+      {!publicDemo && <a className="button secondary coaching-entry" href="/coaching">화상 코칭</a>}
       <div className="workspace-label">TRAINER WORKSPACE</div>
       <nav className="workspace-nav" aria-label="기능 선택">{(Object.keys(workspaceLabels) as (keyof typeof workspaceLabels)[]).filter(key => key === 'consultation' ? !publicDemo && !localDemo && session?.liveConsultation?.enabled : key === 'notes' || publicDemo || localDemo || session?.features?.[key]).map(key => <button key={key} className={workspace === key ? 'active-nav' : 'workspace-nav-button'} aria-current={workspace === key ? 'page' : undefined} disabled={consultationBusy} onClick={() => changeWorkspace(key)}><NotebookIcon size={20} /><span>{workspaceLabels[key]}</span></button>)}</nav>
       {workspace === 'notes' && <>

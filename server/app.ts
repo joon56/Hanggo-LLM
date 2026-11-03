@@ -197,7 +197,7 @@ export function createApp(config: Config, services: Services) {
   const dist = path.resolve('dist');
   if (existsSync(path.join(dist, 'index.html'))) {
     app.use(express.static(dist, { index: false, dotfiles: 'deny', setHeaders: (res, file) => res.setHeader('Cache-Control', file.includes(`${path.sep}assets${path.sep}`) ? 'public, max-age=31536000, immutable' : 'no-cache') }));
-    app.get('/', (_req, res) => { res.set('Cache-Control', 'no-cache').sendFile('index.html', { root: dist }); });
+    app.get(['/', '/coaching', '/guardian', '/join/:token', '/room/:id'], (_req, res) => { res.set('Cache-Control', 'no-cache').sendFile('index.html', { root: dist }); });
   }
   const errors: ErrorRequestHandler = (error, _req, res, _next) => {
     if (res.headersSent || res.destroyed) return;

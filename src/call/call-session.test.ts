@@ -251,14 +251,14 @@ describe('recovery', () => {
     const { session, peer } = build('trainer');
     peer().getStats.mockResolvedValue(new Map<string, unknown>([
       ['v', { type: 'inbound-rtp', kind: 'video', framesDecoded: 12 }],
-      ['a', { type: 'inbound-rtp', kind: 'audio', bytesReceived: 900 }],
+      ['a', { type: 'inbound-rtp', kind: 'audio', bytesReceived: 900, totalAudioEnergy: 0.25 }],
       ['p', { type: 'candidate-pair', nominated: true, state: 'succeeded', currentRoundTripTime: 0.05, localCandidateId: 'l' }],
       ['l', { type: 'local-candidate', candidateType: 'relay' }],
     ]) as never);
     peer().setIce('connected');
     expect(session.snapshot().status).toBe('connected');
     await vi.advanceTimersByTimeAsync(1100);
-    expect(session.snapshot().stats).toEqual({ inboundVideoFrames: 12, inboundAudioBytes: 900, roundTripMs: 50, relayed: true });
+    expect(session.snapshot().stats).toEqual({ inboundVideoFrames: 12, inboundAudioBytes: 900, inboundAudioEnergy: 0.25, roundTripMs: 50, relayed: true });
   });
   it('stops polling stats after leaving', async () => {
     const { session, peer } = build('trainer');

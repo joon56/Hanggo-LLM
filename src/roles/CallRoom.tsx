@@ -1,0 +1,59 @@
+import { useCallback, useEffect, useState } from 'react';
+import { useCall } from '../call/useCall';
+import { openDevices, type DevicePreference } from '../call/devices';
+import { endConsultation, getCase, getConsultation, getIce, getMe, setConsent } from '../coaching-api';
+import type { IceConfig } from '../coaching-api';
+import type { Speaker } from '../domain/coaching';
+import { CallStage } from './CallStage';
+import { apiMessage } from './copy';
+import { PreJoin, type JoinChoice } from './PreJoin';
+import './call.css';
+
+const canShareScreen = () => typeof navigator.mediaDevices?.getDisplayMedia === 'function';
+const isPhone = () => /Android|iPhone|iPad|Mobile/i.test(navigator.userAgent);
+type Room = { role: Speaker; petName: string; ice: IceConfig; home: string };
+
+function LiveCall({ consultationId, room, choice, forceRelay, navigate }: { consultationId: string; room: Room; choice: JoinChoice; forceRelay: boolean; navigate: (path: string) => void }) {
+  const [notice, setNotice] = useState('');
+  const onClosedForGood = useCallback((code: number) => {
+    if (code === 4001) setNotice('다른 탭이나 기기에서 입장해 이 화면의 연결을 닫았습니다.');
+    else navigate(room.home);
+  }, [navigate, room.home]);
+  const { session, ...call } = useCall({ consultationId, role: room.role, iceServers: room.ice.iceServers, localStream: choice.stream, forceRelay, onClosedForGood });
+  const [facing, setFacing] = useState<'user' | 'environment'>(choice.preference.facingMode ?? 'user');
+  useEffect(() => { if (choice.consent) void setConsent(consultationId, true); }, [choice.consent, consultationId]);
+  if (notice) return <main className="coach-page"><section className="coach-card coach-narrow"><p role="status">{notice}</p></section></main>;
+  return <CallStage role={room.role} petName={room.petName} canShare={canShareScreen()} call={call} mirrorSelf={facing === 'user'}
+    onToggleMicrophone={() => session.toggleMicrophone()} onToggleCamera={() => session.toggleCamera()}
+    onSwitchCamera={() => { const next = facing === 'user' ? 'environment' : 'user'; void openDevices({ microphone: false, facingMode: next }).then(({ stream }) => {
+      const [track] = stream.getVideoTracks();
+      if (track) { setFacing(next); void session.replaceCamera(track); }
+    }); }}
+    onStartShare={() => void session.startScreenShare()} onStopShare={() => session.stopScreenShare()}
+    onLeave={() => navigate(room.home)}
+    onEnd={() => { if (window.confirm('상담을 종료할까요? 양쪽 통화가 끝납니다.')) void endConsultation(consultationId).then(() => navigate(room.home)); }}
+    onConsent={value => void setConsent(consultationId, value)} />;
+}
+
+export function CallRoom({ consultationId, navigate, forceRelay = new URLSearchParams(location.search).has('forceRelay') }: { consultationId: string; navigate: (path: string) => void; forceRelay?: boolean }) {
+  const [room, setRoom] = useState<Room | null>(null); const [error, setError] = useState('');
+  const [choice, setChoice] = useState<JoinChoice | null>(null);
+  useEffect(() => {
+    void (async () => {
+      try {
+        const me = await getMe();
+        const consultation = await getConsultation(consultationId);
+        const home = me.role === 'guardian' ? '/guardian' : '/coaching';
+        if (consultation.state !== 'live') { navigate(home); return; }
+        const [detail, ice] = await Promise.all([getCase(consultation.caseId), getIce(consultationId)]);
+        setRoom({ role: me.role, petName: detail.petName, ice, home });
+      } catch (cause) { setError(apiMessage(cause, '상담 정보를 불러오지 못했습니다.')); }
+    })();
+  }, [consultationId, navigate]);
+  // The guardian usually films the pet, so a phone starts on the rear camera.
+  const openPreview = useCallback((preference: DevicePreference) => openDevices({ ...preference, facingMode: preference.facingMode ?? (room?.role === 'guardian' && isPhone() ? 'environment' : undefined) }), [room?.role]);
+  if (error) return <main className="coach-page"><section className="coach-card coach-narrow"><p role="alert" className="coach-error">{error}</p></section></main>;
+  if (!room) return <main className="coach-page"><p role="status">상담 정보를 불러오는 중입니다.</p></main>;
+  if (!choice) return <PreJoin petName={room.petName} role={room.role} relayAvailable={room.ice.relayAvailable} openPreview={openPreview} onJoin={setChoice} />;
+  return <LiveCall consultationId={consultationId} room={room} choice={choice} forceRelay={forceRelay} navigate={navigate} />;
+}
