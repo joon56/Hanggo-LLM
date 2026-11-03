@@ -12,6 +12,8 @@ export type Segment = {
   /** Likely the other speaker heard through this microphone. The text stays, but notes must not cite it. */
   echoSuspect?: boolean; model?: string; latencyMs?: number;
 };
+export type SpeechStatus = 'off' | 'idle' | 'preparing' | 'ready' | 'failed';
+export type MomentNotice = Pick<Moment, 'id' | 'atMs' | 'createdBy'>;
 export type Caption = Pick<Segment, 'id' | 'speaker' | 'startMs' | 'endMs' | 'text' | 'state' | 'echoSuspect'>;
 export type Moment = { id: string; atMs: number; createdBy: Speaker; text?: string; frameIds: string[] };
 export type FrameRef = { id: string; atMs: number; source: 'camera' | 'screen'; speaker: Speaker; bytes: number };

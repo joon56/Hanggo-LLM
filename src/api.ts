@@ -17,12 +17,12 @@ export type NoteResult = { draft: Draft; fallbackUsed: boolean; requestId: strin
 export type TranscriptResult = { text: string; requestId: string; latencyMs: number; model: string };
 
 export class ApiError extends Error {
-  constructor(message: string, public code = 'REQUEST_FAILED', public requestId = '') { super(message); }
+  constructor(message: string, public code = 'REQUEST_FAILED', public requestId = '', public status = 0) { super(message); }
 }
 
 async function readResponse<T>(response: Response): Promise<T> {
   const body = await response.json().catch(() => null);
-  if (!response.ok) throw new ApiError(body?.error || `요청에 실패했습니다 (${response.status}).`, body?.code, body?.requestId);
+  if (!response.ok) throw new ApiError(body?.error || `요청에 실패했습니다 (${response.status}).`, body?.code, body?.requestId, response.status);
   return body as T;
 }
 

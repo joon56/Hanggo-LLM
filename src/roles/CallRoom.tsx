@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useCall } from '../call/useCall';
 import { openDevices, type DevicePreference } from '../call/devices';
-import { endConsultation, getCase, getConsultation, getIce, getMe, setConsent } from '../coaching-api';
+import { createMoment, endConsultation, getCase, getConsultation, getIce, getMe, setConsent, setMomentMemo } from '../coaching-api';
 import type { IceConfig } from '../coaching-api';
 import type { Speaker } from '../domain/coaching';
 import { CallStage } from './CallStage';
@@ -32,7 +32,9 @@ function LiveCall({ consultationId, room, choice, forceRelay, navigate }: { cons
     onStartShare={() => void session.startScreenShare()} onStopShare={() => session.stopScreenShare()}
     onLeave={() => navigate(room.home)}
     onEnd={() => { if (window.confirm('상담을 종료할까요? 양쪽 통화가 끝납니다.')) void endConsultation(consultationId).then(() => navigate(room.home)); }}
-    onConsent={value => void setConsent(consultationId, value)} />;
+    onConsent={value => void setConsent(consultationId, value)}
+    onCatch={() => void createMoment(consultationId).catch(() => session.noteUploadLost())}
+    onMemo={(momentId, text) => void setMomentMemo(consultationId, momentId, text).catch(() => session.noteUploadLost())} />;
 }
 
 export function CallRoom({ consultationId, navigate, forceRelay = new URLSearchParams(location.search).has('forceRelay') }: { consultationId: string; navigate: (path: string) => void; forceRelay?: boolean }) {

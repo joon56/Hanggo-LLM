@@ -3,11 +3,10 @@ import type { Duplex } from 'node:stream';
 import { WebSocket, WebSocketServer } from 'ws';
 import { z } from 'zod';
 import { captionOf } from '../../src/domain/coaching.ts';
-import type { Consultation, Speaker } from '../../src/domain/coaching.ts';
+import type { Consultation, Speaker, SpeechStatus } from '../../src/domain/coaching.ts';
 import { can } from '../../src/domain/permissions.ts';
 import type { Actor } from '../../src/domain/permissions.ts';
 import type { CoachingStore } from './store.ts';
-import type { SpeechStatus } from './transcription.ts';
 
 const MAX_MESSAGE_BYTES = 64 * 1024;
 const MAX_MESSAGES_PER_SECOND = 50;

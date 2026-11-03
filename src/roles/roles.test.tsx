@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { CallSnapshot } from '../call/call-session';
@@ -145,13 +145,74 @@ describe('PreJoin', () => {
 describe('CallStage', () => {
   const liveStream = (id: string) => ({ id, getTracks: () => [], getVideoTracks: () => [], getAudioTracks: () => [] }) as unknown as MediaStream;
   const snapshot = (change: Partial<CallSnapshot> = {}): CallSnapshot => ({ status: 'connected', peerOnline: true, peerMedia: { camera: true, microphone: true, screen: false }, stats: { inboundVideoFrames: 7, inboundAudioBytes: 90, inboundAudioEnergy: 0.5, roundTripMs: 40, relayed: false }, error: '',
-    microphoneOn: true, cameraOn: true, hasCamera: true, hasMicrophone: true, localStream: liveStream('local'), localScreen: null, remoteStream: liveStream('remote'), remoteScreen: null, consent: { guardian: false, trainer: false }, recording: false, consultationState: 'live', ...change });
-  const handlers = () => ({ onToggleMicrophone: vi.fn(), onToggleCamera: vi.fn(), onSwitchCamera: vi.fn(), onStartShare: vi.fn(), onStopShare: vi.fn(), onLeave: vi.fn(), onEnd: vi.fn(), onConsent: vi.fn() });
+    microphoneOn: true, cameraOn: true, hasCamera: true, hasMicrophone: true, localStream: liveStream('local'), localScreen: null, remoteStream: liveStream('remote'), remoteScreen: null, consent: { guardian: false, trainer: false }, recording: false, consultationState: 'live', captions: [], speech: 'off', lastMoment: null, captionLatencyMs: null, uploadLost: false, ...change });
+  const handlers = () => ({ onCatch: vi.fn(), onMemo: vi.fn(), onToggleMicrophone: vi.fn(), onToggleCamera: vi.fn(), onSwitchCamera: vi.fn(), onStartShare: vi.fn(), onStopShare: vi.fn(), onLeave: vi.fn(), onEnd: vi.fn(), onConsent: vi.fn() });
   const setup = (change: Partial<CallSnapshot> = {}, options: { canShare?: boolean; role?: 'trainer' | 'guardian' } = {}) => {
     const actions = handlers();
     const { container } = render(<CallStage role={options.role ?? 'trainer'} petName="초코" canShare={options.canShare ?? true} call={snapshot(change)} {...actions} />);
     return { actions, root: container.querySelector('[data-call-status]') as HTMLElement };
   };
+  it('shows the latest captions under the speaker they came from', () => {
+    const line = (id: string, speaker: 'guardian' | 'trainer', text: string) => ({ id, speaker, startMs: 0, endMs: 1000, text, state: 'complete' as const });
+    const { root } = setup({ captions: [line('a', 'guardian', '가장 오래된 말'), line('b', 'guardian', '초인종에 짖었어요'), line('c', 'trainer', '매트로 보내 주세요'), line('d', 'guardian', '해 볼게요')] });
+    const log = screen.getByRole('log', { name: '자막' });
+    expect(log).toHaveTextContent('보호자 초인종에 짖었어요');
+    expect(log).toHaveTextContent('훈련사 매트로 보내 주세요');
+    expect(log).not.toHaveTextContent('가장 오래된 말');
+    expect(root.dataset.captionCount).toBe('4');
+  });
+  it('hides a suspected echo from captions and marks a failed window', () => {
+    setup({ captions: [{ id: 'a', speaker: 'guardian', startMs: 0, endMs: 1, text: '메아리 문장', state: 'complete', echoSuspect: true }, { id: 'b', speaker: 'trainer', startMs: 2, endMs: 3, text: '', state: 'failed' }] });
+    const log = screen.getByRole('log', { name: '자막' });
+    expect(log).not.toHaveTextContent('메아리 문장');
+    expect(log).toHaveTextContent('훈련사 받아쓰지 못한 구간입니다');
+  });
+  it('offers the catch button only while recording', () => {
+    const { actions } = setup({ recording: true });
+    fireEvent.click(screen.getByRole('button', { name: '캐치' }));
+    expect(actions.onCatch).toHaveBeenCalled();
+    cleanup();
+    setup({ recording: false });
+    expect(screen.getByRole('button', { name: '캐치' })).toBeDisabled();
+  });
+  it('lets the trainer write a memo on the latest moment', () => {
+    const { actions } = setup({ recording: true, lastMoment: { id: 'm1', atMs: 1000, createdBy: 'guardian' } });
+    expect(screen.getByRole('status')).toHaveTextContent('보호자가 이 장면을 표시했습니다');
+    fireEvent.change(screen.getByLabelText('장면 메모'), { target: { value: '귀가 먼저 움직임' } });
+    fireEvent.click(screen.getByRole('button', { name: '메모 저장' }));
+    expect(actions.onMemo).toHaveBeenCalledWith('m1', '귀가 먼저 움직임');
+    expect(screen.queryByLabelText('장면 메모')).toBeNull();
+  });
+  it('lets the trainer dismiss the memo box', () => {
+    setup({ recording: true, lastMoment: { id: 'm1', atMs: 1000, createdBy: 'trainer' } });
+    expect(screen.getByRole('status')).toHaveTextContent('캐치했습니다');
+    fireEvent.click(screen.getByRole('button', { name: '닫기' }));
+    expect(screen.queryByLabelText('장면 메모')).toBeNull();
+  });
+  it('tells the guardian about a moment without offering the memo, then clears the notice', () => {
+    vi.useFakeTimers();
+    try {
+      setup({ recording: true, lastMoment: { id: 'm1', atMs: 1000, createdBy: 'trainer' } }, { role: 'guardian' });
+      expect(screen.getByRole('status')).toHaveTextContent('훈련사가 이 장면을 표시했습니다');
+      expect(screen.queryByLabelText('장면 메모')).toBeNull();
+      act(() => { vi.advanceTimersByTime(5000); });
+      expect(screen.queryByRole('status')).toBeNull();
+    } finally { vi.useRealTimers(); }
+  });
+  it('says when transcription is preparing or unavailable, while recording only', () => {
+    setup({ recording: true, speech: 'preparing' });
+    expect(screen.getByText('받아쓰기 준비 중')).toBeInTheDocument();
+    cleanup();
+    setup({ recording: true, speech: 'failed' });
+    expect(screen.getByText(/받아쓰기 불가/)).toBeInTheDocument();
+    cleanup();
+    setup({ recording: false, speech: 'failed' });
+    expect(screen.queryByText(/받아쓰기/)).toBeNull();
+  });
+  it('warns when something could not be sent', () => {
+    setup({ recording: true, uploadLost: true });
+    expect(screen.getByText(/일부 기록을 보내지 못했습니다/)).toBeInTheDocument();
+  });
   it('exposes connection numbers for inspection', () => {
     const { root } = setup();
     expect(root.dataset).toMatchObject({ callStatus: 'connected', inboundVideoFrames: '7', inboundAudioBytes: '90', relayed: 'false' });

@@ -1,5 +1,5 @@
 import { request } from './api';
-import type { CoachingCase, Consultation } from './domain/coaching';
+import type { CoachingCase, Consultation, Moment } from './domain/coaching';
 
 export type CaseView = Pick<CoachingCase, 'id' | 'petName' | 'guardianName' | 'trainerName' | 'createdAt'>;
 export type CaseDetail = CaseView & { consultations: Consultation[] };
@@ -21,3 +21,10 @@ export const getConsultation = (id: string) => request<Consultation>(`${base}/co
 export const getIce = (id: string) => request<IceConfig>(`${base}/consultations/${id}/ice`);
 export const setConsent = (id: string, value: boolean) => post<Consultation>(`${base}/consultations/${id}/consent`, { value });
 export const endConsultation = (id: string) => post<Consultation>(`${base}/consultations/${id}/end`);
+export const createMoment = (id: string) => post<Moment>(`${base}/consultations/${id}/moments`);
+export const setMomentMemo = (id: string, momentId: string, text: string) => request<Moment>(`${base}/consultations/${id}/moments/${momentId}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text }) });
+export const uploadAudio = (id: string, { bytes, startMs, endMs }: { bytes: Blob; startMs: number; endMs: number }) => request(`${base}/consultations/${id}/audio/${startMs}?endMs=${endMs}`, { method: 'PUT', headers: { 'Content-Type': 'audio/wav' }, body: bytes });
+export function uploadFrame(id: string, frame: { id: string; atMs: number; source: string; bytes: Blob }, momentId?: string) {
+  const query = new URLSearchParams({ atMs: String(frame.atMs), source: frame.source, ...(momentId ? { moment: momentId } : {}) });
+  return request(`${base}/consultations/${id}/frames/${frame.id}?${query}`, { method: 'PUT', headers: { 'Content-Type': 'image/jpeg' }, body: frame.bytes });
+}

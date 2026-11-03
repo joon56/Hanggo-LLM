@@ -1,14 +1,13 @@
 import { randomUUID } from 'node:crypto';
 import { setTimeout as delay } from 'node:timers/promises';
 import { captionOf, findEchoSource, transition } from '../../src/domain/coaching.ts';
-import type { Consultation, Segment, Speaker } from '../../src/domain/coaching.ts';
+import type { Consultation, Segment, Speaker, SpeechStatus } from '../../src/domain/coaching.ts';
 import type { SpeechProvider, SpeechResult } from '../ai/speech/types.ts';
 import { StoreError, type CoachingStore } from './store.ts';
 
 const MAX_WAITING = 64;
 const OVERLAP_TOLERANCE_MS = 500;
 const PREPARE_RETRY_MS = 30_000;
-export type SpeechStatus = 'off' | 'idle' | 'preparing' | 'ready' | 'failed';
 type Item = { consultationId: string; segmentId: string; wav: Buffer };
 type Deps = {
   store: CoachingStore; speech?: SpeechProvider;
