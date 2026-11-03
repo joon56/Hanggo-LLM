@@ -7,12 +7,10 @@ import type { Config } from '../../config.ts';
 import { freePort } from '../free-port.ts';
 import type { SpeechProvider } from './types.ts';
 
-export type SpeechCandidate = Exclude<Config['liveSpeechModel'], 'cohere'>;
-export const cohereModelPath = (config: Config) => resolve(config.liveModelDirectory, 'cohere-transcribe-03-2026-Q8_0.gguf');
+export type SpeechCandidate = Config['liveSpeechModel'];
 
 export function buildSpeechCommand(config: Config, port: number, token: string) {
   const candidate = config.liveSpeechModel;
-  if (candidate === 'cohere') throw new Error('Cohere Transcribe does not run through a server command.');
   const origin = `http://127.0.0.1:${port}`;
   if (candidate === 'qwen-asr') {
     const model = resolve(config.liveModelDirectory, 'Qwen3-ASR-1.7B-Q8_0.gguf');
@@ -30,7 +28,7 @@ export function buildSpeechCommand(config: Config, port: number, token: string) 
 }
 
 export function speechInstalled(config: Config): boolean {
-  try { return (config.liveSpeechModel === 'cohere' ? [cohereModelPath(config)] : buildSpeechCommand(config, 1, 'check').files).every(file => { const s = statSync(file); return s.isFile() && s.size > 0; }); }
+  try { return buildSpeechCommand(config, 1, 'check').files.every(file => { const s = statSync(file); return s.isFile() && s.size > 0; }); }
   catch { return false; }
 }
 
@@ -111,7 +109,7 @@ export function createLiveSpeech(config: Config, hooks: { unloadTextModel?: () =
     },
     async transcribe(wav, signal) {
       signal?.throwIfAborted();
-      if (!ready || !lifetime || config.liveSpeechModel === 'cohere') throw new Error('음성 모델 준비가 필요합니다.');
+      if (!ready || !lifetime) throw new Error('음성 모델 준비가 필요합니다.');
       if (busy) throw new Error('이전 음성 구간을 처리 중입니다.');
       if (wav.length > 2.5 * 1024 * 1024) throw new Error('음성 구간이 너무 큽니다.');
       busy = true;

@@ -11,8 +11,8 @@ const manifestPath = resolve(process.argv[2] || '.tmp/speech-samples/manifest.js
 const outputPath = resolve(process.argv[3] || '.tmp/speech-comparison.json');
 const manifest = JSON.parse(await readFile(manifestPath, 'utf8').then(text => text.replace(/^\uFEFF/, '')));
 if (!['synthetic', 'human'].includes(manifest.kind) || !Array.isArray(manifest.samples) || !manifest.samples.length) throw new Error('Invalid comparison manifest.');
-const selected = (process.argv[4] || 'cohere,whisper-turbo,qwen-asr').split(',');
-if (selected.some(value => !['cohere', 'whisper-turbo', 'qwen-asr'].includes(value))) throw new Error('Invalid comparison candidate.');
+const selected = (process.argv[4] || 'qwen-asr,whisper-turbo').split(',');
+if (selected.some(value => !['whisper-turbo', 'qwen-asr'].includes(value))) throw new Error('Invalid comparison candidate.');
 loadLocalEnv();
 const samples = await Promise.all(manifest.samples.map(async (sample: { file: string; expected: string; terms?: string[][] }) => {
   const file = resolve(dirname(manifestPath), sample.file);

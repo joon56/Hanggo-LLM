@@ -9,7 +9,8 @@ function fakeChild() {
     kill: vi.fn(() => { child.exitCode = 0; child.emit('close', 0); return true; }) });
   return child;
 }
-const completion = (content: unknown, finish = 'stop') => Response.json({ choices: [{ finish_reason: finish, message: { content: typeof content === 'string' ? content : JSON.stringify(content) } }] });
+const event = (delta: object, finish: string | null = null) => `data: ${JSON.stringify({ choices: [{ delta, finish_reason: finish }] })}\n\n`;
+const completion = (content: unknown, finish = 'stop') => new Response(`${event({ content: typeof content === 'string' ? content : JSON.stringify(content) })}${event({}, finish)}data: [DONE]\n\n`);
 function harness(chat: (body: any, init: RequestInit) => Response | Promise<Response> = () => completion({ ok: true }), options: { mmproj?: string } = {}) {
   const children: ReturnType<typeof fakeChild>[] = [];
   const spawnProcess = vi.fn(() => { const child = fakeChild(); children.push(child); return child; });
@@ -45,7 +46,7 @@ it('sends an authenticated schema request with fixed sampling and returns parsed
   const url = String(fetchImpl.mock.calls.at(-1)![0]);
   expect(url).toMatch(/^http:\/\/127\.0\.0\.1:\d+\/v1\/chat\/completions$/);
   expect(new Headers(init!.headers).get('Authorization')).toBe(`Bearer ${args[args.indexOf('--api-key') + 1]}`);
-  expect(body).toMatchObject({ temperature: 0, seed: 42, stream: false, max_tokens: 512, response_format: { type: 'json_schema', json_schema: { schema: request.jsonSchema } } });
+  expect(body).toMatchObject({ temperature: 0, seed: 42, stream: true, max_tokens: 512, response_format: { type: 'json_schema', json_schema: { schema: request.jsonSchema } } });
   expect(body.messages).toEqual([{ role: 'system', content: '규칙' }, { role: 'user', content: '입력' }]);
   expect(init!.redirect).toBe('error');
 });
@@ -67,6 +68,17 @@ it('reports truncated output as unfinished while keeping parseable JSON', async 
 it('returns null JSON for malformed content instead of throwing', async () => {
   const { provider } = harness(() => completion('not json'));
   await expect(provider.structured(request)).resolves.toEqual({ json: null, finished: true });
+});
+it('assembles content split across stream chunks', async () => {
+  const first = event({ content: '{"an' });
+  const pieces = [first.slice(0, 12), first.slice(12), event({ content: 'swer":1}' }), event({}, 'stop'), 'data: [DONE]\n\n'];
+  const encoder = new TextEncoder();
+  const { provider } = harness(() => new Response(new ReadableStream({ start(controller) { for (const piece of pieces) controller.enqueue(encoder.encode(piece)); controller.close(); } })));
+  await expect(provider.structured(request)).resolves.toEqual({ json: { answer: 1 }, finished: true });
+});
+it('treats a stream that ends without a finish reason as unfinished', async () => {
+  const { provider } = harness(() => new Response(event({ content: '{"a":1}' })));
+  await expect(provider.structured(request)).resolves.toEqual({ json: { a: 1 }, finished: false });
 });
 it('rejects error statuses', async () => {
   const { provider } = harness(() => new Response('', { status: 503 }));

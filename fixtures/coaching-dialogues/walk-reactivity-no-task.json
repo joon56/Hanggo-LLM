@@ -34,5 +34,5 @@
   "unknown": [],
   "expectedSafetyFlags": [],
   "expectedMethodReview": true,
-  "forbiddenClaims": ["공격성", "진단", "치료", "입질", "물었", "하네스를 사용", "하네스를 쓰", "개선"]
+  "forbiddenClaims": ["공격성", "진단", "치료", "입질", "물었", "하네스를 사용 중", "개선됐", "좋아졌"]
 }

@@ -18,12 +18,12 @@ export function ensureMedia() {
 }
 
 export type TestServer = { origin: string; stop(): Promise<void> };
-export async function startServer(port: number): Promise<TestServer> {
+export async function startServer(port: number, options: { turn?: boolean } = {}): Promise<TestServer> {
   if (!existsSync('dist/index.html')) throw new Error('Run npm run build before this test.');
   const home = mkdtempSync(path.join(tmpdir(), 'hanggo-e2e-'));
   const origin = `http://127.0.0.1:${port}`;
   const child: ChildProcess = spawn(process.execPath, ['server/index.ts'], { stdio: 'ignore', windowsHide: true,
-    env: { ...process.env, HANGGO_HOME: home, APP_ACCESS_PASSWORD: PASSWORD, PORT: String(port), HOST: '127.0.0.1', PUBLIC_ORIGIN: origin, AI_ENABLED: 'false', TURN_URLS: '', TURN_USERNAME: '', TURN_CREDENTIAL: '' } });
+    env: { ...process.env, HANGGO_HOME: home, APP_ACCESS_PASSWORD: PASSWORD, PORT: String(port), HOST: '127.0.0.1', PUBLIC_ORIGIN: origin, AI_ENABLED: 'false', ...(options.turn ? {} : { TURN_URLS: '', TURN_USERNAME: '', TURN_CREDENTIAL: '' }) } });
   const deadline = Date.now() + 20_000;
   while (true) {
     if (child.exitCode !== null) throw new Error(`Server exited with ${child.exitCode}.`);
@@ -66,11 +66,11 @@ export async function launch(role: 'guardian' | 'trainer', options: { noCamera?:
 export const room = (page: Page) => page.locator('[data-call-status]');
 const number = async (page: Page, attribute: string) => Number(await room(page).getAttribute(attribute));
 
-export async function createCaseAsTrainer(page: Page, origin: string, petName = '초코') {
+export async function createCaseAsTrainer(page: Page, origin: string, petName = '초코', password_ = PASSWORD) {
   await page.goto(`${origin}/coaching`);
   const password = page.getByLabel('접근 비밀번호');
   await expect(password.or(page.getByLabel('반려동물 이름'))).toBeVisible();
-  if (await password.isVisible()) { await password.fill(PASSWORD); await page.getByRole('button', { name: '로그인' }).click(); }
+  if (await password.isVisible()) { await password.fill(password_); await page.getByRole('button', { name: '로그인' }).click(); }
   await page.getByLabel('반려동물 이름').fill(petName);
   await page.getByLabel('보호자 이름').fill('가상 보호자');
   await page.getByLabel('훈련사 이름').fill('가상 훈련사');

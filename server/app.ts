@@ -49,7 +49,8 @@ export function createApp(config: Config, services: Services) {
   const lessons = loadLessonCatalog(config.lessonCatalogPath);
   app.disable('x-powered-by');
   app.set('trust proxy', config.trustProxy);
-  app.use(helmet({ contentSecurityPolicy: { directives: { 'media-src': ["'self'", 'blob:'], 'connect-src': ["'self'"], 'upgrade-insecure-requests': config.production ? [] : null } }, strictTransportSecurity: config.production ? undefined : false }));
+  app.use(helmet({ contentSecurityPolicy: { directives: { 'media-src': ["'self'", 'blob:'], 'connect-src': ["'self'", config.publicOrigin.replace(/^http/, 'ws')], 'upgrade-insecure-requests': config.production ? [] : null } }, strictTransportSecurity: config.production ? undefined : false }));
+  app.use((_req, res, next) => { res.set('Permissions-Policy', 'camera=(self), microphone=(self), display-capture=(self)'); next(); });
   const sessions = new Map<string, number>();
   const cookieName = 'hanggo_session';
   const cookieOptions = { httpOnly: true, secure: config.production, sameSite: 'strict' as const, path: '/api', maxAge: 8 * 60 * 60 * 1000 };

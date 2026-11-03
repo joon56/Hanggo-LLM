@@ -54,19 +54,35 @@ export function createLlamaServer({ executable, model, mmproj, contextSize, spaw
     return starting;
   }
 
-  async function readBounded(response: Response): Promise<string> {
+  /** Streams because a large model on a small GPU can take longer than fetch's five-minute wait for response headers. */
+  async function readStream(response: Response): Promise<{ content: string; finishReason: string | null }> {
     const reader = response.body?.getReader();
     if (!reader) throw new Error('Local model returned no body.');
-    const chunks: Uint8Array[] = []; let size = 0;
+    const decoder = new TextDecoder();
+    let buffer = ''; let content = ''; let finishReason: string | null = null; let size = 0;
+    const readEvents = (complete: boolean) => {
+      const lines = buffer.split('\n');
+      buffer = complete ? '' : lines.pop()!;
+      for (const line of lines) {
+        if (!line.startsWith('data:')) continue;
+        const data = line.slice(5).trim();
+        if (data === '[DONE]') continue;
+        const choice = JSON.parse(data).choices?.[0];
+        content += choice?.delta?.content ?? '';
+        finishReason = choice?.finish_reason ?? finishReason;
+      }
+    };
     try {
       while (true) {
         const { value, done } = await reader.read(); if (done) break;
         size += value.length;
         if (size > MAX_RESPONSE_BYTES) throw new Error('Local model response too large.');
-        chunks.push(value);
+        buffer += decoder.decode(value, { stream: true });
+        readEvents(false);
       }
+      readEvents(true);
     } finally { await reader.cancel().catch(() => {}); reader.releaseLock(); }
-    return Buffer.concat(chunks).toString('utf8');
+    return { content, finishReason };
   }
 
   const untilAborted = (task: Promise<void>, signal?: AbortSignal) => !signal ? task : Promise.race([task, new Promise<never>((_, reject) => {
@@ -86,15 +102,15 @@ export function createLlamaServer({ executable, model, mmproj, contextSize, spaw
         ...request.images.map(image => ({ type: 'image_url', image_url: { url: `data:image/jpeg;base64,${image.toString('base64')}` } }))] : request.user;
       const response = await fetchImpl(`${baseUrl}/v1/chat/completions`, {
         method: 'POST', redirect: 'error', signal: request.signal, headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ temperature: 0, seed: 42, stream: false, max_tokens: request.maxTokens ?? 4096,
+        body: JSON.stringify({ temperature: 0, seed: 42, stream: true, max_tokens: request.maxTokens ?? 4096,
           response_format: { type: 'json_schema', json_schema: { name: 'output', schema: request.jsonSchema } },
           messages: [{ role: 'system', content: request.system }, { role: 'user', content: user }] }),
       });
       if (!response.ok) { await response.body?.cancel(); throw new Error(`Local model unavailable (${response.status}).`); }
-      const choice = JSON.parse(await readBounded(response)).choices?.[0];
+      const { content, finishReason } = await readStream(response);
       let json: unknown = null;
-      try { json = JSON.parse(choice?.message?.content); } catch { json = null; }
-      return { json, finished: choice?.finish_reason === 'stop' };
+      try { json = JSON.parse(content); } catch { json = null; }
+      return { json, finished: finishReason === 'stop' };
     },
   };
 }

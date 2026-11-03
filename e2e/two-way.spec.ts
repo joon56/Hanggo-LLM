@@ -1,14 +1,18 @@
 import { expect, test } from '@playwright/test';
+import { loadLocalEnv } from '../server/config';
+import { readTurn } from '../server/turn';
 import { audioEnergy, createCaseAsTrainer, enterAsGuardian, enterAsTrainer, ensureMedia, expectFlowing, joinAsGuardian, launch, room, startServer, type Participant, type TestServer } from './helpers/two-way';
 
 // Real server, real WebSocket signaling, real WebRTC between two separate Chrome processes with synthetic media.
 test.describe.configure({ mode: 'serial', timeout: 90_000 });
+loadLocalEnv();
+const hasTurn = !!readTurn(process.env);
 let server: TestServer; let port = 3190;
 const opened: Participant[] = [];
 const open = async (...args: Parameters<typeof launch>) => { const participant = await launch(...args); opened.push(participant); return participant; };
 
 test.beforeAll(() => { ensureMedia(); });
-test.beforeEach(async () => { server = await startServer(port++); });
+test.beforeEach(async ({}, info) => { server = await startServer(port++, { turn: info.title.includes('relay') }); });
 test.afterEach(async () => {
   for (const participant of opened.splice(0)) await participant.browser.close();
   await server.stop();
@@ -117,6 +121,23 @@ test('ending the consultation returns both sides to their home screens', async (
   await trainer.page.waitForURL(/\/coaching$/);
   await guardian.page.waitForURL(/\/guardian$/);
   await expect(guardian.page.getByRole('button', { name: '상담 입장', exact: true })).toHaveCount(0);
+});
+
+test('a relay-only call connects through the configured TURN server', async () => {
+  test.skip(!hasTurn, 'TURN credentials are not configured.');
+  const trainer = await open('trainer'); const guardian = await open('guardian');
+  const invite = await createCaseAsTrainer(trainer.page, server.origin);
+  await joinAsGuardian(guardian.page, invite);
+  await trainer.page.getByRole('button', { name: '초코 상담 시작' }).click();
+  await trainer.page.waitForURL(/\/room\//);
+  const relayRoom = `${trainer.page.url()}?forceRelay=1`;
+  await trainer.page.goto(relayRoom);
+  await trainer.page.getByRole('button', { name: '입장' }).click();
+  await guardian.page.goto(relayRoom);
+  await guardian.page.getByRole('button', { name: '입장' }).click();
+  await Promise.all([expectFlowing(trainer.page), expectFlowing(guardian.page)]);
+  await expect(room(trainer.page)).toHaveAttribute('data-relayed', 'true');
+  await expect(room(guardian.page)).toHaveAttribute('data-relayed', 'true');
 });
 
 test('outsiders cannot enter: reused invite, no session, and another case', async () => {

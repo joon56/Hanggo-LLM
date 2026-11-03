@@ -46,12 +46,12 @@ it('leaves the environment alone when no home is configured', () => {
 });
 it('defaults to local models without an API credential field', () => {
   const config = readConfig({});
-  expect(config).toMatchObject({ provider: 'local', llmModel: 'qwen35-9b', textModel: 'qwen35-9b', contextSize: 8192, timeoutMs: 300000 });
+  expect(config).toMatchObject({ provider: 'local', llmModel: 'gemma4-12b', textModel: 'gemma4-12b', contextSize: 8192, timeoutMs: 300000 });
   expect(config).not.toHaveProperty('apiKey');
 });
 it('cannot select a paid provider through obsolete environment settings', () => {
   const config = readConfig({ AI_PROVIDER: 'openai', OPENAI_API_KEY: 'obsolete-test-value', OPENAI_TEXT_MODEL: 'old-model' });
-  expect(config).toMatchObject({ provider: 'local', aiProvider: 'local', textModel: 'qwen35-9b' });
+  expect(config).toMatchObject({ provider: 'local', aiProvider: 'local', textModel: 'gemma4-12b' });
   expect(config).not.toHaveProperty('apiKey');
 });
 it('accepts known local models and rejects others', () => {

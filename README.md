@@ -19,10 +19,13 @@
 
 ## 무엇을 할 수 있나요?
 
-행고는 이 PC에서 Ollama `qwen3.5:9b`로 기록 초안을 만듭니다. 실시간 상담은 **Whisper large-v3-turbo GPU**로 한국어를 전사하고, 화면·음성·중요 장면을 같은 시간축에 기록합니다. 초안은 원문 근거와 함께 사람이 검토합니다.
+보호자와 훈련사가 각자 기기에서 링크로 접속해 화상 코칭을 합니다. 기록 초안은 이 PC의 llama.cpp `Gemma 4 12B`로 만들고, 음성은 `Qwen3-ASR`로 전사합니다. 초안은 원문 근거와 함께 사람이 검토합니다.
+
+통화와 AI 기록을 잇는 작업은 진행 중입니다. 지금은 통화와 동의 표시까지 동작하고, 자막과 일지는 다음 단계에서 연결합니다. [설계](docs/superpowers/specs/2026-11-03-two-way-coaching-design.md) · [검증 결과](docs/llm/two-way-step-1.md) · [모델 선정](docs/llm/model-selection-2026-11.md)
 
 | 기능 | 흐름 |
 |---|---|
+| **쌍방향 화상 코칭** | 훈련사가 사례 생성 → 보호자 초대 링크 → 각자 기기로 입장 → 영상·음성·바탕화면 공유 → 양쪽 동의 후 기록 표시 |
 | 카메라 상담 · 로컬 | 실제 카메라·마이크 → 최대 60분 전사·녹화 → 중요 장면 표시 → 종료 후 영상 관찰·검토 → 7개 항목 상세 일지·근거 시간·확정 |
 | 탭 녹화 · 로컬 | Chrome/Edge 탭 화면·음성 + 선택한 마이크 → 전사·녹화 → 원문 검토·일지 |
 | 상담일지 | 3~60초 음성 또는 8,000자 이하 텍스트 → 원문·분류·숫자 확인 → 승인·저장 |
@@ -60,15 +63,23 @@ GitHub Pages는 정적 체험판입니다. 텍스트 정리·녹음 재생·검�
 
 ## 빠른 시작
 
-Windows에서 Node.js 24, Ollama 0.34.4 이상, FFmpeg와 ffprobe가 필요합니다. 첫 설치에는 인터넷 다운로드와 디스크 여유가 필요합니다. 권장 확인 환경은 RTX 4060 8GB와 RAM 32GB입니다.
+Windows에서 Node.js 24, FFmpeg와 ffprobe, NVIDIA GPU가 필요합니다. 첫 설치에 약 12GB를 받습니다. 확인 환경은 RTX 3070 8GB와 RAM 32GB입니다.
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File scripts/setup.ps1
+powershell -ExecutionPolicy Bypass -File scripts/setup.ps1 -HanggoHome D:\hanggo
 npm.cmd run local:check
 npm.cmd run dev:local
 ```
 
-`setup.ps1`은 npm 설치와 로컬 모델 설치를 진행합니다. 이미 설치했다면 `npm.cmd run local:configure`와 `npm.cmd run local:check`로 설정을 확인할 수 있습니다. `dev:local`은 화면 `http://127.0.0.1:5173/`와 API `127.0.0.1:3001`을 이 PC에 엽니다. 종료는 Ctrl+C입니다. 브라우저 저장 기록을 다시 찾으려면 같은 브라우저 프로필과 같은 `127.0.0.1` 주소를 사용하세요.
+`setup.ps1`은 npm 패키지와 고정된 실행기·모델을 `-HanggoHome` 아래에 설치합니다. 설정은 그 폴더의 `settings.env`, 비밀값은 `secrets.env`에 둡니다. 비교용 모델까지 받으려면 `-Groups core,compare`를 더합니다. `dev:local`은 화면 `http://127.0.0.1:5173/`와 API `127.0.0.1:3001`을 이 PC에 엽니다. 종료는 Ctrl+C입니다. 화상 코칭은 `/coaching`에서 시작합니다.
+
+**다른 기기와 시연**
+
+```powershell
+npm.cmd run demo:tunnel
+```
+
+Cloudflare Quick Tunnel로 이 PC의 앱을 인터넷에 엽니다. 접근 비밀번호가 없으면 만들어 `secrets.env`에 저장하고, 기본 4시간 뒤 자동으로 닫습니다. 서로 다른 네트워크에서는 중계 서버가 필요할 수 있습니다. `secrets.env`의 `TURN_URLS`, `TURN_USERNAME`, `TURN_CREDENTIAL`을 채운 뒤 `npm.cmd run check:turn`으로 확인하세요. [사람 시연 대본](docs/testing/two-way-coaching.md)
 
 회의 전 상태 점검:
 
@@ -78,16 +89,6 @@ npm.cmd run beta:check -- --warmup
 ```
 
 첫 명령은 준비 상태만 확인합니다. `--warmup`은 가상 상담 문장으로 로컬 HTTP 요청 1회를 보내 모델을 준비시키며 일일 요청 한도 1회를 사용합니다. 브라우저 기록은 저장하지 않습니다. [로컬 설치·설정](docs/testing/local-ai.md) · [음성 실행기](docs/testing/local-speech.md) · [15분 시연](docs/testing/beta-test-script.md)
-
-**실시간 상담 추가 설치**
-
-```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File scripts/setup-speech-candidates.ps1
-```
-
-이 스크립트는 비교 후보 3개와 GPU 실행기를 약 10.8GB 다운로드하고 해시를 검증합니다.
-`.env`에 `FEATURE_LIVE_CONSULTATION_ENABLED=true`, `LIVE_SPEECH_MODEL=whisper-turbo`를 설정한 뒤
-서버를 다시 시작합니다. 상담 시작 시 GPU 음성 모델을 준비하고, 전사 종료 후 음성 모델을 해제합니다. 카메라 상담은 이미지 입력을 지원하는 로컬 `qwen3.5:9b`로 장면을 분석한 뒤 일지를 만듭니다. 현재 PC에는 해당 모델이 설치돼 있습니다.
 
 ## 사용 흐름과 확인
 
@@ -100,6 +101,8 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts/setup-speech-candida
 AI 요청 실패·검증 실패 때 원문을 유지하고 수동 검토 초안을 표시할 수 있습니다. 이 경우 AI 성공으로 기록하지 않습니다. 개인정보 패턴 일부는 텍스트 요청 전에 가리지만 모든 항목을 찾지는 못합니다. 음성은 받아쓰기 요청 때 이 PC의 로컬 서버에서 처리됩니다. 서버는 요청용 임시 파일을 처리 후 삭제합니다. 브라우저 저장 자료는 자동 백업·기기 간 동기화되지 않으며 JSON은 내보내기만 지원합니다.
 
 ## 검증
+
+2026-11-03 쌍방향 통화는 단위 테스트 685개, 브라우저 테스트 25개를 통과했습니다. 서로 다른 Chrome 2개가 실제 WebRTC로 합성 영상과 소리를 주고받는 테스트가 GitHub Actions에서도 돕니다. 터널, 실제 휴대폰, 중계 서버는 사람 시연으로 확인해야 합니다. [검증 상세](docs/llm/two-way-step-1.md)
 
 2026-10-07 브리핑 개선은 단위 테스트 450개(`--maxWorkers=2`), 관련 Chrome 테스트 5개, 브리핑 자료 평가 12개와 빌드를 통과했습니다. 실제 로컬 모델의 가상 사례 1건은 약 12.2초 걸렸습니다. 전체 Chrome 검증에서는 녹화 2건이 실패했고, 변경 전 코드에서도 같은 WebM 오류가 재현됐습니다. 카메라·녹화 문제는 별도 보류 중입니다. [이번 브리핑 검증 상세](docs/llm/consultation-brief-verification.md)
 
@@ -119,7 +122,7 @@ npm.cmd run llm:eval:workspace -- --feature owner --case bark-delivery --live
 
 ## 실행 범위
 
-로컬 실행에는 API 크레딧이 필요하지 않습니다. 텍스트 모델은 `qwen3.5:9b`, 새 실시간 상담의 선택 모델은 `Whisper large-v3-turbo`입니다. 기존 짧은 녹음 입력은 `WHISPER_EXECUTABLE`·`WHISPER_MODEL_PATH` 설정을 사용합니다. `LIVE_SPEECH_MODEL`은 실시간 상담 모델을 선택합니다. `LESSON_CATALOG_PATH`가 비어 있으면 레슨 후보가 없습니다.
+로컬 실행에는 API 크레딧이 필요하지 않습니다. 텍스트 모델은 `LLM_MODEL`(기본 `gemma4-12b`), 음성 모델은 `SPEECH_MODEL`(기본 `qwen-asr`)로 고릅니다. `LESSON_CATALOG_PATH`가 비어 있으면 레슨 후보가 없습니다.
 
 공개 GitHub Pages는 AI 없는 정적 체험판으로 유지됩니다. 로컬 빌드 확인은 `npm.cmd run build` 뒤 `npm.cmd start`로 할 수 있습니다. 외부 호스팅은 현재 로컬 Ollama·Whisper 실행 경로가 아니므로 회의 AI 시연에 사용하지 않습니다. [실행·배포 범위](docs/testing/deployment.md) · [기능별 테스트](docs/testing/workspace-testing.md)
 

@@ -11,10 +11,10 @@ vi.mock('node:fs', () => ({ statSync: mocks.stat }));
 afterEach(() => { vi.unstubAllGlobals(); vi.clearAllMocks(); });
 
 it('keeps live consultation disabled by default and accepts only local speech models', () => {
-  expect(readConfig({})).toMatchObject({ liveConsultationEnabled: false, liveSpeechModel: 'whisper-turbo' });
+  expect(readConfig({})).toMatchObject({ liveConsultationEnabled: false, liveSpeechModel: 'qwen-asr' });
   expect(readConfig({ FEATURE_LIVE_CONSULTATION_ENABLED: 'true' }).liveConsultationEnabled).toBe(true);
-  expect(readConfig({ SPEECH_MODEL: 'cohere' }).liveSpeechModel).toBe('cohere');
-  expect(readConfig({ SPEECH_MODEL: 'cohere', LIVE_SPEECH_MODEL: 'whisper-turbo' }).liveSpeechModel).toBe('cohere');
+  expect(readConfig({ SPEECH_MODEL: 'whisper-turbo' }).liveSpeechModel).toBe('whisper-turbo');
+  expect(readConfig({ SPEECH_MODEL: 'qwen-asr', LIVE_SPEECH_MODEL: 'whisper-turbo' }).liveSpeechModel).toBe('qwen-asr');
   expect(() => readConfig({ SPEECH_MODEL: 'remote-api' })).toThrow(/SPEECH_MODEL/);
   expect(() => readConfig({ LIVE_SPEECH_MODEL: 'remote-api' })).toThrow(/SPEECH_MODEL/);
 });

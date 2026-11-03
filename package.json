@@ -6,6 +6,9 @@
   "scripts": {
     "dev": "node scripts/dev.mjs",
     "dev:local": "node --env-file-if-exists=.env scripts/dev.mjs --local",
+    "demo:tunnel": "node --env-file-if-exists=.env scripts/demo-tunnel.ts",
+    "check:tunnel": "node --env-file-if-exists=.env scripts/check-tunnel.ts",
+    "check:turn": "node --env-file-if-exists=.env scripts/check-turn.ts",
     "local:check": "node --env-file-if-exists=.env scripts/check-local.ts",
     "beta:check": "node --env-file-if-exists=.env scripts/beta-check.ts",
     "llm:eval:local": "node --env-file-if-exists=.env scripts/eval-local.ts",
@@ -32,7 +35,6 @@
     "multer": "^2.4.0",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
-    "transcribe-cpp": "0.4.1",
     "ws": "8.22.1",
     "zod": "^4.6.5"
   },
