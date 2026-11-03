@@ -22,6 +22,11 @@ describe('scoreDelivered', () => {
   it('counts a missed fact', () => {
     expect(scoreDelivered(dialogue, note({ guardianReports: [claim('초인종에 짖는다')] })).factRecall).toBe(0.5);
   });
+  it('credits what a guardian said when it sits under a behavior, which still shows who said it', () => {
+    const entry = (speaker: 'guardian' | 'trainer') => ({ id: 'b', title: '짖음', context: [{ ...claim('초인종에 세 번 짖는다'), evidence: [{ ...evidence[0], speaker }] }], behavior: [], response: [], unknown: [] });
+    expect(scoreDelivered(dialogue, note({ guardianReports: [], behaviors: [entry('guardian')] })).attributionRecall).toBe(1);
+    expect(scoreDelivered(dialogue, note({ guardianReports: [], behaviors: [entry('trainer')] })).attributionRecall).toBe(0);
+  });
   it('wants a field the dialogue never states to stay empty', () => {
     expect(scoreDelivered(dialogue, note({ tasks: [task({ frequency: '하루 세 번' })] })).taskFieldRecall).toBeCloseTo(2 / 3);
   });

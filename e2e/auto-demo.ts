@@ -202,7 +202,7 @@ async function run() {
     const when = g.getByLabel('언제였나요');
     await cutWhile(() => when.waitFor({ timeout: steady(60_000) }));
     await when.fill((await when.getAttribute('max'))!);
-    await g.getByRole('button', { name: '저장' }).click();
+    await g.getByRole('button', { name: '저장', exact: true }).click();
     await expect(g.getByText(/저장했습니다/)).toBeVisible();
     step('보호자가 일상 기록을 남깁니다');
     await beat(g, 2500);

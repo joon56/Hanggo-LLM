@@ -81,7 +81,12 @@ export function scoreDelivered(dialogue: GoldenDialogue, note: CoachingNote) {
   const unsupported = [...sections, ...note.tasks.map(task => ({ text: [task.text, task.frequency].filter(Boolean).join(' '), evidence: task.evidence }))]
     .flatMap(item => numbersSupported(item.text, item.evidence.map(entry => entry.quote)));
   const attributions = dialogue.attributions ?? [];
-  const inSection = (section: string) => (note[section as 'guidance'] ?? []).map((item: Claim_) => item.text).join('\n');
+  // What someone said about a problem behavior belongs in its entry, and its evidence still shows who said it.
+  const inSection = (section: string) => {
+    const speaker = ({ guardianReports: 'guardian', trainerObservations: 'trainer' } as Record<string, string>)[section];
+    const elsewhere = speaker ? [...note.concerns, ...note.behaviors.flatMap(item => [...item.context, ...item.behavior, ...item.response])].filter(item => item.evidence.some(entry => entry.speaker === speaker)) : [];
+    return [...(note[section as 'guidance'] ?? []), ...elsewhere].map((item: Claim_) => item.text).join('\n');
+  };
   return {
     factRecall: dialogue.expectedFacts.length ? (dialogue.expectedFacts.length - missedFacts.length) / dialogue.expectedFacts.length : 1, missedFacts,
     taskRecall: dialogue.expectedTasks.length ? matched.filter(item => item.task).length / dialogue.expectedTasks.length : null,
