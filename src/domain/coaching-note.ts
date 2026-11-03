@@ -173,14 +173,26 @@ const sortedNumbers = (text: string) => String(extractNumbers(text).sort());
 export const sameFact = (left: string, right: string, threshold = REPEAT_SIMILARITY) =>
   similarity(plain(left), plain(right)) >= threshold && NEGATION.test(left) === NEGATION.test(right) && sortedNumbers(left) === sortedNumbers(right);
 
+/** Models sometimes file a whole section as a behavior named after its field. Those sentences go back where they belong and are checked there. */
+function withSectionsRefiled(raw: RawNote): RawNote {
+  const sentences = (item: RawBehavior) => [...item.context, ...item.behavior, ...item.response];
+  const filedAs = (name: string) => raw.behaviors.filter(item => item.title.trim().toLowerCase() === name.toLowerCase()).flatMap(sentences);
+  const fields = ['summary', 'concerns', 'guardianReports', 'trainerObservations', 'guidance', 'followUps'] as const;
+  return { ...raw,
+    behaviors: raw.behaviors.filter(item => ![...fields, 'tasks'].some(name => item.title.trim().toLowerCase() === name.toLowerCase())),
+    ...Object.fromEntries(fields.map(name => [name, [...raw[name], ...filedAs(name)]])),
+    tasks: [...raw.tasks, ...filedAs('tasks').map(item => ({ text: item.text, who: null, frequency: null, until: null, successCriteria: null, evidence: item.evidence }))] };
+}
+
 /** Sentences come from the model, but citations and times always come from the record, and anything unsupported is left out. */
-export function assembleNote(raw: RawNote, source: NoteSource, createdAt: string) {
+export function assembleNote(answer: RawNote, source: NoteSource, createdAt: string) {
+  const raw = withSectionsRefiled(answer);
   const violations: NoteViolation[] = [];
   const reject = (section: string, text: string, reasons: string[]) => { violations.push({ section, text, reasons }); };
   const claims = (section: string, items: RawClaim[]): Claim[] => items.flatMap(item => {
     const text = item.text.replace(ALIAS_MARKER, '').trim();
-    // The schema names the word "unknown", and a model sometimes writes it as a sentence.
-    if (!text || /^unknown$/i.test(text)) return [];
+    // The schema names these words, and a model sometimes writes one as a sentence.
+    if (!text || /^(?:unknown|true|false|null)$/i.test(text)) return [];
     const { evidence: cited, wrongSpeaker } = evidenceFor(section, item.evidence, source);
     const evidence = withSupportingLines(section, text, cited, source);
     const reasons = wrongSpeaker ? [`${wrongSpeaker} 발화를 근거로 써야 합니다.`] : problemsWith(section, text, evidence, source);

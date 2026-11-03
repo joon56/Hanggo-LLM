@@ -27,5 +27,5 @@
   "unknown": [],
   "expectedSafetyFlags": ["절뚝거림", "갑작스러운 공격성", "식욕 저하"],
   "expectedMethodReview": false,
-  "forbiddenClaims": ["관절염", "슬개골", "골절", "진단", "통증이 원인", "완치", "약을"]
+  "forbiddenClaims": ["관절염", "슬개골", "골절", "진단", "통증이 원인", "완치", "약을 먹", "약을 주", "약을 드", "약을 써"]
 }
