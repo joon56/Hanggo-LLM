@@ -26,7 +26,7 @@ function LiveCall({ consultationId, room, choice, forceRelay, navigate }: { cons
   const [facing, setFacing] = useState<'user' | 'environment'>(choice.preference.facingMode ?? 'user');
   useEffect(() => { if (choice.consent) void setConsent(consultationId, true); }, [choice.consent, consultationId]);
   if (notice) return <main className="coach-page"><section className="coach-card coach-narrow"><p role="status">{notice}</p></section></main>;
-  return <CallStage caseId={room.caseId} role={room.role} petName={room.petName} canShare={canShareScreen()} call={call} mirrorSelf={facing === 'user'}
+  return <CallStage caseId={room.caseId} relayAvailable={room.ice.relayAvailable} onRetry={() => location.reload()} role={room.role} petName={room.petName} canShare={canShareScreen()} call={call} mirrorSelf={facing === 'user'}
     onToggleMicrophone={() => session.toggleMicrophone()} onToggleCamera={() => session.toggleCamera()}
     onSwitchCamera={() => { const next = facing === 'user' ? 'environment' : 'user'; void openDevices({ microphone: false, facingMode: next }).then(({ stream }) => {
       const [track] = stream.getVideoTracks();

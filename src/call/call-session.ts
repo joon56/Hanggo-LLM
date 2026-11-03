@@ -42,6 +42,7 @@ type Options = {
 };
 
 const DISCONNECT_GRACE_MS = 5000;
+const CONNECT_LIMIT_MS = 30000;
 const STATS_INTERVAL_MS = 1000;
 const CLOCK_PING_DELAYS_MS = [0, 250, 500];
 const NO_STATS: CallStats = { inboundVideoFrames: 0, inboundAudioBytes: 0, inboundAudioEnergy: 0, roundTripMs: null, relayed: false };
@@ -59,6 +60,7 @@ export class CallSession {
   private canOffer = false;
   private needsOffer = false;
   private restartTimer: ReturnType<typeof setTimeout> | undefined;
+  private connectTimer: ReturnType<typeof setTimeout> | undefined;
   private statsTimer: ReturnType<typeof setInterval> | undefined;
   private screenStream: MediaStream | null = null;
   private screenSenders: RTCRtpSender[] = [];
@@ -82,7 +84,19 @@ export class CallSession {
   }
 
   snapshot() { return this.snapshotValue; }
-  private update(change: Partial<CallSnapshot>) { this.snapshotValue = { ...this.snapshotValue, ...change }; this.options.onChange?.(); }
+  private update(change: Partial<CallSnapshot>) {
+    this.snapshotValue = { ...this.snapshotValue, ...change };
+    this.watchConnection();
+    this.options.onChange?.();
+  }
+
+  /** Trying forever looks the same as working, so a connection that stays down is reported. It can still recover afterwards. */
+  private watchConnection() {
+    const { status } = this.snapshotValue;
+    if (status === 'connecting' || status === 'reconnecting') {
+      this.connectTimer ??= setTimeout(() => { this.connectTimer = undefined; this.update({ status: 'failed' }); }, CONNECT_LIMIT_MS);
+    } else if (status !== 'failed') { clearTimeout(this.connectTimer); this.connectTimer = undefined; }
+  }
 
   start() {
     this.buildPeer();
@@ -343,7 +357,7 @@ export class CallSession {
   }
 
   leave() {
-    clearTimeout(this.restartTimer); clearInterval(this.statsTimer);
+    clearTimeout(this.restartTimer); clearInterval(this.statsTimer); clearTimeout(this.connectTimer);
     this.clockTimers.forEach(clearTimeout);
     this.options.recorder?.stop({ flush: true });
     this.screenStream?.getTracks().forEach(track => track.stop());
@@ -351,5 +365,6 @@ export class CallSession {
     this.peer?.close();
     this.signal?.close();
     this.update({ status: 'left' });
+    clearTimeout(this.connectTimer);
   }
 }

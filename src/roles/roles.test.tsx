@@ -320,6 +320,18 @@ describe('CallStage', () => {
     render(<CallStage role="guardian" caseId="case-1" petName="초코" canShare call={snapshot()} {...actions} />);
     expect(screen.queryByRole('button', { name: '브리핑' })).toBeNull();
   });
+  it('offers a retry when the connection failed, and says when a missing relay may be why', () => {
+    const onRetry = vi.fn();
+    const actions = handlers();
+    const { unmount } = render(<CallStage role="trainer" petName="초코" canShare call={snapshot({ status: 'failed' })} relayAvailable={false} onRetry={onRetry} {...actions} />);
+    expect(screen.getByRole('status')).toHaveTextContent('중계 서버');
+    fireEvent.click(screen.getByRole('button', { name: '다시 연결' }));
+    expect(onRetry).toHaveBeenCalled();
+    unmount();
+    render(<CallStage role="trainer" petName="초코" canShare call={snapshot({ status: 'failed' })} relayAvailable onRetry={onRetry} {...actions} />);
+    expect(screen.getByRole('status')).not.toHaveTextContent('중계 서버');
+    expect(screen.getByRole('status')).toHaveTextContent('연결하지 못했습니다');
+  });
   it('offers the catch button only while recording', () => {
     const { actions } = setup({ recording: true });
     fireEvent.click(screen.getByRole('button', { name: '캐치' }));

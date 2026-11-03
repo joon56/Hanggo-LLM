@@ -61,21 +61,23 @@ function MomentBar({ moment, role, onMemo }: { moment: MomentNotice; role: Speak
 type Props = {
   /** Lets the trainer read the brief without leaving the call. */
   caseId?: string;
+  relayAvailable?: boolean;
+  onRetry?(): void;
   role: Speaker; petName: string; canShare: boolean; call: CallSnapshot; mirrorSelf?: boolean;
   onToggleMicrophone(): void; onToggleCamera(): void; onSwitchCamera(): void; onStartShare(): void; onStopShare(): void; onLeave(): void; onEnd(): void; onConsent(value: boolean): void; onCatch(): void; onMemo(momentId: string, text: string): void;
 };
 
-function statusMessage(call: CallSnapshot) {
+function statusMessage(call: CallSnapshot, relayAvailable?: boolean) {
   if (!call.peerOnline) return '상대를 기다리고 있습니다.';
   if (call.status === 'connecting' || call.status === 'waiting') return '상대와 연결하고 있습니다.';
   if (call.status === 'reconnecting') return '연결이 끊겨 다시 연결하고 있습니다. 기록된 내용은 보존됩니다.';
-  if (call.status === 'failed') return '연결하지 못했습니다. 네트워크를 확인한 뒤 다시 입장해 주세요.';
+  if (call.status === 'failed') return relayAvailable === false ? '연결하지 못했습니다. 중계 서버가 설정되지 않아 서로 다른 네트워크끼리는 연결되지 않을 수 있습니다.' : '연결하지 못했습니다. 네트워크를 확인한 뒤 다시 연결해 주세요.';
   return '';
 }
 
-export function CallStage({ caseId, role, petName, canShare, call, mirrorSelf, onToggleMicrophone, onToggleCamera, onSwitchCamera, onStartShare, onStopShare, onLeave, onEnd, onConsent, onCatch, onMemo }: Props) {
+export function CallStage({ caseId, relayAvailable, onRetry, role, petName, canShare, call, mirrorSelf, onToggleMicrophone, onToggleCamera, onSwitchCamera, onStartShare, onStopShare, onLeave, onEnd, onConsent, onCatch, onMemo }: Props) {
   const peerSharing = !!call.remoteScreen && call.peerMedia.screen;
-  const message = statusMessage(call);
+  const message = statusMessage(call, relayAvailable);
   const peerName = role === 'trainer' ? '보호자' : '훈련사';
   const ownConsent = call.consent[role];
   const cameraOff = !call.peerMedia.camera ? `${peerName} 카메라 꺼짐` : undefined;
@@ -94,7 +96,7 @@ export function CallStage({ caseId, role, petName, canShare, call, mirrorSelf, o
       {call.stats.relayed && <span className="call-chip">중계 연결</span>}
       {call.stats.roundTripMs !== null && <span className="call-chip">지연 {call.stats.roundTripMs}ms</span>}
     </header>
-    {message && <p role="status" className="call-status">{message}</p>}
+    {message && <p role="status" className="call-status">{message}{call.status === 'failed' && onRetry && <button className="call-link" onClick={onRetry}>다시 연결</button>}</p>}
     {call.error && <p role="alert" className="call-status is-error">{call.error}</p>}
     {call.lastMoment && <MomentBar key={call.lastMoment.id} moment={call.lastMoment} role={role} onMemo={onMemo} />}
     {briefOpen && caseId && <aside className="call-brief"><CaseBrief caseId={caseId} /></aside>}

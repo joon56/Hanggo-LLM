@@ -374,3 +374,45 @@ describe('recording', () => {
     expect(session.snapshot().uploadLost).toBe(true);
   });
 });
+
+describe('a connection that never comes up', () => {
+  it('reports failure after thirty seconds with the peer online, instead of saying connecting forever', async () => {
+    const { session, signal } = build('trainer');
+    signal.emit({ type: 'hello', role: 'trainer', serverNow: 1, peerOnline: true }); await flush();
+    await vi.advanceTimersByTimeAsync(29_000);
+    expect(session.snapshot().status).toBe('connecting');
+    await vi.advanceTimersByTimeAsync(2_000);
+    expect(session.snapshot().status).toBe('failed');
+  });
+  it('recovers by itself if the connection comes up late', async () => {
+    const { session, signal, peer } = build('trainer');
+    signal.emit({ type: 'hello', role: 'trainer', serverNow: 1, peerOnline: true }); await flush();
+    await vi.advanceTimersByTimeAsync(31_000);
+    peer().setIce('connected');
+    expect(session.snapshot().status).toBe('connected');
+  });
+  it('does not fail while simply waiting for the other person', async () => {
+    const { session, signal } = build('trainer');
+    signal.emit({ type: 'hello', role: 'trainer', serverNow: 1, peerOnline: false }); await flush();
+    await vi.advanceTimersByTimeAsync(120_000);
+    expect(session.snapshot().status).toBe('waiting');
+  });
+  it('gives a dropped connection the same time to recover', async () => {
+    const { session, signal, peer } = build('trainer');
+    signal.emit({ type: 'hello', role: 'trainer', serverNow: 1, peerOnline: true }); await flush();
+    peer().setIce('connected');
+    await vi.advanceTimersByTimeAsync(60_000);
+    peer().setIce('disconnected');
+    await vi.advanceTimersByTimeAsync(29_000);
+    expect(session.snapshot().status).toBe('reconnecting');
+    await vi.advanceTimersByTimeAsync(2_000);
+    expect(session.snapshot().status).toBe('failed');
+  });
+  it('does not fire after leaving', async () => {
+    const { session, signal } = build('trainer');
+    signal.emit({ type: 'hello', role: 'trainer', serverNow: 1, peerOnline: true }); await flush();
+    session.leave();
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(session.snapshot().status).toBe('left');
+  });
+});
