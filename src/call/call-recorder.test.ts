@@ -222,6 +222,19 @@ describe('scenes', () => {
     expect(uploadAudio.mock.calls.length).toBe(attempts + 1);
     expect(onLost).not.toHaveBeenCalled();
   });
+  it('can wait for everything still being sent', async () => {
+    const { recorder, clock, speak, uploadAudio } = build('guardian');
+    let finish!: () => void;
+    uploadAudio.mockImplementationOnce(() => new Promise<void>(resolve => { finish = resolve; }));
+    recorder.start(clock); await flush();
+    speak(voice(1000)); recorder.stop({ flush: true }); await flush();
+    let drained = false;
+    void recorder.drain().then(() => { drained = true; });
+    await flush();
+    expect(drained).toBe(false);
+    finish(); await flush();
+    expect(drained).toBe(true);
+  });
   it('reports frames that could not be delivered', async () => {
     const { recorder, clock, uploadFrame, onLost, advance } = build('guardian');
     uploadFrame.mockRejectedValue(new Error('refused'));

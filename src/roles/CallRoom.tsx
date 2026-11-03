@@ -11,20 +11,25 @@ import './call.css';
 
 const canShareScreen = () => typeof navigator.mediaDevices?.getDisplayMedia === 'function';
 const isPhone = () => /Android|iPhone|iPad|Mobile/i.test(navigator.userAgent);
-type Room = { role: Speaker; caseId: string; petName: string; ice: IceConfig; home: string };
+type Room = { role: Speaker; caseId: string; petName: string; ice: IceConfig; home: string; consented: boolean };
 
 function LiveCall({ consultationId, room, choice, forceRelay, navigate }: { consultationId: string; room: Room; choice: JoinChoice; forceRelay: boolean; navigate: (path: string) => void }) {
   const [notice, setNotice] = useState('');
   // Ending the call reaches here twice, from the request and from the socket closing. A second navigation would abort the first.
   const left = useRef(false);
-  const goHome = useCallback(() => { if (!left.current) { left.current = true; navigate(room.home); } }, [navigate, room.home]);
+  const sessionRef = useRef<{ finish(): Promise<void> } | null>(null);
+  const goHome = useCallback(() => {
+    if (left.current) return;
+    left.current = true;
+    void (sessionRef.current?.finish() ?? Promise.resolve()).finally(() => navigate(room.home));
+  }, [navigate, room.home]);
   const onClosedForGood = useCallback((code: number) => {
     if (code === 4001) setNotice('다른 탭이나 기기에서 입장해 이 화면의 연결을 닫았습니다.');
     else goHome();
   }, [goHome]);
   const { session, ...call } = useCall({ consultationId, role: room.role, iceServers: room.ice.iceServers, localStream: choice.stream, forceRelay, onClosedForGood });
+  sessionRef.current = session;
   const [facing, setFacing] = useState<'user' | 'environment'>(choice.preference.facingMode ?? 'user');
-  useEffect(() => { if (choice.consent) void setConsent(consultationId, true); }, [choice.consent, consultationId]);
   if (notice) return <main className="coach-page"><section className="coach-card coach-narrow"><p role="status">{notice}</p></section></main>;
   return <CallStage caseId={room.caseId} relayAvailable={room.ice.relayAvailable} onRetry={() => location.reload()} role={room.role} petName={room.petName} canShare={canShareScreen()} call={call} mirrorSelf={facing === 'user'}
     onToggleMicrophone={() => session.toggleMicrophone()} onToggleCamera={() => session.toggleCamera()}
@@ -51,7 +56,7 @@ export function CallRoom({ consultationId, navigate, forceRelay = new URLSearchP
         const home = me.role === 'guardian' ? '/guardian' : '/coaching';
         if (consultation.state !== 'live') { navigate(home); return; }
         const [detail, ice] = await Promise.all([getCase(consultation.caseId), getIce(consultationId)]);
-        setRoom({ role: me.role, caseId: consultation.caseId, petName: detail.petName, ice, home });
+        setRoom({ role: me.role, caseId: consultation.caseId, petName: detail.petName, ice, home, consented: consultation.consent[me.role] });
       } catch (cause) { setError(apiMessage(cause, '상담 정보를 불러오지 못했습니다.')); }
     })();
   }, [consultationId, navigate]);
@@ -59,6 +64,10 @@ export function CallRoom({ consultationId, navigate, forceRelay = new URLSearchP
   const openPreview = useCallback((preference: DevicePreference) => openDevices({ ...preference, facingMode: preference.facingMode ?? (room?.role === 'guardian' && isPhone() ? 'environment' : undefined) }), [room?.role]);
   if (error) return <main className="coach-page"><section className="coach-card coach-narrow"><p role="alert" className="coach-error">{error}</p></section></main>;
   if (!room) return <main className="coach-page"><p role="status">상담 정보를 불러오는 중입니다.</p></main>;
-  if (!choice) return <PreJoin petName={room.petName} role={room.role} caseId={room.caseId} relayAvailable={room.ice.relayAvailable} openPreview={openPreview} onJoin={setChoice} />;
+  if (!choice) return <PreJoin petName={room.petName} role={room.role} caseId={room.caseId} consented={room.consented} relayAvailable={room.ice.relayAvailable} openPreview={openPreview} onJoin={next => {
+    // Before connecting, so a withdrawal on this screen stops recording before this browser could start it.
+    if (next.consent === room.consented) { setChoice(next); return; }
+    setConsent(consultationId, next.consent).then(() => setChoice(next), cause => setError(apiMessage(cause, '동의 상태를 바꾸지 못했습니다. 다시 시도해 주세요.')));
+  }} />;
   return <LiveCall consultationId={consultationId} room={room} choice={choice} forceRelay={forceRelay} navigate={navigate} />;
 }

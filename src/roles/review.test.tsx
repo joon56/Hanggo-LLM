@@ -107,6 +107,47 @@ describe('ReviewRoom', () => {
     expect(window.confirm).toHaveBeenCalled();
     expect(api.saveNote.mock.invocationCallOrder[0]).toBeLessThan(api.approveConsultation.mock.invocationCallOrder[0]);
   });
+  it('keeps unsaved edits when regenerating is refused', async () => {
+    api.regenerateNote.mockRejectedValue(new ApiError('다른 상담을 기록하는 중에는 일지를 다시 만들 수 없습니다.', 'GPU_BUSY'));
+    api.saveNote.mockResolvedValue(consultation());
+    await open();
+    fireEvent.change(screen.getByLabelText('핵심 요약 문장'), { target: { value: '고친 문장' } });
+    await userEvent.click(screen.getByRole('button', { name: '일지 다시 만들기' }));
+    await screen.findByRole('alert');
+    await userEvent.click(screen.getByRole('button', { name: '임시 저장' }));
+    await waitFor(() => expect(api.saveNote).toHaveBeenCalled());
+    expect(api.saveNote.mock.calls[0][1].summary[0].text).toBe('고친 문장');
+  });
+  it('keeps what was typed while a save was on its way', async () => {
+    let finishSave!: (value: Consultation) => void;
+    api.saveNote.mockReturnValueOnce(new Promise(resolve => { finishSave = resolve; }));
+    await open();
+    const field = () => screen.getByLabelText('핵심 요약 문장');
+    fireEvent.change(field(), { target: { value: '첫 수정' } });
+    await userEvent.click(screen.getByRole('button', { name: '임시 저장' }));
+    fireEvent.change(field(), { target: { value: '저장 중에 더 고침' } });
+    finishSave(consultation({ note: note({ summary: [{ id: 'c1', text: '첫 수정', evidence: [said] }] }) }));
+    await screen.findByText('저장했습니다.');
+    expect(field()).toHaveValue('저장 중에 더 고침');
+    api.saveNote.mockResolvedValue(consultation());
+    await userEvent.click(screen.getByRole('button', { name: '임시 저장' }));
+    await waitFor(() => expect(api.saveNote).toHaveBeenCalledTimes(2));
+    expect(api.saveNote.mock.calls[1][1].summary[0].text).toBe('저장 중에 더 고침');
+  });
+  it('lets the trainer mark a safety flag as not applying, and undo it', async () => {
+    api.getConsultation.mockResolvedValue(consultation({ note: note({ safetyFlags: ['통증', '구토'] }) }));
+    api.saveNote.mockResolvedValue(consultation());
+    await open();
+    await userEvent.click(screen.getByRole('button', { name: '통증 해당 없음' }));
+    expect(screen.getByRole('alert')).not.toHaveTextContent('통증');
+    expect(screen.getByRole('alert')).toHaveTextContent('구토');
+    await userEvent.click(screen.getByRole('button', { name: '통증 되돌리기' }));
+    expect(screen.getByRole('alert')).toHaveTextContent('통증');
+    await userEvent.click(screen.getByRole('button', { name: '통증 해당 없음' }));
+    await userEvent.click(screen.getByRole('button', { name: '임시 저장' }));
+    await waitFor(() => expect(api.saveNote).toHaveBeenCalled());
+    expect(api.saveNote.mock.calls[0][1].dismissedFlags).toEqual(['통증']);
+  });
   it('stays editable and shows why when approval is blocked', async () => {
     api.approveConsultation.mockRejectedValue(new ApiError('금지 표현을 고쳐 주세요: 치료', 'NOTE_BLOCKED'));
     await open();

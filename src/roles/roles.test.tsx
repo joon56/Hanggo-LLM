@@ -167,9 +167,31 @@ describe('GuardianJoin', () => {
   });
   it('explains an invalid invite', async () => {
     api.joinWithInvite.mockRejectedValue(new ApiError('Invite is invalid or expired.', 'INVITE'));
+    api.getMe.mockRejectedValue(new ApiError('로그인이 필요합니다.', 'AUTH'));
     render(<GuardianJoin token="token" navigate={vi.fn()} userAgent="Chrome" />);
     await userEvent.click(screen.getByRole('button', { name: '상담 입장 준비' }));
     expect(await screen.findByRole('alert')).toHaveTextContent('훈련사에게 새 링크');
+  });
+});
+
+describe('GuardianJoin with a link already used on this device', () => {
+  const press = () => userEvent.click(screen.getByRole('button', { name: '상담 입장 준비' }));
+  it('goes straight to the guardian screen instead of saying the link expired', async () => {
+    api.joinWithInvite.mockRejectedValue(new ApiError('Invite is invalid or expired.', 'INVITE'));
+    api.getMe.mockResolvedValue({ role: 'guardian', caseId: 'case-1' });
+    const navigate = vi.fn();
+    render(<GuardianJoin token="t" navigate={navigate} userAgent="Chrome" />);
+    await press();
+    await waitFor(() => expect(navigate).toHaveBeenCalledWith('/guardian'));
+  });
+  it('still explains an expired link to someone without a session', async () => {
+    api.joinWithInvite.mockRejectedValue(new ApiError('Invite is invalid or expired.', 'INVITE'));
+    api.getMe.mockRejectedValue(new ApiError('로그인이 필요합니다.', 'AUTH'));
+    const navigate = vi.fn();
+    render(<GuardianJoin token="t" navigate={navigate} userAgent="Chrome" />);
+    await press();
+    expect(await screen.findByRole('alert')).toHaveTextContent('이미 쓰였거나 만료');
+    expect(navigate).not.toHaveBeenCalled();
   });
 });
 
@@ -270,6 +292,15 @@ describe('PreJoin', () => {
     render(<PreJoin petName="초코" role="trainer" relayAvailable={false} openPreview={async () => ({ stream: stream(), missing: [{ device: 'camera', reason: 'not-found' }] })} onJoin={onJoin} />);
     expect(await screen.findByText(/카메라를 찾지 못했습니다/)).toBeInTheDocument();
     expect(screen.getByText(/다른 네트워크에서 연결이 실패할 수 있습니다/)).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: '입장' }));
+    expect(onJoin).toHaveBeenCalledWith(expect.objectContaining({ consent: false }));
+  });
+  it('shows consent given earlier as checked, so rejoining cannot hide that recording is on', async () => {
+    const onJoin = vi.fn();
+    render(<PreJoin petName="초코" role="guardian" relayAvailable consented openPreview={async () => ({ stream: { getTracks: () => [] } as unknown as MediaStream, missing: [] })} onJoin={onJoin} />);
+    const box = await screen.findByRole('checkbox');
+    expect(box).toBeChecked();
+    await userEvent.click(box);
     await userEvent.click(screen.getByRole('button', { name: '입장' }));
     expect(onJoin).toHaveBeenCalledWith(expect.objectContaining({ consent: false }));
   });

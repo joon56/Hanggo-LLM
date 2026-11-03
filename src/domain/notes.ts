@@ -11,7 +11,7 @@ export type ApprovedNote = { id: string; metadata: Metadata; draft: Draft; appro
 const categories: Category[] = ['owner_report', 'observation', 'guidance', 'task', 'follow_up'];
 const sourceKinds: SourceKind[] = ['trainer_summary_text', 'trainer_summary_voice'];
 const safetyPatterns: [string, RegExp][] = [
-  ['통증', /통증|아프|아파|아픈|pain/i],
+  ['통증', /통증|아프(?!리카)|아파(?!트)|아픈|pain/i],
   ['구토', /구토|토했|토함|토해|vomit/i],
   ['출혈', /출혈|피가\s*나|bleed/i],
   ['절뚝거림', /절뚝|다리를\s*절|limp/i],
@@ -20,9 +20,10 @@ const safetyPatterns: [string, RegExp][] = [
   ['발작', /발작|경련|seizure/i],
   ['설사', /설사|diarrh(?:ea|ea)/i],
   ['식욕 저하', /안\s*먹|먹지\s*않|식욕\s*(?:저하|없)|절반만\s*먹|not\s*eat/i],
-  ['물림', /물렸|물었|물린|깨물|bite|bitten/i],
+  // 물었 also means asked, so it only counts when nothing says a person was being asked.
+  ['물림', /물렸|물린|깨물|(?<!제가\s)(?<!께\s)(?<!에게\s)(?<!한테\s)(?<!고\s)물었|bite|bitten/i],
 ];
-export const methodPattern = /강압|체벌|때(?:리|렸|린|려)(?!지\s*(?:는|도)?\s*(?:말|않|마))|혼(?:내|냈)(?!지\s*(?:는|도)?\s*(?:말|않|마))|목줄을?\s*(?:강하게|세게|확)\s*당(?:기|겨)|억지로|coercive|aversive/i;
+export const methodPattern = /강압|체벌|때(?:리|렸|린|려)(?!지\s*(?:는|도)?\s*(?:말|않|마))|혼(?:내|냈)(?!지\s*(?:는|도)?\s*(?:말|않|마))|(?:목)?줄을?\s*(?:강하게|세게|확)\s*(?:당[기겨겼긴]|잡아채)|억지로|coercive|aversive/i;
 export const SAFETY_LABELS = safetyPatterns.map(([label]) => label);
 const bannedClaim = /확진|진단(?:입니다|이다|됨|됐)|반드시\s*(?:낫|완치)|100\s*%\s*(?:치료|완치|해결)|완치됩니다/i;
 const isObject = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);

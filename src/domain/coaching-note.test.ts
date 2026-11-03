@@ -2,7 +2,7 @@
 import { describe, expect, it } from 'vitest';
 import type { Consultation, Segment } from './coaching.ts';
 import { newConsultation } from './coaching.ts';
-import { approvalProblems, assembleNote, briefContextOf, buildNoteSource, deliveryOf, emptyNote, normalizeEditedNote, reviewedObservationClaims, type RawNote } from './coaching-note.ts';
+import { approvalProblems, assembleNote, briefContextOf, buildNoteSource, deliveryOf, emptyNote, normalizeEditedNote, reviewedObservationClaims, type CoachingNote, type Evidence, type RawNote } from './coaching-note.ts';
 
 const segment = (id: string, speaker: Segment['speaker'], startMs: number, text: string, change: Partial<Segment> = {}): Segment => ({ id, speaker, startMs, endMs: startMs + 3000, text, originalText: text, state: 'complete', ...change });
 const segments = [
@@ -295,5 +295,89 @@ describe('briefContextOf', () => {
     consultationRecord.note!.trainerObservations = [{ id: 'm', text: '귀가 먼저 움직임', evidence: [{ kind: 'moment', id: 'x', quote: '귀가 먼저 움직임', startMs: 2, endMs: 2, speaker: 'trainer' }] }];
     const kinds = briefContextOf(consultationRecord, info, 'Asia/Seoul').items.flatMap(item => item.evidence.map(entry => entry.kind));
     expect(kinds).toEqual(expect.arrayContaining(['vision', 'bookmark']));
+  });
+});
+
+describe('what must stay with the trainer', () => {
+  const said: Evidence = { kind: 'segment', id: 'b', quote: segments[1].text, startMs: 4000, endMs: 7000, speaker: 'trainer' };
+  const memo: Evidence = { kind: 'moment', id: 'm', quote: '비공개 메모', startMs: 0, endMs: 0, speaker: 'trainer' };
+  const approved = (change: Partial<CoachingNote>) => ({ ...assemble({}).note, approvedAt: 'x', ...change });
+  it('clears a task field that mentions a forceful method', () => {
+    const delivery = deliveryOf(approved({ tasks: [{ id: 't', text: '매트 연습', who: '보호자', frequency: null, until: null, successCriteria: '목줄을 세게 당기면 성공', evidence: [said] }] }));
+    expect(delivery.tasks[0]).toMatchObject({ text: '매트 연습', who: '보호자', successCriteria: null });
+  });
+  it('leaves out sentences and tasks that rest only on a private memo', () => {
+    const delivery = deliveryOf(approved({ trainerObservations: [{ id: 'o', text: '메모에만 있는 관찰', evidence: [memo] }, { id: 'p', text: '말로도 한 관찰', evidence: [memo, said] }], tasks: [{ id: 't', text: '메모에만 있는 과제', who: null, frequency: null, until: null, successCriteria: null, evidence: [memo] }] }));
+    expect(delivery.trainerObservations.map(item => item.text)).toEqual(['말로도 한 관찰']);
+    expect(delivery.tasks).toEqual([]);
+  });
+  it('keeps a sentence the trainer wrote by hand, which has no evidence to check', () => {
+    const delivery = deliveryOf(approved({ guidance: [{ id: 'g', text: '훈련사가 직접 쓴 안내', evidence: [], edited: true }] }));
+    expect(delivery.guidance).toHaveLength(1);
+  });
+  it('does not accept a memo as the evidence for a task or for guidance, because those must have been said', () => {
+    const withMemo = { moments: [{ id: 'm', atMs: 5000, createdBy: 'guardian' as const, text: '매트 연습을 시키기', frameIds: [] }] };
+    const result = assemble({ tasks: [task({ text: '매트 연습을 시키기', evidence: ['m01'] })], guidance: [claim('매트 연습을 시키기', 'm01')] }, withMemo);
+    expect(result.note.tasks).toEqual([]);
+    expect(result.note.guidance).toEqual([]);
+    expect(result.violations).toHaveLength(2);
+  });
+});
+
+describe('after the transcript changes', () => {
+  const said = (text: string): Consultation => consultation({ segments: [segment('a', 'guardian', 0, text)] });
+  const draftFrom = (record: Consultation) => assembleNote({ ...blank, guardianReports: [claim('초인종에 세 번쯤 짖는다', 's01')] }, buildNoteSource(record, info), 'now').note;
+  it('picks up safety signals the correction reveals', () => {
+    const note = draftFrom(said('초인종에 세 번쯤 짖어요'));
+    const { note: refreshed } = normalizeEditedNote(note, note, said('초인종에 세 번쯤 짖고 오늘 구토도 했어요'), info);
+    expect(refreshed.safetyFlags).toContain('구토');
+  });
+  it('blocks approval of a sentence its corrected evidence no longer supports', () => {
+    const note = draftFrom(said('초인종에 세 번쯤 짖어요'));
+    const { note: refreshed } = normalizeEditedNote(note, note, said('초인종에 두 번쯤 짖어요'), info);
+    expect(refreshed.guardianReports[0].evidence[0].quote).toBe('초인종에 두 번쯤 짖어요');
+    expect(approvalProblems(refreshed).join()).toContain('초인종에 세 번쯤 짖는다');
+  });
+  it('trusts a sentence the trainer has since rewritten', () => {
+    const note = draftFrom(said('초인종에 세 번쯤 짖어요'));
+    const { note: refreshed } = normalizeEditedNote(note, note, said('초인종에 두 번쯤 짖어요'), info);
+    const rewritten = structuredClone(refreshed);
+    rewritten.guardianReports[0].text = '초인종에 세 번 이상 짖는다고 훈련사가 확인함';
+    const { note: saved } = normalizeEditedNote(rewritten, refreshed, said('초인종에 두 번쯤 짖어요'), info);
+    expect(approvalProblems(saved)).toEqual([]);
+  });
+});
+
+describe('dismissing a safety flag', () => {
+  const risky = consultation({ segments: [segment('a', 'guardian', 0, '오늘 구토를 했고 다리를 절뚝거려요')] });
+  const note = assembleNote(blank, buildNoteSource(risky, info), 'now').note;
+  it('keeps the flag on record but leaves it out of the delivery', () => {
+    const { note: saved } = normalizeEditedNote({ ...note, dismissedFlags: ['구토'] }, note, risky, info);
+    expect(saved.safetyFlags.sort()).toEqual(['구토', '절뚝거림']);
+    expect(saved.dismissedFlags).toEqual(['구토']);
+    expect(deliveryOf({ ...saved, approvedAt: 'x' }).safetyFlags).toEqual(['절뚝거림']);
+  });
+  it('ignores a dismissal of something that was never flagged', () => {
+    const { note: saved } = normalizeEditedNote({ ...note, dismissedFlags: ['출혈'] }, note, risky, info);
+    expect(saved.dismissedFlags).toEqual([]);
+  });
+});
+
+describe('more that must not pass', () => {
+  it('rejects a claimed improvement in any tense', () => {
+    for (const text of ['초코가 좋아지고 있어요', '짖음이 나아지는 중이다', '많이 호전되었다', '행동이 개선되는 중이다']) {
+      expect(assemble({ summary: [claim(text, 's01')] }).note.summary, text).toEqual([]);
+    }
+  });
+  it('rejects a full name before a title', () => {
+    const wrong = assemble({ guardianReports: [claim('이민호 선생님이 초인종을 누르면 짖는다고 말함', 's01')] });
+    expect(wrong.note.guardianReports).toEqual([]);
+    expect(reasons(wrong)).toContain('이민호');
+  });
+  it('holds behavior titles to the same evidence', () => {
+    const entry = (title: string) => assemble({ behaviors: [{ title, context: [claim('초인종을 누르면 현관으로 뛰어간다', 's01')], behavior: [], response: [], unknown: [] }] });
+    expect(entry('초인종에 짖음').note.behaviors).toHaveLength(1);
+    expect(entry('초인종에 하루 10번 짖음').note.behaviors).toEqual([]);
+    expect(entry('민수 씨 귀가 때 짖음').note.behaviors).toEqual([]);
   });
 });

@@ -6,6 +6,7 @@
 .review-state[data-state="approved"] { background: #dcecd4; }
 .review-notice { display: flex; align-items: center; gap: 6px; background: #eef4e8; color: #33502a; border-radius: 10px; padding: 10px 12px; font-size: 13px; }
 .review-safety { display: flex; align-items: center; gap: 6px; background: #fbeae6; color: #8a2f1f; border-radius: 10px; padding: 10px 12px; font-size: 14px; font-weight: 600; }
+.review-flags { display: grid; gap: 4px; }
 .review-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; align-items: start; }
 .review-pane { max-height: calc(100dvh - 120px); overflow: auto; align-content: start; }
 .review-pane h2 { position: sticky; top: -20px; background: #fff; padding: 4px 0; z-index: 1; }

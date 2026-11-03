@@ -28,11 +28,13 @@ export function createPostProcess({ store, transcription, llm, callTimeoutMs, no
   const track = <T>(work: Promise<T>) => { running.add(work); void work.finally(() => running.delete(work)).catch(() => {}); return work; };
   const addError = (id: string, code: string, message: string) => store.updateConsultation(id, current => ({ ...current, errors: [...current.errors, { code, message }] }));
 
-  async function draftNote(id: string) {
+  async function draftNote(id: string, replacing = false) {
     const consultation = await store.getConsultation(id);
     const info = await store.getCase(consultation.caseId);
     const note = notes ? await notes.generate(consultation, info, stopping.signal)
       : emptyNote(buildNoteSource(consultation, info), new Date(now()).toISOString(), ['AI 기능이 꺼져 있어 빈 양식을 만들었습니다.']);
+    // A blank form is better than nothing, but not better than a draft the trainer already has.
+    if (replacing && note.fallbackUsed) throw new Error('No new draft.');
     await store.updateConsultation(id, current => ({ ...current, note }));
   }
 
@@ -76,7 +78,7 @@ export function createPostProcess({ store, transcription, llm, callTimeoutMs, no
     async regenerate(id: string) {
       await store.updateConsultation(id, current => ({ ...current, noteGenerating: true }));
       void track((async () => {
-        try { await draftNote(id); }
+        try { await draftNote(id, true); }
         catch (error) { if (stopping.signal.aborted) return; await addError(id, 'NOTE_REGENERATE', '일지를 다시 만들지 못했습니다. 이전 내용을 유지합니다.'); }
         finally { await llm?.release().catch(() => {}); }
         await store.updateConsultation(id, ({ noteGenerating: _noteGenerating, ...current }) => current);

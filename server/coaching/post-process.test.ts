@@ -115,18 +115,18 @@ describe('regenerate', () => {
     expect(done.state).toBe('review');
     expect(Date.parse(done.note!.createdAt)).toBeGreaterThanOrEqual(Date.parse(before));
   });
-  it('keeps the earlier draft when the new one fails outright', async () => {
+  it('keeps the earlier draft when the new one fails outright, and says so', async () => {
     const stub = createStubLlm();
     let broken = false;
     const llm = failing({ structured: request => broken ? Promise.reject(new Error('died')) : stub.structured(request) });
     const { process } = await inReview(llm);
+    const before = (await store.getConsultation(id)).note;
     broken = true;
     await process.regenerate(id);
     await settled();
     const done = await store.getConsultation(id);
-    // The service answers a dead model with a blank form, which replaces nothing the trainer typed until they ask again.
-    expect(done.note?.fallbackUsed).toBe(true);
-    expect(done.note?.warnings.join()).toContain('일지 초안을 만들지 못했습니다');
+    expect(done.note).toEqual(before);
+    expect(done.errors).toEqual([expect.objectContaining({ code: 'NOTE_REGENERATE' })]);
   });
 });
 

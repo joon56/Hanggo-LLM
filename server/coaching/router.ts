@@ -68,7 +68,8 @@ const viewFor = (actor: Actor, consultation: Consultation): Consultation => {
 };
 /** Photos the confirmed note cites, which are the only ones a guardian may open. */
 const citedScenes = (consultation: Consultation) => {
-  const cited = new Set((consultation.note?.aiObservations ?? []).flatMap(claim => claim.evidence).filter(item => item.kind === 'scene').map(item => item.id));
+  // Read from the delivery, so an observation left out of it does not leave its photo reachable.
+  const cited = new Set((consultation.note ? deliveryOf(consultation.note).aiObservations : []).flatMap(claim => claim.evidence).filter(item => item.kind === 'scene').map(item => item.id));
   return consultation.scenes.filter(scene => cited.has(scene.id)).map(({ id, atMs, frameIds }) => ({ id, atMs, frameIds }));
 };
 const readCookie = (headers: Headers, key: string) => headers.cookie?.split(';').map(part => part.trim()).find(part => part.startsWith(`${key}=`))?.slice(key.length + 1);

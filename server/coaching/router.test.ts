@@ -453,6 +453,17 @@ describe('review and delivery', () => {
     await member.get(url(id, `/frames/${frame}`)).expect(403);
     await owner.get(url(id, `/frames/${frame}`)).expect(200);
   });
+  it('keeps the photo of an observation the delivery left out', async () => {
+    const { owner, member, id, read, frame } = await reviewed();
+    const { scenes } = await read();
+    const observation = url(id, `/scenes/${scenes[0].id}/observations/${scenes[0].observations[0].id}`);
+    await owner.patch(observation).set('Origin', origin).send({ text: '보호자가 목줄을 세게 당기고 있다', reviewed: true }).expect(200);
+    await owner.post(url(id, '/approve')).set('Origin', origin).send({}).expect(200);
+    const delivery = (await member.get(url(id, '/delivery')).expect(200)).body;
+    expect(delivery.note.aiObservations).toEqual([]);
+    expect(delivery.scenes).toEqual([]);
+    await member.get(url(id, `/frames/${frame}`)).expect(403);
+  });
   it('freezes everything once approved', async () => {
     const { owner, id, read } = await reviewed();
     const { note, segments } = await read();

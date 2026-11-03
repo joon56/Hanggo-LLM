@@ -10,7 +10,10 @@ export type BehaviorEntry = { id: string; title: string; context: Claim[]; behav
 export type CoachingTask = { id: string; text: string; who: string | null; frequency: string | null; until: string | null; successCriteria: string | null; evidence: Evidence[]; edited?: boolean };
 export type CoachingNote = {
   version: 2; summary: Claim[]; concerns: Claim[]; behaviors: BehaviorEntry[]; guardianReports: Claim[]; trainerObservations: Claim[]; aiObservations: Claim[]; guidance: Claim[]; tasks: CoachingTask[]; followUps: Claim[];
-  safetyFlags: string[]; methodReview: boolean; uncitedSegmentIds: string[]; createdAt: string; approvedAt?: string; fallbackUsed?: boolean; warnings: string[];
+  safetyFlags: string[];
+  /** Flags the trainer marked as not applying. They stay on record, but the guardian is not warned about them. */
+  dismissedFlags?: string[];
+  methodReview: boolean; uncitedSegmentIds: string[]; createdAt: string; approvedAt?: string; fallbackUsed?: boolean; warnings: string[];
 };
 export type Observation = { id: string; text: string; originalText: string; reviewed: boolean };
 export type Scene = { id: string; atMs: number; frameIds: string[]; observations: Observation[]; state: 'complete' | 'failed' };
@@ -29,10 +32,13 @@ const REQUIRED_SPEAKER: Partial<Record<string, { speaker: Speaker; name: string 
   guardianReports: { speaker: 'guardian', name: '보호자' }, guidance: { speaker: 'trainer', name: '훈련사' },
   trainerObservations: { speaker: 'trainer', name: '훈련사' }, tasks: { speaker: 'trainer', name: '훈련사' },
 };
-const BANNED = /진단|치료|완치|처방|증상\s*판정|정확도|효과\s*보장|반드시\s*(?:좋아|낫|나아)|확실히|문제견|나쁜\s*개|공격견|사나운\s*개|좋아졌|개선됐|개선되었|나아졌|이\s*품종은\s*원래|분리불안|관절염|슬개골|골절|디스크|치매|피부염|장염|췌장염|강박증|불안장애/g;
+const BANNED = /진단|치료|완치|처방|증상\s*판정|정확도|효과\s*보장|반드시\s*(?:좋아|낫|나아)|확실히|문제견|나쁜\s*개|공격견|사나운\s*개|좋아졌|좋아지|개선됐|개선되|나아졌|나아지|호전|이\s*품종은\s*원래|분리불안|관절염|슬개골|골절|디스크|치매|피부염|장염|췌장염|강박증|불안장애/g;
 const NAME = /([가-힣]{2,4})\s?(?:님|씨)/g;
+const NAME_BEFORE_TITLE = /([가-힣]{2,4})\s(?:선생님|훈련사|보호자|수의사|원장)/g;
 // Titles and everyday words that end the way a name with an honorific does.
 const NOT_A_NAME = /(?:보호자|훈련사|선생|기사|수의사|원장|사장|고객|손|어머|아버|남편|아내|따|아드|아저|아가|날|솜|말|맵|글|마음|시|사모)$/;
+// Ordinary words that can sit right before a title without being anyone's name.
+const NOT_A_NAME_BEFORE_TITLE = /^(?:담당|가상|이번|다음|지난|저희|우리|오늘|그|이|저|해당|상담|행동|반려견|반려|동물병원|병원)$/;
 const ALIAS_MARKER = /\s*[[(]\s*[sm]\d{1,3}(?:\s*,\s*[sm]\d{1,3})*\s*[\])]/g;
 const MIN_CLAIM_SUPPORT = 0.3;
 const MIN_FIELD_SUPPORT = 0.6;
@@ -67,7 +73,7 @@ function problemsWith(section: string, text: string, evidence: Evidence[], sourc
   const reasons: string[] = [];
   const numbers = numbersSupported(text, quotes);
   if (numbers.length) reasons.push(`근거에 없는 숫자입니다: ${numbers.join(', ')}`);
-  const names = [...text.matchAll(NAME)].map(match => match[1]).filter(name => !NOT_A_NAME.test(name) && ![...quotes, ...source.names].some(known => known.includes(name)));
+  const names = [...text.matchAll(NAME), ...text.matchAll(NAME_BEFORE_TITLE)].map(match => match[1]).filter(name => !NOT_A_NAME.test(name) && !NOT_A_NAME_BEFORE_TITLE.test(name) && ![...quotes, ...source.names].some(known => known.includes(name)));
   if (names.length) reasons.push(`근거에 없는 이름입니다: ${names.join(', ')}`);
   // A guardian may relay what someone told them. Anywhere else the note would be making the claim itself.
   const banned = bannedIn(text).filter(word => section !== 'guardianReports' || !quotes.some(quote => quote.includes(word)));
@@ -79,7 +85,8 @@ function problemsWith(section: string, text: string, evidence: Evidence[], sourc
 function evidenceFor(section: string, aliases: string[], source: NoteSource) {
   const found = aliases.map(alias => source.lines.find(line => line.alias === alias)?.evidence).filter((item): item is Evidence => !!item);
   const required = REQUIRED_SPEAKER[section];
-  const allowed = required ? found.filter(item => item.speaker === required.speaker) : found;
+  // A memo was never said aloud, so it can back the trainer's own observation but not guidance or a task.
+  const allowed = required ? found.filter(item => item.speaker === required.speaker && (section === 'trainerObservations' || item.kind === 'segment')) : found;
   return { evidence: allowed, wrongSpeaker: !!required && found.length > 0 && !allowed.length ? required.name : '' };
 }
 
@@ -117,8 +124,9 @@ export function assembleNote(raw: RawNote, source: NoteSource, createdAt: string
   });
   const behaviors = raw.behaviors.flatMap((item): BehaviorEntry[] => {
     const entry = { id: newId(), title: item.title.trim(), context: claims('behaviors.context', item.context), behavior: claims('behaviors.behavior', item.behavior), response: claims('behaviors.response', item.response), unknown: [...new Set(item.unknown)] };
-    const banned = bannedIn(entry.title);
-    if (banned.length) { reject('behaviors.title', entry.title, [`금지 표현입니다: ${banned.join(', ')}`]); return []; }
+    const evidenceInEntry = [...entry.context, ...entry.behavior, ...entry.response].flatMap(claim => claim.evidence);
+    const titleProblems = evidenceInEntry.length ? problemsWith('behaviors.title', entry.title, evidenceInEntry, source).filter(reason => !reason.startsWith('문장이')) : [];
+    if (titleProblems.length) { reject('behaviors.title', entry.title, titleProblems); return []; }
     return entry.context.length || entry.behavior.length || entry.response.length ? [entry] : [];
   });
   const tasks = raw.tasks.flatMap((item): CoachingTask[] => {
@@ -178,7 +186,10 @@ export function normalizeEditedNote(edited: CoachingNote, before: CoachingNote, 
   const sections = { summary: claims(edited.summary), concerns: claims(edited.concerns), behaviors, guardianReports: claims(edited.guardianReports), trainerObservations: claims(edited.trainerObservations),
     aiObservations: before.aiObservations, guidance: claims(edited.guidance), tasks, followUps: claims(edited.followUps) };
   const { approvedAt: _approvedAt, ...kept } = before;
-  const note: CoachingNote = { ...kept, ...sections, uncitedSegmentIds: uncited(sections, source) };
+  // A corrected transcript can reveal a signal. Nothing here can remove one.
+  const safetyFlags = [...new Set([...before.safetyFlags, ...ruleSafetyFlags(source)])];
+  const note: CoachingNote = { ...kept, ...sections, safetyFlags, methodReview: before.methodReview || ruleMethodReview(source), uncitedSegmentIds: uncited(sections, source),
+    dismissedFlags: (edited.dismissedFlags ?? []).filter(flag => safetyFlags.includes(flag)) };
   return { note, problems };
 }
 
@@ -192,6 +203,12 @@ export function approvalProblems(note: CoachingNote) {
   for (const section of CLAIM_SECTIONS) for (const claim of note[section]) check(claim.text, section === 'guardianReports' ? claim.evidence.map(item => item.quote) : []);
   for (const entry of note.behaviors) { check(entry.title); for (const claim of [...entry.context, ...entry.behavior, ...entry.response]) check(claim.text); }
   for (const task of note.tasks) for (const text of [task.text, task.who, task.frequency, task.until, task.successCriteria]) if (text) check(text);
+  // A sentence nobody rewrote still has to match its evidence, which may have been corrected since it was drafted.
+  const unedited: { text: string; evidence: Evidence[]; edited?: boolean }[] = [...CLAIM_SECTIONS.flatMap(section => note[section]), ...note.behaviors.flatMap(entry => [...entry.context, ...entry.behavior, ...entry.response]), ...note.tasks];
+  for (const claim of unedited) {
+    if (claim.edited || !claim.evidence.length) continue;
+    if (numbersSupported(claim.text, claim.evidence.map(item => item.quote)).length) problems.push(`고친 전사와 숫자가 맞지 않습니다: ${claim.text}`);
+  }
   return problems;
 }
 
@@ -204,10 +221,12 @@ export type NoteDelivery = Pick<CoachingNote, 'summary' | 'concerns' | 'behavior
 /** What the guardian receives. Method concerns and the trainer's private memos stay out, including inside quotes. */
 export function deliveryOf(note: CoachingNote): NoteDelivery {
   const evidence = (items: Evidence[]) => items.filter(item => item.kind !== 'moment' && !methodPattern.test(item.quote));
-  const claims = (items: Claim[]) => items.filter(item => !methodPattern.test(item.text)).map(item => ({ ...item, evidence: evidence(item.evidence) }));
+  const memoOnly = (item: { evidence: Evidence[] }) => item.evidence.length > 0 && item.evidence.every(entry => entry.kind === 'moment');
+  const claims = (items: Claim[]) => items.filter(item => !methodPattern.test(item.text) && !memoOnly(item)).map(item => ({ ...item, evidence: evidence(item.evidence) }));
+  const field = (value: string | null) => value && methodPattern.test(value) ? null : value;
   const behaviors = note.behaviors.map(item => ({ ...item, context: claims(item.context), behavior: claims(item.behavior), response: claims(item.response) })).filter(item => !methodPattern.test(item.title) && (item.context.length || item.behavior.length || item.response.length));
-  const tasks = note.tasks.filter(item => !methodPattern.test(item.text)).map(item => ({ ...item, evidence: evidence(item.evidence) }));
-  return { summary: claims(note.summary), concerns: claims(note.concerns), behaviors, guardianReports: claims(note.guardianReports), trainerObservations: claims(note.trainerObservations), aiObservations: claims(note.aiObservations), guidance: claims(note.guidance), tasks, followUps: claims(note.followUps), safetyFlags: note.safetyFlags, approvedAt: note.approvedAt! };
+  const tasks = note.tasks.filter(item => !methodPattern.test(item.text) && !memoOnly(item)).map(item => ({ ...item, who: field(item.who), frequency: field(item.frequency), until: field(item.until), successCriteria: field(item.successCriteria), evidence: evidence(item.evidence) }));
+  return { summary: claims(note.summary), concerns: claims(note.concerns), behaviors, guardianReports: claims(note.guardianReports), trainerObservations: claims(note.trainerObservations), aiObservations: claims(note.aiObservations), guidance: claims(note.guidance), tasks, followUps: claims(note.followUps), safetyFlags: note.safetyFlags.filter(flag => !note.dismissedFlags?.includes(flag)), approvedAt: note.approvedAt! };
 }
 
 const taskDescription = (task: CoachingTask) => {

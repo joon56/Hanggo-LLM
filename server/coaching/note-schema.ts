@@ -11,7 +11,7 @@ export const noteSchema: z.ZodType<CoachingNote> = z.object({
   behaviors: z.array(z.object({ id, title: z.string().max(200), context: claims, behavior: claims, response: claims, unknown: z.array(z.enum(['trigger', 'frequency', 'duration', 'response'])).max(4) }).strict()).max(50),
   guardianReports: claims, trainerObservations: claims, aiObservations: claims, guidance: claims,
   tasks: z.array(z.object({ id, text: z.string().max(1000), who: field, frequency: field, until: field, successCriteria: field, evidence: z.array(evidence).max(20), edited: z.boolean().optional() }).strict()).max(50),
-  followUps: claims, safetyFlags: z.array(z.string().max(100)).max(50), methodReview: z.boolean(), uncitedSegmentIds: z.array(id).max(5000),
+  followUps: claims, safetyFlags: z.array(z.string().max(100)).max(50), dismissedFlags: z.array(z.string().max(100)).max(50).optional(), methodReview: z.boolean(), uncitedSegmentIds: z.array(id).max(5000),
   createdAt: z.string().max(100), approvedAt: z.string().max(100).optional(), fallbackUsed: z.boolean().optional(), warnings: z.array(z.string().max(2000)).max(500),
 }).strict();
 export const sceneSchema: z.ZodType<Scene> = z.object({

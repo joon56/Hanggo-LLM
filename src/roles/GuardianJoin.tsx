@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { PawPrintIcon } from '@phosphor-icons/react';
-import { joinWithInvite } from '../coaching-api';
+import { getMe, joinWithInvite } from '../coaching-api';
 import { apiMessage, isInAppBrowser } from './copy';
 import './call.css';
 
@@ -15,7 +15,12 @@ export function GuardianJoin({ token, navigate, userAgent = navigator.userAgent 
         <p className="coach-hint">훈련사가 보낸 초대 링크입니다. 이 기기로 상담에 들어갑니다. 링크는 한 번만 쓸 수 있습니다.</p>
         {error && <p role="alert" className="coach-error">{error}</p>}
         <button className="button primary" disabled={pending} onClick={() => { setPending(true); setError('');
-          joinWithInvite(token).then(() => navigate('/guardian'), cause => setError(apiMessage(cause, '입장 준비를 하지 못했습니다.'))).finally(() => setPending(false)); }}>상담 입장 준비</button>
+          joinWithInvite(token).then(() => navigate('/guardian'), async cause => {
+            // Opening the same chat link again on a device that already joined is normal, not an error.
+            const me = (cause as { code?: string }).code === 'INVITE' ? await getMe().catch(() => null) : null;
+            if (me?.role === 'guardian') navigate('/guardian');
+            else setError(apiMessage(cause, '입장 준비를 하지 못했습니다.'));
+          }).finally(() => setPending(false)); }}>상담 입장 준비</button>
       </>}
   </section></main>;
 }

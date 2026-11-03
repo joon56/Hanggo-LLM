@@ -81,6 +81,9 @@ export class CallRecorder {
     this.ring.clear();
   }
 
+  /** Resolves when everything already handed over has been sent or given up on. */
+  async drain() { await Promise.all([this.audio.drain(), this.frames.drain()]); }
+
   moment({ id, atMs }: { id: string; atMs: number }) {
     if (!this.clock) return;
     const upload = () => { for (const frame of this.ring.around(atMs)) this.frames.add({ frame, momentId: id }); };

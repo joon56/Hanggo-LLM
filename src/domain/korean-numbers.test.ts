@@ -60,3 +60,31 @@ describe('한 번 used as "once" rather than a count', () => {
     expect(extractNumbers('한 번 산책했어요')).toEqual([1]);
   });
 });
+
+describe('approximate counts', () => {
+  it('reads both ends of a spoken range', () => {
+    expect(extractNumbers('두세 번 짖어요')).toEqual([2, 3]);
+    expect(extractNumbers('서너 번 그래요')).toEqual([3, 4]);
+    expect(extractNumbers('네댓 번쯤')).toEqual([4, 5]);
+    expect(extractNumbers('대여섯 번')).toEqual([5, 6]);
+  });
+  it('flags a range the source never said', () => {
+    expect(numbersSupported('두세 번 짖는다', ['한 번 짖어요'])).toEqual([2, 3]);
+    expect(numbersSupported('두세 번 짖는다', ['두세 번 짖어요'])).toEqual([]);
+  });
+});
+describe('numbers tied to their units', () => {
+  it('sees through swapped units even though the same digits appear', () => {
+    expect(numbersSupported('3분씩 30번 연습', ['30분씩 3번 연습해 주세요'])).toEqual([3, 30]);
+    expect(numbersSupported('삼 분씩 삼십 번', ['삼십 분씩 세 번'])).toEqual([3, 30]);
+  });
+  it('accepts the same quantity spelled differently', () => {
+    expect(numbersSupported('세 번', ['3회'])).toEqual([]);
+    expect(numbersSupported('오십 그램', ['50g 줘요'])).toEqual([]);
+    expect(numbersSupported('30초', ['삼십 초 정도요'])).toEqual([]);
+    expect(numbersSupported('3개월', ['석 달 전부터 세 달째', '3개월'])).toEqual([]);
+  });
+  it('lets a bare number in the source stand for any unit', () => {
+    expect(numbersSupported('3번', ['그게 3이에요'])).toEqual([]);
+  });
+});

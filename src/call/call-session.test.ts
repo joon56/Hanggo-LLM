@@ -46,7 +46,7 @@ function fakeSignal() {
   return { sent, channel, open: (next: SignalHandler) => { handler = next; return channel; }, emit: (message: any) => handler(message) };
 }
 const flush = async () => { for (let index = 0; index < 8; index++) await Promise.resolve(); };
-function fakeRecorder() { return { start: vi.fn<(clock: () => number) => void>(), stop: vi.fn(), moment: vi.fn(), setScreen: vi.fn() }; }
+function fakeRecorder() { return { start: vi.fn<(clock: () => number) => void>(), stop: vi.fn(), moment: vi.fn(), setScreen: vi.fn(), drain: vi.fn(async () => {}) }; }
 function build(role: 'trainer' | 'guardian', options: { tracks?: FakeTrack[]; display?: () => Promise<MediaStream>; forceRelay?: boolean; recorder?: ReturnType<typeof fakeRecorder> } = {}) {
   const signal = fakeSignal();
   const local = new FakeStream(options.tracks ?? [new FakeTrack('audio'), new FakeTrack('video')]);
@@ -414,5 +414,27 @@ describe('a connection that never comes up', () => {
     session.leave();
     await vi.advanceTimersByTimeAsync(60_000);
     expect(session.snapshot().status).toBe('left');
+  });
+});
+
+describe('finishing', () => {
+  it('sends what is buffered and waits for it, within a limit', async () => {
+    const recorder = { ...fakeRecorder(), drain: vi.fn(() => new Promise<void>(() => {})) };
+    const { session } = build('guardian', { recorder });
+    let done = false;
+    void session.finish().then(() => { done = true; });
+    expect(recorder.stop).toHaveBeenCalledWith({ flush: true });
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(done).toBe(false);
+    await vi.advanceTimersByTimeAsync(4000);
+    expect(done).toBe(true);
+  });
+  it('moves on as soon as uploads are done', async () => {
+    const recorder = { ...fakeRecorder(), drain: vi.fn(async () => {}) };
+    const { session } = build('guardian', { recorder });
+    let done = false;
+    void session.finish().then(() => { done = true; });
+    await flush();
+    expect(done).toBe(true);
   });
 });

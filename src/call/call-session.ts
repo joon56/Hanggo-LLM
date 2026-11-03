@@ -29,6 +29,7 @@ export type CallSnapshot = {
 export type SessionRecorder = {
   start(clock: () => number): void; stop(options: { flush: boolean }): void;
   moment(moment: { id: string; atMs: number }): void; setScreen(stream: MediaStream | null): void;
+  drain(): Promise<void>;
 };
 type DisplayOptions = DisplayMediaStreamOptions & { systemAudio?: string; monitorTypeSurfaces?: string; surfaceSwitching?: string };
 type Options = {
@@ -43,6 +44,7 @@ type Options = {
 
 const DISCONNECT_GRACE_MS = 5000;
 const CONNECT_LIMIT_MS = 30000;
+const FINAL_UPLOAD_WAIT_MS = 4000;
 const STATS_INTERVAL_MS = 1000;
 const CLOCK_PING_DELAYS_MS = [0, 250, 500];
 const NO_STATS: CallStats = { inboundVideoFrames: 0, inboundAudioBytes: 0, inboundAudioEnergy: 0, roundTripMs: null, relayed: false };
@@ -354,6 +356,12 @@ export class CallSession {
     this.options.recorder?.setScreen(null);
     this.update({ localScreen: null });
     this.announceMedia();
+  }
+
+  /** Leaving the page would abort uploads in flight, so the last words get a moment to arrive first. */
+  async finish() {
+    this.leave();
+    await Promise.race([this.options.recorder?.drain(), new Promise(resolve => setTimeout(resolve, FINAL_UPLOAD_WAIT_MS))]);
   }
 
   leave() {

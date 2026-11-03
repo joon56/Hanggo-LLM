@@ -16,6 +16,19 @@ const TASK_FIELDS = [['who', '담당'], ['frequency', '횟수'], ['until', '기�
 const blankClaim = (): Claim => ({ id: crypto.randomUUID(), text: '', evidence: [] });
 const evidenceKey = (evidence: Pick<Evidence, 'kind' | 'id'>) => `${evidence.kind}:${evidence.id}`;
 
+/** The rules can misread a sentence, so the trainer may set a flag aside. It stays on record and can be restored. */
+function SafetyFlags({ note, readOnly, onChange }: { note: CoachingNote; readOnly: boolean; onChange(dismissed: string[]): void }) {
+  const dismissed = note.dismissedFlags ?? [];
+  const active = note.safetyFlags.filter(flag => !dismissed.includes(flag));
+  return <div className="review-flags">
+    {active.length > 0 && <p role="alert" className="review-safety"><WarningIcon size={16} />안전 신호: {active.join(', ')}. 보호자에게 동물병원 상담을 먼저 안내해 주세요.</p>}
+    {!readOnly && <div className="review-meta">
+      {active.map(flag => <button key={flag} type="button" className="call-link review-add" onClick={() => onChange([...dismissed, flag])}>{flag} 해당 없음</button>)}
+      {dismissed.map(flag => <button key={flag} type="button" className="call-link review-add" onClick={() => onChange(dismissed.filter(item => item !== flag))}>{flag} 되돌리기</button>)}
+    </div>}
+  </div>;
+}
+
 function EvidenceChips({ evidence, onSelect }: { evidence: Evidence[]; onSelect(item: Evidence): void }) {
   if (!evidence.length) return <span className="review-tag">근거 없음 · 훈련사 작성</span>;
   return <>{evidence.map(item => <button key={evidenceKey(item)} type="button" className="review-chip" onClick={() => onSelect(item)}>
@@ -120,11 +133,12 @@ export function ReviewRoom({ consultationId, navigate }: { consultationId: strin
   const [petName, setPetName] = useState(''); const [note, setNote] = useState<CoachingNote | null>(null);
   const [selected, setSelected] = useState<Evidence | null>(null);
   const [error, setError] = useState(''); const [notice, setNotice] = useState(''); const [pending, setPending] = useState(false);
-  const dirty = useRef(false);
+  // Counting edits rather than a yes-no flag, so typing during a slow save is not mistaken for what was saved.
+  const edits = useRef(0); const savedEdits = useRef(0);
 
   const adopt = useCallback((next: Consultation) => {
     setConsultation(next);
-    if (!dirty.current) setNote(next.note ?? null);
+    if (edits.current === savedEdits.current) setNote(next.note ?? null);
   }, []);
   useEffect(() => {
     void (async () => {
@@ -152,11 +166,12 @@ export function ReviewRoom({ consultationId, navigate }: { consultationId: strin
     try { await work(); } catch (cause) { setError(apiMessage(cause, '요청을 처리하지 못했습니다.')); }
     finally { setPending(false); }
   };
-  const edit = (next: CoachingNote) => { dirty.current = true; setNote(next); };
+  const edit = (next: CoachingNote) => { edits.current += 1; setNote(next); };
   const save = async () => {
-    if (!dirty.current || !note) return;
+    if (edits.current === savedEdits.current || !note) return;
+    const sending = edits.current;
     const next = await saveNote(consultationId, note);
-    dirty.current = false;
+    savedEdits.current = sending;
     adopt(next);
   };
 
@@ -172,7 +187,7 @@ export function ReviewRoom({ consultationId, navigate }: { consultationId: strin
       <h1>{petName ? `${petName} 상담 검토` : '상담 검토'}</h1>
       <span className="review-state" data-state={consultation.state}>{consultation.noteGenerating ? '일지 다시 만드는 중' : STATE_LABEL[consultation.state]}</span>
       {consultation.state === 'review' && <div className="coach-actions review-actions">
-        <button type="button" className="button secondary" disabled={pending || readOnly} onClick={() => { if (window.confirm('지금 초안을 버리고 다시 만들까요? 직접 고친 내용도 사라집니다.')) void act(async () => { dirty.current = false; adopt(await regenerateNote(consultationId)); }); }}>일지 다시 만들기</button>
+        <button type="button" className="button secondary" disabled={pending || readOnly} onClick={() => { if (window.confirm('지금 초안을 버리고 다시 만들까요? 직접 고친 내용도 사라집니다.')) void act(async () => { const next = await regenerateNote(consultationId); savedEdits.current = edits.current; adopt(next); }); }}>일지 다시 만들기</button>
         <button type="button" className="button secondary" disabled={pending || readOnly} onClick={() => void act(async () => { await save(); setNotice('저장했습니다.'); })}>임시 저장</button>
         <button type="button" className="button primary" disabled={pending || readOnly || !note} onClick={() => { if (window.confirm('확정하면 보호자에게 전달되고 더 고칠 수 없습니다. 확정할까요?')) void act(async () => { await save(); adopt(await approveConsultation(consultationId)); setNotice('확정해 보호자에게 전달했습니다.'); }); }}>확정하고 보호자에게 전달</button>
       </div>}
@@ -181,7 +196,7 @@ export function ReviewRoom({ consultationId, navigate }: { consultationId: strin
     {error && <p role="alert" className="coach-error">{error}</p>}
     {consultation.state === 'processing' && <p role="status" className="review-notice">상담을 정리하고 있습니다. 끝나면 이 화면이 저절로 바뀝니다.</p>}
     {consultation.state === 'interrupted' && <p role="alert" className="coach-warning">서버가 다시 시작되어 상담이 중단되었습니다. 저장된 전사만 볼 수 있습니다.</p>}
-    {note && note.safetyFlags.length > 0 && <p role="alert" className="review-safety"><WarningIcon size={16} />안전 신호: {note.safetyFlags.join(', ')}. 보호자에게 동물병원 상담을 먼저 안내해 주세요.</p>}
+    {note && note.safetyFlags.length > 0 && <SafetyFlags note={note} readOnly={readOnly} onChange={dismissedFlags => edit({ ...note, dismissedFlags })} />}
     {note?.methodReview && <p className="coach-warning">체벌이나 강압적 방법이 언급되었습니다. 보호자 전달본에서는 이 내용을 뺍니다.</p>}
     {consultation.recordingGaps.length > 0 && <p className="coach-warning">기록이 멈춘 구간: {consultation.recordingGaps.map(gap => `${clockLabel(gap.startMs)}~${gap.endMs === undefined ? '끝' : clockLabel(gap.endMs)}`).join(', ')}</p>}
     {failedCount > 0 && <p className="coach-warning">받아쓰지 못한 구간이 {failedCount}개 있습니다.</p>}

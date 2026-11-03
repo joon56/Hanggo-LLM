@@ -189,3 +189,19 @@ test('a call without a speech model continues, records scenes, and says transcri
   await expect(trainer.page.getByText(/일부 기록을 보내지 못했습니다/)).toHaveCount(0);
   await expectFlowing(trainer.page);
 });
+
+test('rejoining shows consent still on, and unchecking it stops the recording before anything is sent', async () => {
+  const { trainer, guardian, uploads } = await connected();
+  await startRecording(trainer.page, guardian.page);
+  await guardian.page.reload();
+  const box = guardian.page.getByLabel(/AI 받아쓰기와 장면 저장에 동의합니다/);
+  await expect(box).toBeChecked();
+  await box.uncheck();
+  const before = uploads.guardian.total();
+  await guardian.page.getByRole('button', { name: '입장' }).click();
+  await expect(room(guardian.page)).toBeVisible();
+  await expect(room(trainer.page)).toHaveAttribute('data-recording', 'false');
+  await guardian.page.waitForTimeout(6000);
+  expect(uploads.guardian.total()).toBe(before);
+  await expect(room(guardian.page)).toHaveAttribute('data-recording', 'false');
+});

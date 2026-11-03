@@ -8,16 +8,18 @@ import { deviceAdvice } from './copy';
 export type JoinChoice = { stream: MediaStream; missing: MissingDevice[]; consent: boolean; preference: DevicePreference };
 type Props = {
   petName: string; role: Speaker; relayAvailable: boolean; caseId?: string;
+  /** Consent given earlier in this consultation. It is still in force unless changed here. */
+  consented?: boolean;
   openPreview: (preference: DevicePreference) => Promise<{ stream: MediaStream; missing: MissingDevice[] }>;
   onJoin: (choice: JoinChoice) => void;
 };
 const stop = (stream: MediaStream) => stream.getTracks().forEach(track => track.stop());
 
-export function PreJoin({ petName, role, relayAvailable, caseId, openPreview, onJoin }: Props) {
+export function PreJoin({ petName, role, relayAvailable, caseId, consented = false, openPreview, onJoin }: Props) {
   const [preview, setPreview] = useState<{ stream: MediaStream; missing: MissingDevice[] } | null>(null);
   const [preference, setPreference] = useState<DevicePreference>({});
   const [devices, setDevices] = useState<MediaDeviceInfo[]>([]);
-  const [consent, setConsent] = useState(false);
+  const [consent, setConsent] = useState(consented);
   const video = useRef<HTMLVideoElement>(null);
   const handedOver = useRef(false);
 
