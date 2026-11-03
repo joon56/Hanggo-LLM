@@ -64,8 +64,9 @@ const pairsOf = (text: string) => {
 };
 /** How much of a sentence comes from its evidence. A rewritten sentence reuses the words; an invented one does not. */
 function supportOf(text: string, sources: string[]) {
-  const pairs = pairsOf(text.replace(RECORD_WORDING, ''));
-  if (pairs.length < 3) return 1;
+  const reported = text.replace(RECORD_WORDING, '');
+  const pairs = pairsOf(reported);
+  if (!pairs.length || (pairs.length < 3 && reported === text)) return 1;
   const known = new Set(sources.flatMap(pairsOf));
   return pairs.filter(pair => known.has(pair)).length / pairs.length;
 }

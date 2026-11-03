@@ -567,6 +567,10 @@ describe('the next brief', () => {
 });
 
 describe('record style', () => {
+  it('still wants what the sentence reports to have been said', () => {
+    const said = consultation({ segments: [segment('t', 'trainer', 0, '화내지 마시고 그냥 기다려 주세요')] });
+    expect(assembleNote({ ...blank, guidance: [claim('산책을 할 것', 's01')] }, buildNoteSource(said, info), 'now').note.guidance).toEqual([]);
+  });
   it('does not count the wording of a record against a sentence', () => {
     const said = consultation({ segments: [segment('t', 'trainer', 0, '화내지 마시고 그냥 기다려 주세요')] });
     expect(assembleNote({ ...blank, guidance: [claim('화내지 말 것을 안내함', 's01')] }, buildNoteSource(said, info), 'now').violations).toEqual([]);
