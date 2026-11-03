@@ -48,13 +48,13 @@ async function verify(dialogue: Dialogue, withNote: boolean) {
   const server = await startServer(3390, { speech: 'real' });
   const uploadsBeforeConsent = { count: 0 };
   // %noloop plays the dialogue once. It starts when the microphone opens, so the lead-in covers joining the call.
-  const trainer = await launch('trainer', { audioFile: `${files.trainer}%noloop` });
-  const guardian = await launch('guardian', { audioFile: `${files.guardian}%noloop`, ...(withNote ? { videoFile: dogVideo() } : {}) });
+  const trainer = await launch('trainer', { audioFile: `${files.trainer}%noloop`, holdMicrophone: true });
+  const guardian = await launch('guardian', { audioFile: `${files.guardian}%noloop`, holdMicrophone: true, ...(withNote ? { videoFile: dogVideo() } : {}) });
   try {
     const started = Date.now();
     const invite = await createCaseAsTrainer(trainer.page, server.origin, dialogue.petName);
     await joinAsGuardian(guardian.page, invite);
-    const id = await enterTogether(trainer.page, guardian.page, server.origin);
+    const id = await enterTogether(trainer.page, guardian.page, dialogue.petName);
     const read = async () => (await trainer.page.request.get(`${server.origin}/api/coaching/consultations/${id}`)).json() as Promise<Consultation>;
     let consented = false;
     for (const { page } of [trainer, guardian]) page.on('request', request => { if (request.method() === 'PUT' && /\/(audio|frames)\//.test(request.url()) && !consented) uploadsBeforeConsent.count += 1; });

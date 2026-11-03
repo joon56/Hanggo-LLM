@@ -5,10 +5,11 @@ import { expect, type Page } from '@playwright/test';
 import type { Consultation } from '../src/domain/coaching.ts';
 import { aggregateScores, scoreDelivered, type GoldenDialogue } from '../scripts/note-metrics.ts';
 import { characterErrorRate } from '../scripts/speech-metrics.ts';
+import { scriptTone } from '../server/ai/speech/stub.ts';
 import { loadLocalEnv } from '../server/config.ts';
 import type { CoachingNote, Evidence, Scene } from '../src/domain/coaching-note.ts';
 import { termRecall } from '../src/domain/speech-terms.ts';
-import { createCaseAsTrainer, enterAsGuardian, enterAsTrainer, enterTogether, joinAsGuardian, launch, room, startServer } from './helpers/two-way.ts';
+import { createCaseAsTrainer, enterTogether, joinAsGuardian, launch, room, startServer } from './helpers/two-way.ts';
 import { buildTracks, synthesize, type Line } from './helpers/voices.ts';
 
 // Usage: node e2e/auto-demo.ts [--real] [output folder]
@@ -21,24 +22,23 @@ const WORK = path.resolve('.tmp/demo/work');
 const SCRIPT_FILE = path.resolve('fixtures/coaching-dialogues/doorbell-barking.json');
 const DOG_CLIP = path.resolve('fixtures/demo/dog.webm');
 const SAMPLE_RATE = 48000;
-const LEAD_IN_MS = 26000;
+const LEAD_IN_MS = 18000;
 const BURST_GAP_MS = 500;
 const VIEWPORT = { width: 800, height: 720 };
-const TONES = { guardian: 440, trainer: 880 };
 type Speaker = 'guardian' | 'trainer';
 type Step = { name: string; atSeconds: number };
 const GAP_BEFORE_CUT_MS = 1500;
 const MODEL_WAIT_MS = 30 * 60 * 1000;
 const steady = (limit: number) => REAL ? MODEL_WAIT_MS : limit;
 
-/** Tone bursts in place of voices. Windows are cut at their pauses, so each burst becomes one scripted line. */
+/** Tone bursts in place of voices. Each burst's pitch says which scripted line it stands for. */
 function buildTone(speaker: Speaker, segments: { speaker: string; startMs: number; endMs: number }[], file: string) {
   const perMs = SAMPLE_RATE / 1000;
   const totalMs = LEAD_IN_MS + Math.max(...segments.map(item => item.endMs)) + 3000;
   const samples = new Int16Array(totalMs * perMs);
-  for (const item of segments.filter(entry => entry.speaker === speaker)) {
+  for (const [line, item] of segments.filter(entry => entry.speaker === speaker).entries()) {
     const from = (LEAD_IN_MS + item.startMs) * perMs; const to = (LEAD_IN_MS + item.endMs - BURST_GAP_MS) * perMs;
-    for (let index = from; index < to; index++) samples[index] = Math.round(9000 * Math.sin(2 * Math.PI * TONES[speaker] * index / SAMPLE_RATE));
+    for (let index = from; index < to; index++) samples[index] = Math.round(9000 * Math.sin(2 * Math.PI * scriptTone(speaker, line) * index / SAMPLE_RATE));
   }
   const header = Buffer.alloc(44);
   header.write('RIFF', 0); header.writeUInt32LE(36 + samples.byteLength, 4); header.write('WAVEfmt ', 8); header.writeUInt32LE(16, 16); header.writeUInt16LE(1, 20); header.writeUInt16LE(1, 22);
@@ -79,9 +79,9 @@ async function run() {
   if (REAL) loadLocalEnv();
   prepareMedia();
   const server = await startServer(3450, REAL ? { speech: 'real', env: { COACHING_GRACE_MS: '2000' } } : { speech: 'stub', env: { STUB_SCRIPT: SCRIPT_FILE, COACHING_GRACE_MS: '2000' } });
-  const trainer = await launch('trainer', { audioFile: `${path.join(WORK, 'trainer.wav')}%noloop`, videoFile: path.join(WORK, 'trainer.y4m'), recordVideoDir: path.join(WORK, 'video-trainer'), viewport: VIEWPORT });
+  const trainer = await launch('trainer', { audioFile: `${path.join(WORK, 'trainer.wav')}%noloop`, videoFile: path.join(WORK, 'trainer.y4m'), recordVideoDir: path.join(WORK, 'video-trainer'), viewport: VIEWPORT, holdMicrophone: true });
   const trainerAt = Date.now();
-  const guardian = await launch('guardian', { audioFile: `${path.join(WORK, 'guardian.wav')}%noloop`, videoFile: path.join(WORK, 'guardian.y4m'), recordVideoDir: path.join(WORK, 'video-guardian'), viewport: VIEWPORT });
+  const guardian = await launch('guardian', { audioFile: `${path.join(WORK, 'guardian.wav')}%noloop`, videoFile: path.join(WORK, 'guardian.y4m'), recordVideoDir: path.join(WORK, 'video-guardian'), viewport: VIEWPORT, holdMicrophone: true });
   const guardianAt = Date.now();
   const t = trainer.page; const g = guardian.page;
   const cutWhile = async (wait: () => Promise<unknown>) => {
@@ -89,7 +89,6 @@ async function run() {
     await wait();
     if (REAL && Date.now() - from > 2 * GAP_BEFORE_CUT_MS) cuts.push([from - trainerAt + GAP_BEFORE_CUT_MS, Date.now() - trainerAt - GAP_BEFORE_CUT_MS]);
   };
-  let id = '';
   let endedAt = 0; let organizeMs = 0;
   try {
     const invite = await createCaseAsTrainer(t, server.origin);
@@ -98,13 +97,8 @@ async function run() {
     await joinAsGuardian(g, invite);
     step('보호자가 초대 링크로 들어옵니다');
     await beat(g);
-    if (REAL) id = await enterTogether(t, g, server.origin);
-    else {
-      await enterAsTrainer(t);
-      await g.reload();
-      await enterAsGuardian(g);
-      id = /\/room\/([^/?]+)/.exec(t.url())![1];
-    }
+    const id = await enterTogether(t, g);
+    const microphonesAt = Date.now();
     await expect(room(t)).toHaveAttribute('data-call-status', 'connected', { timeout: 30_000 });
     await expect.poll(async () => Number(await room(t).getAttribute('data-inbound-video-frames')), { timeout: 30_000 }).toBeGreaterThan(5);
     step('두 브라우저가 실제 WebRTC로 연결되어 서로의 영상과 소리를 받습니다');
@@ -140,7 +134,7 @@ async function run() {
     step('훈련사가 장면에 메모를 남깁니다');
     await expect.poll(async () => (await read()).segments.filter(item => item.state === 'complete').length, { timeout: steady(120_000), intervals: [1000] }).toBeGreaterThanOrEqual(10);
     // The whole dialogue, so the note has all of it to work from.
-    if (REAL) await t.waitForTimeout(Math.max(0, tracksMs + 6000 - (Date.now() - trainerAt)));
+    if (REAL) await t.waitForTimeout(Math.max(0, tracksMs + 6000 - (Date.now() - microphonesAt)));
     await beat(t, 3000);
 
     await t.getByRole('button', { name: '상담 종료' }).click();

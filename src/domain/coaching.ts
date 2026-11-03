@@ -91,7 +91,7 @@ const ECHO_WINDOW_MS = 3000;
 const ECHO_MIN_CHARACTERS = 6;
 const ECHO_MIN_SIMILARITY = 0.7;
 const comparable = (text: string) => text.toLowerCase().replace(/[^\p{L}\p{N}]/gu, '');
-function similarity(left: string, right: string) {
+export function similarity(left: string, right: string) {
   const counts = new Map<string, number>();
   for (let index = 0; index < left.length - 1; index += 1) { const pair = left.slice(index, index + 2); counts.set(pair, (counts.get(pair) ?? 0) + 1); }
   let shared = 0;

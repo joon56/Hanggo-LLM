@@ -1,4 +1,4 @@
-import type { Consultation, Speaker } from './coaching.ts';
+import { similarity, type Consultation, type Speaker } from './coaching.ts';
 import { numbersSupported } from './korean-numbers.ts';
 import { flagsFromSource, methodPattern, SAFETY_LABELS } from './notes.ts';
 import type { BriefConsultationContext } from './workspace-types.ts';
@@ -41,7 +41,12 @@ const NOT_A_NAME = /(?:보호자|훈련사|선생|기사|수의사|원장|사장
 const NOT_A_NAME_BEFORE_TITLE = /^(?:담당|가상|이번|다음|지난|저희|우리|오늘|그|이|저|해당|상담|행동|반려견|반려|동물병원|병원)$/;
 const ALIAS_MARKER = /\s*[[(]\s*[sm]\d{1,3}(?:\s*,\s*[sm]\d{1,3})*\s*[\])]/g;
 const MIN_CLAIM_SUPPORT = 0.3;
+const MIN_OWN_SUPPORT = 0.15;
 const MIN_FIELD_SUPPORT = 0.6;
+// Stricter than a citation the model chose, since here the code is the one choosing.
+const MIN_FOUND_SUPPORT = 0.5;
+const MAX_ADDED_LINES = 2;
+const REPEAT_SIMILARITY = 0.6;
 const newId = () => crypto.randomUUID();
 
 const pairsOf = (text: string) => {
@@ -75,6 +80,34 @@ function linesBefore(evidence: Evidence[], source: NoteSource) {
   });
 }
 
+/** Mostly the cited lines, so a sentence cannot rest on the words of whoever spoke just before. */
+function wellSupported(text: string, evidence: Evidence[], source: NoteSource) {
+  const quotes = evidence.map(item => item.quote);
+  return supportOf(text, [...quotes, ...source.names]) >= MIN_OWN_SUPPORT && supportOf(text, [...quotes, ...linesBefore(evidence, source), ...source.names]) >= MIN_CLAIM_SUPPORT;
+}
+
+/**
+ * Models often cite the line that says "please do it" and not the line that says what to do. When the words really are
+ * in what that person said, the record can point there itself instead of losing a true sentence. Numbers are checked afterward.
+ */
+function withSupportingLines(section: string, text: string, evidence: Evidence[], source: NoteSource) {
+  if (!evidence.length || supportOf(text, [...evidence.map(item => item.quote), ...source.names]) >= MIN_CLAIM_SUPPORT) return evidence;
+  const required = REQUIRED_SPEAKER[section];
+  const spoken = source.lines.map(line => line.evidence).filter(item => item.kind === 'segment' && (!required || item.speaker === required.speaker));
+  const wanted = pairsOf(text);
+  const kept = [...evidence];
+  for (let added = 0; added < MAX_ADDED_LINES; added += 1) {
+    const covered = new Set(kept.flatMap(item => pairsOf(item.quote)));
+    const missing = new Set(wanted.filter(pair => !covered.has(pair)));
+    const gain = (item: Evidence) => new Set(pairsOf(item.quote).filter(pair => missing.has(pair))).size;
+    const best = spoken.filter(item => !kept.some(other => other.id === item.id)).sort((left, right) => gain(right) - gain(left))[0];
+    if (!best || !gain(best)) break;
+    kept.push(best);
+    if (supportOf(text, kept.map(item => item.quote)) >= MIN_FOUND_SUPPORT) return kept.sort((left, right) => left.startMs - right.startMs);
+  }
+  return evidence;
+}
+
 function problemsWith(section: string, text: string, evidence: Evidence[], source: NoteSource) {
   if (!evidence.length) return ['근거 발화가 없습니다.'];
   const quotes = evidence.map(item => item.quote);
@@ -86,7 +119,7 @@ function problemsWith(section: string, text: string, evidence: Evidence[], sourc
   // A guardian may relay what someone told them. Anywhere else the note would be making the claim itself.
   const banned = bannedIn(text).filter(word => section !== 'guardianReports' || !quotes.some(quote => quote.includes(word)));
   if (banned.length) reasons.push(`금지 표현입니다: ${banned.join(', ')}`);
-  if (supportOf(text, [...quotes, ...linesBefore(evidence, source), ...source.names]) < MIN_CLAIM_SUPPORT) reasons.push('문장이 근거와 거의 겹치지 않습니다.');
+  if (!wellSupported(text, evidence, source)) reasons.push('문장이 근거와 거의 겹치지 않습니다.');
   return reasons;
 }
 
@@ -125,12 +158,15 @@ export function assembleNote(raw: RawNote, source: NoteSource, createdAt: string
     const text = item.text.replace(ALIAS_MARKER, '').trim();
     // The schema names the word "unknown", and a model sometimes writes it as a sentence.
     if (!text || /^unknown$/i.test(text)) return [];
-    const { evidence, wrongSpeaker } = evidenceFor(section, item.evidence, source);
+    const { evidence: cited, wrongSpeaker } = evidenceFor(section, item.evidence, source);
+    const evidence = withSupportingLines(section, text, cited, source);
     const reasons = wrongSpeaker ? [`${wrongSpeaker} 발화를 근거로 써야 합니다.`] : problemsWith(section, text, evidence, source);
     if (reasons.length) { reject(section, text, reasons); return []; }
     return [{ id: newId(), text, evidence }];
   });
   const behaviors = raw.behaviors.flatMap((item): BehaviorEntry[] => {
+    // Models sometimes file a whole section of the form as a behavior called by its field name.
+    if (!/[가-힣]/.test(item.title)) { reject('behaviors.title', item.title, ['문제 행동의 이름이 아닙니다.']); return []; }
     const entry = { id: newId(), title: item.title.trim(), context: claims('behaviors.context', item.context), behavior: claims('behaviors.behavior', item.behavior), response: claims('behaviors.response', item.response), unknown: [...new Set(item.unknown)] };
     const evidenceInEntry = [...entry.context, ...entry.behavior, ...entry.response].flatMap(claim => claim.evidence);
     const titleProblems = evidenceInEntry.length ? problemsWith('behaviors.title', entry.title, evidenceInEntry, source).filter(reason => !reason.startsWith('문장이')) : [];
@@ -140,14 +176,17 @@ export function assembleNote(raw: RawNote, source: NoteSource, createdAt: string
   const tasks = raw.tasks.flatMap((item): CoachingTask[] => {
     const text = item.text.replace(ALIAS_MARKER, '').trim();
     if (!text) return [];
-    const { evidence, wrongSpeaker } = evidenceFor('tasks', item.evidence, source);
+    const { evidence: cited, wrongSpeaker } = evidenceFor('tasks', item.evidence, source);
+    const evidence = withSupportingLines('tasks', text, cited, source);
     const reasons = wrongSpeaker ? [`${wrongSpeaker} 발화를 근거로 써야 합니다.`] : problemsWith('tasks', text, evidence, source);
     if (reasons.length) { reject('tasks', text, reasons); return []; }
     const quotes = evidence.map(entry => entry.quote);
     return [{ id: newId(), text, who: supportedField(item.who, quotes), frequency: supportedField(item.frequency, quotes), until: supportedField(item.until, quotes), successCriteria: supportedField(item.successCriteria, quotes), evidence }];
   });
-  const sections = { summary: claims('summary', raw.summary), concerns: claims('concerns', raw.concerns), behaviors, guardianReports: claims('guardianReports', raw.guardianReports),
-    trainerObservations: claims('trainerObservations', raw.trainerObservations), aiObservations: [] as Claim[], guidance: claims('guidance', raw.guidance), tasks, followUps: claims('followUps', raw.followUps) };
+  const underBehaviors = behaviors.flatMap(entry => [...entry.context, ...entry.behavior, ...entry.response]);
+  const fresh = (items: Claim[]) => items.filter(item => !underBehaviors.some(other => similarity(other.text, item.text) >= REPEAT_SIMILARITY));
+  const sections = { summary: claims('summary', raw.summary), concerns: claims('concerns', raw.concerns), behaviors, guardianReports: fresh(claims('guardianReports', raw.guardianReports)),
+    trainerObservations: fresh(claims('trainerObservations', raw.trainerObservations)), aiObservations: [] as Claim[], guidance: claims('guidance', raw.guidance), tasks, followUps: claims('followUps', raw.followUps) };
   const note: CoachingNote = { version: 2, ...sections,
     // Rules and the model can each raise a flag. Neither can lower one.
     safetyFlags: [...new Set([...ruleSafetyFlags(source), ...raw.safetyFlags.filter(flag => SAFETY_LABELS.includes(flag))])],

@@ -395,3 +395,50 @@ describe('a short answer and its question', () => {
     expect(report('산책 나가면 낯선 사람에게 달려듦').violations).toHaveLength(1);
   });
 });
+
+describe('a sentence whose citation falls short', () => {
+  const said = consultation({ segments: [
+    segment('p', 'trainer', 0, '초인종이 울리면 매트로 가는 연습을 할 겁니다. 소리를 작게 틀고 매트에 가면 바로 간식을 주세요.'),
+    segment('x', 'guardian', 4000, '초인종에 매트로 가는 건 어려울 것 같아요.'),
+    segment('t', 'trainer', 8000, '과제는 보호자님이 하루 두 번 다음 상담까지 해 주세요.'),
+  ] });
+  const task = (text: string, ...evidence: string[]) => ({ text, who: null, frequency: null, until: null, successCriteria: null, evidence });
+  const made = (raw: Partial<RawNote>) => assembleNote({ ...blank, ...raw }, buildNoteSource(said, info), 'now');
+  it('points to the lines that really say it, rather than losing a true task', () => {
+    const { note, violations } = made({ tasks: [task('초인종이 울리면 매트로 가는 연습을 하루 두 번 하기', 's03')] });
+    expect(violations).toEqual([]);
+    expect(note.tasks[0].evidence.map(item => item.id)).toEqual(['p', 't']);
+  });
+  it('only looks through what the right person said', () => {
+    const { note } = made({ guidance: [claim('초인종에 매트로 가는 건 어려울 것 같음', 's03')] });
+    expect(note.guidance).toEqual([]);
+  });
+  it('still rejects words nobody said', () => {
+    expect(made({ tasks: [task('공원에서 자전거 타는 사람을 보면 앉히기', 's03')] }).note.tasks).toEqual([]);
+  });
+  it('does not find a number on another line for a sentence that made it up', () => {
+    expect(made({ tasks: [task('초인종이 울리면 매트로 가는 연습을 하루 다섯 번 하기', 's03')] }).note.tasks).toEqual([]);
+  });
+});
+
+describe('one fact in one place', () => {
+  const said = consultation({ segments: [segment('a', 'guardian', 0, '택배 기사님이 초인종을 누르면 현관으로 뛰어가서 계속 짖어요'), segment('b', 'guardian', 4000, '지금은 사료 알갱이를 쓰고 있어요'), segment('c', 'trainer', 8000, '귀가 앞으로 서 있네요')] });
+  const entry = (title: string, text: string, alias: string) => ({ title, context: [], behavior: [claim(text, alias)], response: [], unknown: [] });
+  const made = (raw: Partial<RawNote>) => assembleNote({ ...blank, ...raw }, buildNoteSource(said, info), 'now');
+  it('leaves a fact under its behavior when the report only repeats it', () => {
+    const { note } = made({ behaviors: [entry('초인종에 짖음', '택배 기사님이 초인종을 누르면 현관으로 뛰어가서 짖음', 's01')],
+      guardianReports: [claim('초코는 택배 기사님이 초인종을 누르면 현관으로 뛰어가서 계속 짖음', 's01'), claim('지금은 사료 알갱이를 씀', 's02')] });
+    expect(note.guardianReports.map(item => item.text)).toEqual(['지금은 사료 알갱이를 씀']);
+  });
+  it('does the same for a trainer observation', () => {
+    const { note } = made({ behaviors: [entry('짖음', '귀가 앞으로 서 있음', 's03')], trainerObservations: [claim('귀가 앞으로 서 있음', 's03')] });
+    expect(note.trainerObservations).toEqual([]);
+  });
+  it('refuses a behavior named after a section of the form', () => {
+    for (const title of ['guardianReports', 'unknown', 'tasks']) {
+      const { note, violations } = made({ behaviors: [entry(title, '귀가 앞으로 서 있음', 's03')] });
+      expect(note.behaviors).toEqual([]);
+      expect(violations[0]).toMatchObject({ section: 'behaviors.title', text: title });
+    }
+  });
+});

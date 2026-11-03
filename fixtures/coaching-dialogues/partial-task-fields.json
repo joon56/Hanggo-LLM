@@ -31,7 +31,7 @@
     { "id": "guidance-mat-sit", "any": [["매트"], ["앉"], ["간식"]] }
   ],
   "expectedTasks": [
-    { "id": "sit-on-mat", "any": [["매트"], ["간식"]], "who": ["보호자"], "frequency": null, "until": null }
+    { "id": "sit-on-mat", "any": [["매트"], ["간식", "사료"]], "who": ["보호자"], "frequency": null, "until": null }
   ],
   "unknown": ["손님이 올 때"],
   "expectedSafetyFlags": [],
