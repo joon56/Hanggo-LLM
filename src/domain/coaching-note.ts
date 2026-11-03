@@ -315,7 +315,7 @@ export function briefContextOf(consultation: Consultation, info: CaseInfo, timeZ
   const date = ['year', 'month', 'day'].map(type => parts.find(part => part.type === type)!.value).join('-');
   return { id: consultation.id, date, petName: info.petName, trainerName: info.trainerName, revision: note.approvedAt!, approvedAt: note.approvedAt!, omittedItems: 0, items: [
     ...note.tasks.map(task => ({ id: task.id, text: taskDescription(task), category: 'task', evidence: evidence(task.evidence) })),
-    ...claims(note.summary, 'purpose'), ...claims(note.concerns, 'purpose'), ...claims(note.followUps, 'follow_up'), ...claims(note.guardianReports, 'owner_report'),
+    ...claims(note.summary, 'purpose'), ...claims(note.concerns, 'purpose'), ...claims(note.followUps, 'follow_up'), ...claims(note.behaviors.flatMap(entry => [...entry.context, ...entry.behavior, ...entry.response]), 'owner_report'), ...claims(note.guardianReports, 'owner_report'),
     ...claims(note.trainerObservations, 'observation'), ...claims(note.aiObservations, 'observation'), ...claims(note.guidance, 'guidance'),
   ] };
 }

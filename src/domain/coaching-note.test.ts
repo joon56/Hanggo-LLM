@@ -556,3 +556,12 @@ describe('speech the note did not use', () => {
     expect(assembleNote(blank, buildNoteSource(said, info), 'now').note.uncitedSegmentIds).toEqual(['f']);
   });
 });
+
+describe('the next brief', () => {
+  it('carries what was written under behaviors, which is where most of what a guardian said lives', () => {
+    const said = consultation({ segments: [segment('a', 'guardian', 0, '초인종이 울리면 하루에 세 번쯤 짖어요')] });
+    const { note } = assembleNote({ ...blank, behaviors: [{ title: '초인종에 짖음', context: [], behavior: [claim('초인종이 울리면 하루에 세 번쯤 짖음', 's01')], response: [], unknown: [] }] }, buildNoteSource(said, info), 'now');
+    const context = briefContextOf({ ...said, createdAt: '2026-11-04T00:00:00Z', note: { ...note, approvedAt: '2026-11-04T01:00:00Z' } }, info, 'Asia/Seoul');
+    expect(context.items).toContainEqual(expect.objectContaining({ text: '초인종이 울리면 하루에 세 번쯤 짖음', category: 'owner_report' }));
+  });
+});

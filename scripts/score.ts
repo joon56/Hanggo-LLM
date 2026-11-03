@@ -47,7 +47,7 @@ function speechRows(file: string, condition: string): Row[] {
 function noteRows(home: string): Row[] {
   const folder = path.join(home, 'cache', 'eval');
   if (!existsSync(folder)) return [];
-  return readdirSync(folder).filter(name => /^note-eval-[^.]+\.json$/.test(name) && !name.endsWith('-first.json')).flatMap((name): Row[] => {
+  return readdirSync(folder).filter(name => /^note-eval-[^.]+\.json$/.test(name) && !/-(?:first|second)\.json$/.test(name)).flatMap((name): Row[] => {
     const report = readJson(path.join(folder, name));
     const { summary, model } = report;
     const condition = `${model}, 합성 대화 ${summary.dialogues}건, 전사 오류 없음`;
