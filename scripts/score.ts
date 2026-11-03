@@ -53,7 +53,7 @@ function noteRows(home: string): Row[] {
     const condition = `${model}, 합성 대화 ${summary.dialogues}건, 전사 오류 없음`;
     if (name.endsWith('-long.json')) {
       const [run] = report.runs;
-      return [['일지', '30분 이상 상담 처리 시간', `${Math.round(run.latencyMs / 60000)}분`, `${model}, 합성 대화를 이어 붙임`], ['일지', '긴 상담 사실 재현율', percent(summary.factRecall), `${model}, 합성 대화를 이어 붙임`]];
+      return [['일지', '30분 이상 상담 처리 시간', `${Math.round(run.latencyMs / 60000)}분`, `${model}, 합성 대화를 이어 붙임`], ['일지', '긴 상담 사실 재현율', percent(summary.factRecall), `${model}, 합성 대화를 이어 붙임`], ['일지', '긴 상담 과제 재현율', percent(summary.taskRecall), `${model}, 합성 대화를 이어 붙임`]];
     }
     return [
       ['일지', '핵심 사실 재현율', percent(summary.factRecall), condition],
