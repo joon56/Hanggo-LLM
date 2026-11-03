@@ -468,7 +468,7 @@ describe('a behavior with a bad title', () => {
   const entry = (title: string) => ({ title, context: [claim('혼자 두면 계속 짖음', 's01')], behavior: [], response: [], unknown: [] });
   const made = (title: string) => assembleNote({ ...blank, behaviors: [entry(title)] }, buildNoteSource(said, info), 'now');
   it('keeps its sentences under a plain title, since they are fine', () => {
-    for (const title of ['분리불안 짖음', '하루 10번 짖음', 'guardianReports', 'unknown']) {
+    for (const title of ['분리불안 짖음', '하루 10번 짖음', 'unknown']) {
       const { note, violations } = made(title);
       expect(note.behaviors[0], title).toMatchObject({ title: '행동 기록', context: [expect.objectContaining({ text: '혼자 두면 계속 짖음' })] });
       expect(violations, title).toEqual([]);
@@ -574,5 +574,31 @@ describe('record style', () => {
   it('does not count the wording of a record against a sentence', () => {
     const said = consultation({ segments: [segment('t', 'trainer', 0, '화내지 마시고 그냥 기다려 주세요')] });
     expect(assembleNote({ ...blank, guidance: [claim('화내지 말 것을 안내함', 's01')] }, buildNoteSource(said, info), 'now').violations).toEqual([]);
+  });
+});
+
+describe('a whole section filed as a behavior', () => {
+  const said = consultation({ segments: [segment('g', 'guardian', 0, '지금은 사료 알갱이를 쓰고 있어요'), segment('o', 'trainer', 3000, '꼬리를 빠르게 흔들고 있네요'), segment('t', 'trainer', 6000, '매트에서 기다리는 연습을 하루 세 번 해 주세요')] });
+  const filed = (title: string, text: string, alias: string) => ({ title, context: [claim(text, alias)], behavior: [], response: [], unknown: [] });
+  const made = (raw: Partial<RawNote>) => assembleNote({ ...blank, ...raw }, buildNoteSource(said, info), 'now');
+  it('goes back where it belongs, because models do this and a task must not be lost', () => {
+    const { note, violations } = made({ behaviors: [filed('guardianReports', '지금은 사료 알갱이를 씀', 's01'), filed('trainerObservations', '꼬리를 빠르게 흔들고 있음', 's02'), filed('guidance', '매트에서 기다리는 연습을 하도록 안내함', 's03'), filed('tasks', '매트에서 기다리는 연습을 하루 세 번 하기', 's03')] });
+    expect(violations).toEqual([]);
+    expect(note.behaviors).toEqual([]);
+    expect(note.guardianReports.map(item => item.text)).toEqual(['지금은 사료 알갱이를 씀']);
+    expect(note.trainerObservations.map(item => item.text)).toEqual(['꼬리를 빠르게 흔들고 있음']);
+    expect(note.guidance.map(item => item.text)).toEqual(['매트에서 기다리는 연습을 하도록 안내함']);
+    expect(note.tasks.map(item => item.text)).toEqual(['매트에서 기다리는 연습을 하루 세 번 하기']);
+  });
+  it('still answers to the rules of the section it joins', () => {
+    const { note, violations } = made({ behaviors: [filed('guidance', '지금은 사료 알갱이를 씀', 's01')] });
+    expect(note.guidance).toEqual([]);
+    expect(violations).toHaveLength(1);
+  });
+  it('ignores a field value written out as a sentence', () => {
+    const { note, violations } = made({ guidance: [claim('true', 's03')], concerns: [claim('false', 's01'), claim('null', 's01')] });
+    expect(note.guidance).toEqual([]);
+    expect(note.concerns).toEqual([]);
+    expect(violations).toEqual([]);
   });
 });
