@@ -28,7 +28,7 @@ export async function checkBeta(config: Config, warmup = false): Promise<string[
     const { body } = await call(base, '/api/session');
     if (body.textModel !== config.textModel) throw new Error('실행 중인 서버의 모델 설정이 현재 .env와 다릅니다. 개발 서버를 다시 시작하세요.');
     if (!body.aiEnabled || body.provider !== 'ollama' || !['ownerLog', 'brief', 'shelter'].every(key => body.features?.[key] === true))
-      throw new Error('네 기능을 활성화해 주세요. npm run local:configure 후 개발 서버를 다시 시작하세요.');
+      throw new Error('네 기능을 활성화해 주세요. settings.env 확인 후 개발 서버를 다시 시작하세요.');
     if (body.authenticated && (!body.configured || !body.sttReady)) throw new Error('실행 중인 서버의 모델·음성 준비 상태를 확인하세요.');
     if (base === api && !body.authenticated) lines.push('접근 비밀번호 사용 중: 시연 화면에서 로그인하세요.');
   }

@@ -1,0 +1,186 @@
+[
+  {
+    "id": "runtime-llama-cpp",
+    "kind": "runtime",
+    "group": "core",
+    "url": "https://github.com/ggml-org/llama.cpp/releases/download/b12069/llama-b12069-bin-win-cuda-12.4-x64.zip",
+    "size": 286851724,
+    "sha256": "870d91ec1e87deea2ca347d2ccd3d99a2ee3dd3c76c9f3de7c33bf31f5f00d63",
+    "dest": "runtime/llama-cpp",
+    "extract": "zip"
+  },
+  {
+    "id": "runtime-llama-cudart",
+    "kind": "runtime",
+    "group": "core",
+    "url": "https://github.com/ggml-org/llama.cpp/releases/download/b12069/cudart-llama-bin-win-cuda-12.4-x64.zip",
+    "size": 391443627,
+    "sha256": "8c79a9b226de4b3cacfd1f83d24f962d0773be79f1e7b75c6af4ded7e32ae1d6",
+    "dest": "runtime/llama-cpp",
+    "extract": "zip"
+  },
+  {
+    "id": "runtime-whisper-cpp",
+    "kind": "runtime",
+    "group": "core",
+    "url": "https://github.com/ggml-org/whisper.cpp/releases/download/b5454/whisper-bin-win-cuda-12.4.0-x64.zip",
+    "size": 684913404,
+    "sha256": "afef0b881c500958921c3f5523b50e59ee2ec9b6f5cbd25b324c51ed308a957a",
+    "dest": "runtime/whisper-cpp",
+    "extract": "zip"
+  },
+  {
+    "id": "runtime-transcribe-cpp",
+    "kind": "runtime",
+    "group": "core",
+    "url": "https://github.com/handy-computer/transcribe.cpp/releases/download/v0.4.1/transcribe-native-0.4.1-windows-x86_64-cuda.tar.gz",
+    "size": 202587464,
+    "sha256": "ba43fb21a3fe0ab2630e0614fbd742e039c389c68ad10fe23aca903f986adc5b",
+    "dest": "runtime/transcribe-cpp",
+    "extract": "targz"
+  },
+  {
+    "id": "runtime-cloudflared",
+    "kind": "runtime",
+    "group": "core",
+    "url": "https://github.com/cloudflare/cloudflared/releases/download/2026.10.7/cloudflared-windows-amd64.exe",
+    "size": 55390512,
+    "sha256": "2493dbc168923bb3e59e5e7716f71deced92992eea9acd6e9d74f84ac7751343",
+    "dest": "runtime/cloudflared/cloudflared.exe"
+  },
+  {
+    "id": "stt-whisper-turbo",
+    "kind": "stt",
+    "group": "core",
+    "url": "https://huggingface.co/ggerganov/whisper.cpp/resolve/5359861c739e955e79d9a303bcbc70fb988958b1/ggml-large-v3-turbo.bin",
+    "size": 1624555275,
+    "sha256": "1fc70f774d38eb169993ac391eea357ef47c88757ef72ee5943879b7e8e2bc69",
+    "dest": "models/stt/ggml-large-v3-turbo.bin"
+  },
+  {
+    "id": "stt-cohere-q8",
+    "kind": "stt",
+    "group": "core",
+    "url": "https://huggingface.co/handy-computer/cohere-transcribe-03-2026-gguf/resolve/7353b6040bdc1be9e5a3823d99d5fe12afe88264/cohere-transcribe-03-2026-Q8_0.gguf",
+    "size": 2410655232,
+    "sha256": "931916663432fd895423a4291a8400221802b288967ca2d435fc5e3141c9e71e",
+    "dest": "models/stt/cohere-transcribe-03-2026-Q8_0.gguf"
+  },
+  {
+    "id": "stt-qwen-asr",
+    "kind": "stt",
+    "group": "compare",
+    "url": "https://huggingface.co/ggml-org/Qwen3-ASR-1.7B-GGUF/resolve/36a678687ba7d07a74ca70ccb0e36902e005fb80/Qwen3-ASR-1.7B-Q8_0.gguf",
+    "size": 2165034944,
+    "sha256": "58e22d0532d4eacaf034cfac17a6fed159f37c41390c710186783be439d1fc57",
+    "dest": "models/stt/Qwen3-ASR-1.7B-Q8_0.gguf"
+  },
+  {
+    "id": "stt-qwen-asr-mmproj",
+    "kind": "mmproj",
+    "group": "compare",
+    "url": "https://huggingface.co/ggml-org/Qwen3-ASR-1.7B-GGUF/resolve/36a678687ba7d07a74ca70ccb0e36902e005fb80/mmproj-Qwen3-ASR-1.7B-Q8_0.gguf",
+    "size": 355709344,
+    "sha256": "46c1d533af3f354ceb37ce855dbceff7da7fa7cf1e6a523df3b13440bd164c0d",
+    "dest": "models/stt/mmproj-Qwen3-ASR-1.7B-Q8_0.gguf"
+  },
+  {
+    "id": "llm-qwen35-9b",
+    "kind": "llm",
+    "group": "core",
+    "url": "https://huggingface.co/unsloth/Qwen3.5-9B-GGUF/resolve/3885219b6810b007914f3a7950a8d1b469d598a5/Qwen3.5-9B-Q4_K_M.gguf",
+    "size": 5680522464,
+    "sha256": "03b74727a860a56338e042c4420bb3f04b2fec5734175f4cb9fa853daf52b7e8",
+    "dest": "models/llm/qwen35-9b/Qwen3.5-9B-Q4_K_M.gguf"
+  },
+  {
+    "id": "llm-qwen35-9b-mmproj",
+    "kind": "mmproj",
+    "group": "core",
+    "url": "https://huggingface.co/unsloth/Qwen3.5-9B-GGUF/resolve/3885219b6810b007914f3a7950a8d1b469d598a5/mmproj-BF16.gguf",
+    "size": 921705024,
+    "sha256": "853698ce7aa6c7ba732478bad280240969ddf7b0fcbf93900046f63903a83383",
+    "dest": "models/llm/qwen35-9b/mmproj-BF16.gguf"
+  },
+  {
+    "id": "llm-qwen38-27b",
+    "kind": "llm",
+    "group": "core",
+    "url": "https://huggingface.co/bartowski/Qwen3.8-27B-GGUF/resolve/87410e7b9a5c21e6ca70c0c9cc5237de909fe621/Qwen3.8-27B-Q4_K_M.gguf",
+    "size": 17442399968,
+    "sha256": "880a52af8317974f7b4b064a6bc29ff49e188b91aa218e08eea3078b6b1cc673",
+    "dest": "models/llm/qwen38-27b/Qwen3.8-27B-Q4_K_M.gguf"
+  },
+  {
+    "id": "llm-qwen38-27b-mmproj",
+    "kind": "mmproj",
+    "group": "core",
+    "url": "https://huggingface.co/bartowski/Qwen3.8-27B-GGUF/resolve/87410e7b9a5c21e6ca70c0c9cc5237de909fe621/mmproj-Qwen3.8-27B-bf16.gguf",
+    "size": 931145952,
+    "sha256": "e43a597863a21bfa48b0fbd4553a771ae4117e25bb172e66f1dbc3fc6d037131",
+    "dest": "models/llm/qwen38-27b/mmproj-Qwen3.8-27B-bf16.gguf"
+  },
+  {
+    "id": "llm-hcx-14b",
+    "kind": "llm",
+    "group": "compare",
+    "url": "https://huggingface.co/naver-ellm/HyperCLOVAX-SEED-Think-14B-GGUF/resolve/89b9a40202ccd54b21d0120d620b37858e32d5e7/HyperCLOVAX-SEED-Think-14B-Q4_K_M.gguf",
+    "size": 8916242240,
+    "sha256": "34189c1048e57b9b0025058114185ce4dc37d045596666b67e377ef1f08398c0",
+    "dest": "models/llm/hcx-14b/HyperCLOVAX-SEED-Think-14B-Q4_K_M.gguf"
+  },
+  {
+    "id": "llm-gemma4-12b",
+    "kind": "llm",
+    "group": "compare",
+    "url": "https://huggingface.co/google/gemma-4-12B-it-qat-q4_0-gguf/resolve/29d097773436b69ff9feafd636ab4cf873786537/gemma-4-12b-it-qat-q4_0.gguf",
+    "size": 6975879296,
+    "sha256": "93567e57a8fe10b23569b9d9ec38cd005deedf71e29477c421a4b83f418a538b",
+    "dest": "models/llm/gemma4-12b/gemma-4-12b-it-qat-q4_0.gguf"
+  },
+  {
+    "id": "llm-gemma4-12b-mmproj",
+    "kind": "mmproj",
+    "group": "compare",
+    "url": "https://huggingface.co/google/gemma-4-12B-it-qat-q4_0-gguf/resolve/29d097773436b69ff9feafd636ab4cf873786537/mmproj-gemma-4-12b-it-qat-q4_0.gguf",
+    "size": 175115616,
+    "sha256": "cb018338a7538a9814d994bfe54644c71eb7ed54e31eae2f721e45fd3c260da7",
+    "dest": "models/llm/gemma4-12b/mmproj-gemma-4-12b-it-qat-q4_0.gguf"
+  },
+  {
+    "id": "llm-gemma4-e4b",
+    "kind": "llm",
+    "group": "compare",
+    "url": "https://huggingface.co/google/gemma-4-E4B-it-qat-q4_0-gguf/resolve/4b4a2c1d584be7264f87aac328a1bc739ce81b6c/gemma-4-E4B_q4_0-it.gguf",
+    "size": 5154941280,
+    "sha256": "676c35070db6dbe52f93e9c864ee0fba4eddea94b9c875d9cb10daff453fbaee",
+    "dest": "models/llm/gemma4-e4b/gemma-4-E4B_q4_0-it.gguf"
+  },
+  {
+    "id": "llm-gemma4-e4b-mmproj",
+    "kind": "mmproj",
+    "group": "compare",
+    "url": "https://huggingface.co/google/gemma-4-E4B-it-qat-q4_0-gguf/resolve/4b4a2c1d584be7264f87aac328a1bc739ce81b6c/gemma-4-E4B-it-mmproj.gguf",
+    "size": 991552256,
+    "sha256": "7498a37cb619e55f2fcf87eb931f56e99389ed6d432e4c5c66110694c0d65578",
+    "dest": "models/llm/gemma4-e4b/gemma-4-E4B-it-mmproj.gguf"
+  },
+  {
+    "id": "stt-cohere-q4-ci",
+    "kind": "stt",
+    "group": "ci",
+    "url": "https://huggingface.co/handy-computer/cohere-transcribe-03-2026-gguf/resolve/7353b6040bdc1be9e5a3823d99d5fe12afe88264/cohere-transcribe-03-2026-Q4_K_M.gguf",
+    "size": 1558162944,
+    "sha256": "0ea56826d8bd5d74b7143a4a04e022dc1bb75452cfae49d98b6acb0c1d16a1fb",
+    "dest": "models/stt/cohere-transcribe-03-2026-Q4_K_M.gguf"
+  },
+  {
+    "id": "llm-qwen35-4b-ci",
+    "kind": "llm",
+    "group": "ci",
+    "url": "https://huggingface.co/unsloth/Qwen3.5-4B-GGUF/resolve/e87f176479d0855a907a41277aca2f8ee7a09523/Qwen3.5-4B-Q4_K_M.gguf",
+    "size": 2740937888,
+    "sha256": "00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4",
+    "dest": "models/llm/qwen35-4b/Qwen3.5-4B-Q4_K_M.gguf"
+  }
+]
