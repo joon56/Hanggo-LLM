@@ -85,8 +85,44 @@ it('rejects startup failure without waiting for a second close event', async () 
   await speech.release();
 });
 
-it('tells the model the language, because it guesses wrong on short sounds', () => {
-  const { messages } = buildQwenRequest(Buffer.from([1, 2, 3]));
-  expect(messages.at(-1)).toEqual({ role: 'assistant', content: 'language Korean<asr_text>' });
-  expect(JSON.stringify(messages[1])).toContain(Buffer.from([1, 2, 3]).toString('base64'));
+it('leaves the language open unless asked to start in Korean', () => {
+  const open = buildQwenRequest(Buffer.from([1, 2, 3]));
+  expect(open.messages.some(message => message.role === 'assistant')).toBe(false);
+  expect(JSON.stringify(open.messages[1])).toContain(Buffer.from([1, 2, 3]).toString('base64'));
+  expect(buildQwenRequest(Buffer.from([1, 2, 3]), 'Korean').messages.at(-1)).toEqual({ role: 'assistant', content: 'language Korean<asr_text>' });
+});
+
+/** Answers each transcription request in turn and records what was asked. */
+function qwenReplies(...contents: string[]) {
+  mocks.spawn.mockReturnValue(childProcess());
+  const asked: { messages: { role: string; content: unknown }[] }[] = [];
+  vi.stubGlobal('fetch', vi.fn(async (_url: string, init?: RequestInit) => {
+    if (init?.method !== 'POST') return new Response('{"status":"ok"}');
+    asked.push(JSON.parse(String(init.body)));
+    return new Response(JSON.stringify({ choices: [{ finish_reason: 'stop', message: { content: contents[asked.length - 1] } }] }));
+  }));
+  return asked;
+}
+async function transcribeWithQwen() {
+  const speech = createLiveSpeech(readConfig({ SPEECH_MODEL: 'qwen-asr' }), { unloadTextModel: async () => {} });
+  await speech.prepare();
+  return (await speech.transcribe(Buffer.from('sample'))).text;
+}
+it('keeps Korean heard with the language left open, in one request', async () => {
+  const asked = qwenReplies('language Korean<asr_text>초코가 앉았어요.');
+  expect(await transcribeWithQwen()).toBe('초코가 앉았어요.');
+  expect(asked).toHaveLength(1);
+});
+it('returns nothing when the model hears no speech, rather than a forced "네."', async () => {
+  const asked = qwenReplies('language None<asr_text>');
+  expect(await transcribeWithQwen()).toBe('');
+  expect(asked).toHaveLength(1);
+  // A model told to answer in Korean cannot say None, so the first request must leave the language open.
+  expect(asked[0].messages.some(message => message.role === 'assistant')).toBe(false);
+});
+it('asks again in Korean when a short sound comes back in another language', async () => {
+  const asked = qwenReplies('language Chinese<asr_text>嗯。', '음.');
+  expect(await transcribeWithQwen()).toBe('음.');
+  expect(asked).toHaveLength(2);
+  expect(asked[1].messages.at(-1)).toEqual({ role: 'assistant', content: 'language Korean<asr_text>' });
 });

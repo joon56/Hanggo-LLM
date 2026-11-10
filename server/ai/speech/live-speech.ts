@@ -27,13 +27,23 @@ export function buildSpeechCommand(config: Config, port: number, token: string) 
       '--port', String(port), '--request-path', `/internal-${token}`, '--public', resolve(config.home, 'runtime', 'empty-public')] };
 }
 
-/** The answer is started in Korean. Left to guess per window, the model wrote "음" as 嗯 and "아" as 啊 or Yeah. */
-export function buildQwenRequest(wav: Buffer) {
+/**
+ * Left to guess the language, the model wrote "음" as 嗯 and "아" as 啊 or Yeah. Told to start in Korean,
+ * it wrote "네." for a breath, because it can no longer answer that it heard no speech. So the language
+ * is left open first, and Korean is asked for only when another language comes back.
+ */
+export function buildQwenRequest(wav: Buffer, language?: 'Korean') {
   return { temperature: 0, max_tokens: 512, stream: false, messages: [
     { role: 'system', content: '' },
     { role: 'user', content: [{ type: 'input_audio', input_audio: { data: wav.toString('base64'), format: 'wav' } }] },
-    { role: 'assistant', content: 'language Korean<asr_text>' },
+    ...(language ? [{ role: 'assistant', content: `language ${language}<asr_text>` }] : []),
   ] };
+}
+
+/** The language Qwen names before its text. None means it heard no speech. */
+function qwenLanguage(raw: unknown) {
+  const content = (raw as { choices?: { message?: { content?: unknown } }[] } | null)?.choices?.[0]?.message?.content;
+  return typeof content === 'string' ? /^language (\w+)/.exec(content)?.[1] ?? '' : '';
 }
 
 export function speechInstalled(config: Config): boolean {
@@ -125,17 +135,20 @@ export function createLiveSpeech(config: Config, hooks: { unloadTextModel?: () =
       const started = performance.now();
       const combined = AbortSignal.any([lifetime.signal, AbortSignal.timeout(config.sttTimeoutMs), ...(signal ? [signal] : [])]);
       try {
-        let response: Response;
+        let text: string;
         if (config.liveSpeechModel === 'qwen-asr') {
-          response = await fetch(`${baseUrl}/v1/chat/completions`, { method: 'POST', redirect: 'error', signal: combined,
+          const ask = async (language?: 'Korean') => boundedJson(await fetch(`${baseUrl}/v1/chat/completions`, { method: 'POST', redirect: 'error', signal: combined,
             headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-            body: JSON.stringify(buildQwenRequest(wav)) });
+            body: JSON.stringify(buildQwenRequest(wav, language)) }));
+          // Korean stays as heard and None is silence or noise. Another language is a short Korean sound misheard.
+          const open = await ask();
+          const language = qwenLanguage(open);
+          text = language === 'None' ? '' : parseSpeechResponse('qwen-asr', language === 'Korean' ? open : await ask('Korean'));
         } else {
           const form = new FormData(); form.append('file', new Blob([new Uint8Array(wav)], { type: 'audio/wav' }), 'segment.wav');
           form.append('response_format', 'json'); form.append('language', 'ko'); form.append('temperature', '0'); form.append('temperature_inc', '0');
-          response = await fetch(`${baseUrl}/inference`, { method: 'POST', redirect: 'error', body: form, signal: combined });
+          text = parseSpeechResponse(config.liveSpeechModel, await boundedJson(await fetch(`${baseUrl}/inference`, { method: 'POST', redirect: 'error', body: form, signal: combined })));
         }
-        const text = parseSpeechResponse(config.liveSpeechModel, await boundedJson(response));
         return { text, model: config.liveSpeechModel, latencyMs: Math.round(performance.now() - started) };
       } catch (error) {
         // A disconnected HTTP request may leave native GPU inference running. Terminate our helper before retry.
