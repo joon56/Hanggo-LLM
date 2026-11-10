@@ -20,7 +20,7 @@ export function buildSpeechCommand(config: Config, port: number, token: string) 
       args: ['-m', model, '--mmproj', projector, '-ngl', '99', '-c', '4096', '-np', '1', '-t', '6',
         '--flash-attn', 'on', '--host', '127.0.0.1', '--port', String(port), '--api-key', token, '--no-webui', '--jinja'] };
   }
-  const model = resolve(config.liveModelDirectory, candidate === 'whisper-turbo-q5' ? 'ggml-large-v3-turbo-q5_0.bin' : 'ggml-large-v3-turbo.bin');
+  const model = resolve(config.liveModelDirectory, 'ggml-large-v3-turbo.bin');
   const executable = resolve(config.whisperServer);
   return { executable, files: [executable, model], baseUrl: `${origin}/internal-${token}`,
     args: ['-m', model, '-l', 'ko', '-t', '6', '-bs', '5', '-bo', '5', '-nt', '--host', '127.0.0.1',

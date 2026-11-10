@@ -25,14 +25,6 @@ it('constructs an isolated GPU Whisper command with a private route', () => {
   expect(command.baseUrl).toBe('http://127.0.0.1:32123/internal-test-token');
   expect(command.args.join(' ')).toContain('ggml-large-v3-turbo.bin');
 });
-it('runs the compressed Whisper turbo with Korean fixed', () => {
-  const config = readConfig({ SPEECH_MODEL: 'whisper-turbo-q5' });
-  expect(config.liveSpeechModel).toBe('whisper-turbo-q5');
-  const command = buildSpeechCommand(config, 32123, 'test-token');
-  expect(command.args.join(' ')).toContain('ggml-large-v3-turbo-q5_0.bin');
-  expect(command.args).toContain('ko');
-  expect(command.files).toHaveLength(2);
-});
 it('uses the local Qwen audio encoder and limits parallel GPU contexts', () => {
   const command = buildSpeechCommand(readConfig({ LIVE_SPEECH_MODEL: 'qwen-asr' }), 32123, 'test-token');
   expect(command.args).toContain('--mmproj');
