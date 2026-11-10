@@ -3,7 +3,7 @@ import { execFileSync } from 'node:child_process';
 import { resolve, dirname } from 'node:path';
 import { loadLocalEnv, readConfig } from '../server/config.ts';
 import { createSpeechProvider } from '../server/ai/speech/index.ts';
-import { characterErrorRate, summarizeRuns, termRecall } from './speech-metrics.ts';
+import { characterErrorRate, foreignScript, summarizeRuns, termRecall } from './speech-metrics.ts';
 
 // Usage: node --env-file-if-exists=.env scripts/compare-speech.ts manifest.json [output.json] [candidate,...]
 // Manifest: {kind:'synthetic'|'human', samples:[{file:'relative.wav', expected:'reference transcript'}]}.
@@ -37,13 +37,15 @@ for (const candidate of selected) {
     for (const sample of samples) {
       const result = await speech.transcribe(sample.wav);
       const run = { file: sample.file, durationSeconds: sample.durationSeconds, expected: sample.expected,
-        ...result, realTimeFactor: result.latencyMs / (sample.durationSeconds * 1000), cer: characterErrorRate(sample.expected, result.text), ...termRecall(sample.terms ?? [], result.text) };
+        ...result, realTimeFactor: result.latencyMs / (sample.durationSeconds * 1000), cer: characterErrorRate(sample.expected, result.text), foreign: foreignScript(sample.expected, result.text), ...termRecall(sample.terms ?? [], result.text) };
       runs.push(run);
     }
     // Text on silence or noise means the model invented words. The capture gate exists because of this.
+    // Short loud bursts, like a breath or a knock, can still pass that gate.
     const nonSpeech = [];
-    for (const [name, filter] of [['silence', 'anullsrc=r=16000:cl=mono'], ['noise', 'anoisesrc=r=16000:c=pink:a=0.02']]) {
-      const wav = execFileSync('ffmpeg', ['-v', 'error', '-nostdin', '-f', 'lavfi', '-i', filter, '-t', '5', '-ac', '1', '-c:a', 'pcm_s16le', '-bitexact', '-f', 'wav', 'pipe:1'], { windowsHide: true, maxBuffer: 4 * 1024 * 1024 });
+    for (const [name, filter, seconds] of [['silence', 'anullsrc=r=16000:cl=mono', '5'], ['noise', 'anoisesrc=r=16000:c=pink:a=0.02', '5'],
+      ['short-noise', 'anoisesrc=r=16000:c=pink:a=0.05', '0.8'], ['breath', 'anoisesrc=r=16000:c=brown:a=0.08,lowpass=f=1200', '1.2']]) {
+      const wav = execFileSync('ffmpeg', ['-v', 'error', '-nostdin', '-f', 'lavfi', '-i', filter, '-t', seconds, '-ac', '1', '-c:a', 'pcm_s16le', '-bitexact', '-f', 'wav', 'pipe:1'], { windowsHide: true, maxBuffer: 4 * 1024 * 1024 });
       const dataAt = wav.indexOf('data');
       wav.writeUInt32LE(wav.length - 8, 4); wav.writeUInt32LE(wav.length - dataAt - 8, dataAt + 4);
       const text = await speech.transcribe(wav).then(result => result.text).catch(error => `error: ${error instanceof Error ? error.message : String(error)}`);

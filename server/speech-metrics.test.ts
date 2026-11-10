@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { expect, it } from 'vitest';
-import { characterErrorRate, summarizeRuns, termRecall } from '../scripts/speech-metrics.ts';
+import { characterErrorRate, foreignScript, summarizeRuns, termRecall } from '../scripts/speech-metrics.ts';
 
 it('ignores spacing and punctuation when measuring character errors', () => {
   expect(characterErrorRate('초코가 앉았습니다.', '초코가앉았습니다')).toBe(0);
@@ -22,7 +22,19 @@ it('summarizes mean error, pooled recall, and tail latency', () => {
     { cer: 0.3, found: 2, total: 2, realTimeFactor: 0.2 },
     { cer: 0.2, found: 0, total: 0, realTimeFactor: 0.9 },
   ]);
-  expect(summary).toEqual({ runs: 3, meanCer: 0.2, termRecall: 0.75, meanRealTimeFactor: 0.4, p95RealTimeFactor: 0.9 });
+  expect(summary).toEqual({ runs: 3, meanCer: 0.2, termRecall: 0.75, foreignRuns: 0, meanRealTimeFactor: 0.4, p95RealTimeFactor: 0.9 });
+});
+it('flags writing the speaker did not use, which is how interjections went wrong', () => {
+  expect(foreignScript('음', '嗯')).toBe(true);
+  expect(foreignScript('예', 'Yeah.')).toBe(true);
+  expect(foreignScript('아', 'あ')).toBe(true);
+  expect(foreignScript('음', '음.')).toBe(false);
+  expect(foreignScript('TV를 껐어요', 'TV를 껐어요')).toBe(false);
+  expect(foreignScript('', '')).toBe(false);
+});
+it('counts runs written in another language', () => {
+  const run = { cer: 0, found: 0, total: 0, realTimeFactor: 0.1 };
+  expect(summarizeRuns([{ ...run, foreign: true }, { ...run, foreign: false }]).foreignRuns).toBe(1);
 });
 it('reports recall as null when no sample defines terms', () => {
   expect(summarizeRuns([{ cer: 0, found: 0, total: 0, realTimeFactor: 0.1 }]).termRecall).toBeNull();

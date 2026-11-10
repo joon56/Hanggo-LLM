@@ -20,11 +20,20 @@ export function termRecall(terms: string[][], text: string) {
   return { found, total: terms.length };
 }
 
-export function summarizeRuns(runs: { cer: number; found: number; total: number; realTimeFactor: number }[]) {
+const SCRIPTS = ['Han', 'Hiragana', 'Katakana', 'Latin'];
+const scriptsIn = (value: string) => SCRIPTS.filter(script => new RegExp(`\\p{Script=${script}}`, 'u').test(value));
+
+/** Writing the speaker did not use, such as 嗯 for "음" or Yeah for "예". */
+export function foreignScript(reference: string, actual: string) {
+  const expected = scriptsIn(reference);
+  return scriptsIn(actual).some(script => !expected.includes(script));
+}
+
+export function summarizeRuns(runs: { cer: number; found: number; total: number; realTimeFactor: number; foreign?: boolean }[]) {
   const mean = (values: number[]) => round(values.reduce((sum, value) => sum + value, 0) / values.length);
   const factors = runs.map(run => run.realTimeFactor).sort((a, b) => a - b);
   const total = runs.reduce((sum, run) => sum + run.total, 0);
   return { runs: runs.length, meanCer: mean(runs.map(run => run.cer)),
     termRecall: total ? round(runs.reduce((sum, run) => sum + run.found, 0) / total) : null,
-    meanRealTimeFactor: mean(factors), p95RealTimeFactor: round(factors[Math.ceil(factors.length * 0.95) - 1]) };
+    foreignRuns: runs.filter(run => run.foreign).length, meanRealTimeFactor: mean(factors), p95RealTimeFactor: round(factors[Math.ceil(factors.length * 0.95) - 1]) };
 }
