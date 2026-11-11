@@ -1,5 +1,8 @@
 import path from 'node:path';
 
+export type ApiEffort = 'low' | 'medium' | 'high';
+export const apiVendor = (model: string) => model.startsWith('gemini-') ? 'gemini' as const : model.startsWith('claude-') ? 'claude' as const : null;
+
 export function readConfig(env: NodeJS.ProcessEnv = process.env) {
   const ollamaUrl = new URL(env.OLLAMA_BASE_URL || 'http://127.0.0.1:11434');
   if (ollamaUrl.protocol !== 'http:' || !['127.0.0.1', '[::1]'].includes(ollamaUrl.hostname) || ollamaUrl.username || ollamaUrl.password || ollamaUrl.pathname !== '/' || ollamaUrl.search || ollamaUrl.hash)
@@ -25,7 +28,21 @@ export function readConfig(env: NodeJS.ProcessEnv = process.env) {
   if (!['', 'whisper-turbo', 'whisper-large', 'qwen-asr'].includes(liveSpeechModel)) throw new Error('Invalid LIVE_SPEECH_MODEL');
   const liveConsultationEnabled = env.FEATURE_LIVE_CONSULTATION_ENABLED === 'true';
   if (liveConsultationEnabled && !liveSpeechModel) throw new Error('Select LIVE_SPEECH_MODEL before enabling live consultation.');
-  return { production, host, password, publicOrigin, provider: 'ollama' as const,
+  const providerSetting = env.AI_PROVIDER || 'local';
+  if (providerSetting !== 'local' && providerSetting !== 'api') throw new Error('AI_PROVIDER must be local or api.');
+  const provider = providerSetting === 'api' ? 'api' as const : 'ollama' as const;
+  const apiEffort = env.API_EFFORT || 'low';
+  if (apiEffort !== 'low' && apiEffort !== 'medium' && apiEffort !== 'high') throw new Error('API_EFFORT must be low, medium or high.');
+  const apiTextModel = env.API_TEXT_MODEL || 'gemini-3.8-flash', apiShortModel = env.API_SHORT_MODEL || 'claude-haiku-5-5';
+  const geminiApiKey = env.GEMINI_API_KEY || '', anthropicApiKey = env.ANTHROPIC_API_KEY || '';
+  // Fail at startup, not on the first record, when an API model lacks its key.
+  if (provider === 'api') for (const model of [apiTextModel, apiShortModel]) {
+    const vendor = apiVendor(model);
+    if (!vendor) throw new Error(`Unsupported API model: ${model}`);
+    if (vendor === 'gemini' && !geminiApiKey) throw new Error(`GEMINI_API_KEY is required for ${model}.`);
+    if (vendor === 'claude' && !anthropicApiKey) throw new Error(`ANTHROPIC_API_KEY is required for ${model}.`);
+  }
+  return { production, host, password, publicOrigin, provider,
     liveConsultationEnabled, liveSpeechModel: liveSpeechModel as '' | 'whisper-turbo' | 'whisper-large' | 'qwen-asr',
     consultationDirectory: env.CONSULTATION_DIRECTORY || '.local-data/consultations',
     liveModelDirectory: env.LIVE_MODEL_DIRECTORY || '.local-ai/candidates/models',
@@ -43,7 +60,9 @@ export function readConfig(env: NodeJS.ProcessEnv = process.env) {
     ffprobePath: env.FFPROBE_PATH || 'ffprobe',
     lessonCatalogPath: env.LESSON_CATALOG_PATH || '',
     timeoutMs: ollamaTimeoutMs, dailyLimit: number('AI_DAILY_LIMIT', 200, 10000),
+    apiTextModel, apiShortModel, apiEffort: apiEffort as ApiEffort, apiTimeoutMs: number('API_TIMEOUT_MS', 60000, 600000), geminiApiKey, anthropicApiKey,
     trustProxy: env.TRUST_PROXY === '1' ? 1 : false as false | number,
   };
 }
 export type Config = ReturnType<typeof readConfig>;
+export function activeTextModel(config: Config): string { return config.provider === 'api' ? config.apiTextModel : config.textModel; }
