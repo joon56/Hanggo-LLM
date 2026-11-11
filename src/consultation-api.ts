@@ -14,7 +14,7 @@ export const createConsultation = (metadata: Metadata, captureSource?: 'camera' 
 export const finishConsultation = (id: string, durationMs: number, captureError?: string) => request<ConsultationSession>(`${path(id)}/finish`, json('POST', { durationMs, ...(captureError ? { captureError: captureError.slice(0, 500) } : {}) }));
 export const addBookmark = (id: string, atMs: number, text: string) => request<ConsultationSession>(`${path(id)}/bookmarks`, json('POST', { atMs, text }));
 export const updateSegment = (id: string, segmentId: string, text: string) => request<ConsultationSession>(`${path(id)}/segments/${encodeURIComponent(segmentId)}`, json('PATCH', { text }));
-export const generateConsultationNote = (id: string) => request<ConsultationSession>(`${path(id)}/note`, json('POST', {}));
+export const generateConsultationNote = (id: string, consent?: boolean) => request<ConsultationSession>(`${path(id)}/note`, json('POST', consent ? { consent: true } : {}));
 export const updateConsultationNote = (id: string, note: ConsultationNote) => request<ConsultationSession>(`${path(id)}/note`, json('PATCH', { note }));
 export const approveConsultation = (id: string, noteRevision: string) => request<ConsultationSession>(`${path(id)}/approve`, json('POST', { reviewed: true, noteRevision }));
 export const recordingUrl = (id: string) => `${path(id)}/recording`;

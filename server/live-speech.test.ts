@@ -82,3 +82,12 @@ it('rejects startup failure without waiting for a second close event', async () 
   await expect(speech.prepare()).rejects.toThrow(/시작/);
   await speech.release();
 });
+it('continues preparing speech in API mode when the Ollama unload fails, but not in local mode', async () => {
+  const unloadTextModel = async () => { throw new Error('Ollama is not running'); };
+  mocks.spawn.mockReturnValue(childProcess());
+  vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ status: 'ok' }))));
+  const api = createLiveSpeech(readConfig({ LIVE_SPEECH_MODEL: 'whisper-turbo', AI_PROVIDER: 'api', GEMINI_API_KEY: 'g', ANTHROPIC_API_KEY: 'a' }), { unloadTextModel });
+  await api.prepare(); expect(mocks.spawn).toHaveBeenCalledTimes(1); await api.release();
+  const local = createLiveSpeech(readConfig({ LIVE_SPEECH_MODEL: 'whisper-turbo' }), { unloadTextModel });
+  await expect(local.prepare()).rejects.toThrow('Ollama is not running'); expect(mocks.spawn).toHaveBeenCalledTimes(1);
+});

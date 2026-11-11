@@ -107,7 +107,9 @@ export function createLiveSpeech(config: Config, hooks: { unloadTextModel?: () =
       lifetime = new AbortController();
       const signal = AbortSignal.any([lifetime.signal, AbortSignal.timeout(config.sttTimeoutMs)]);
       starting = (async () => {
-        await unloadTextModel(); signal.throwIfAborted();
+        // API mode does not need Ollama for text, so an absent server must not block speech.
+        try { await unloadTextModel(); } catch (error) { if (config.provider !== 'api') throw error; }
+        signal.throwIfAborted();
         const port = await freePort(); signal.throwIfAborted();
         token = randomBytes(24).toString('hex');
         const command = buildSpeechCommand(config, port, token); baseUrl = command.baseUrl;

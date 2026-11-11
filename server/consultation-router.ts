@@ -16,7 +16,7 @@ import { generateConsultationNote } from './consultation-notes.ts';
 import { recordingHandler } from './consultation-media.ts';
 import { briefConsultationChoice, resolveBriefConsultation } from './brief-consultation.ts';
 
-type Options = { vision?: VisionService; enabled: boolean; directory: string; ffmpegPath?: string; speech?: LiveSpeechService; generate: (text: string, sourceKind: SourceKind, signal?: AbortSignal) => Promise<unknown>; acquireAi: (charge: boolean) => () => void };
+type Options = { vision?: VisionService; enabled: boolean; directory: string; ffmpegPath?: string; speech?: LiveSpeechService; generate: (text: string, sourceKind: SourceKind, signal?: AbortSignal) => Promise<unknown>; acquireAi: (charge: boolean) => () => void; requireExternalConsent?: boolean };
 const integerTime = z.number().int().min(0).max(MAX_SESSION_MS);
 const metadataSchema = z.object({ petName: z.string().trim().min(1).max(200), trainerName: z.string().trim().min(1).max(200), sessionDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).refine(value => { const date = new Date(`${value}T00:00:00Z`); return Number.isFinite(date.getTime()) && date.toISOString().slice(0, 10) === value; }) }).strict();
 function parse<T>(schema: z.ZodType<T>, value: unknown): T { const result = schema.safeParse(value); if (!result.success) throw new ConsultationError('INPUT', 'Check request fields.'); return result.data; }
@@ -263,6 +263,7 @@ export function createConsultationRouter(options: Options) {
   });
   router.post('/:id/note', async (req, res) => {
     const id = req.params.id; const session = await store.get(id);
+    if (options.requireExternalConsent && req.body?.consent !== true) throw new ConsultationError('CONSENT_REQUIRED', '외부 AI 전송 동의가 필요합니다.');
     if (stopping) throw new ConsultationError('SHUTTING_DOWN', 'Server is shutting down.', 503);
     if (busy() || ['recording', 'processing', 'preparing'].includes(session.state)) throw new ConsultationError('STATE', 'Finish local AI work before generating notes.', 409);
     if (session.captureSource === 'camera' && session.vision?.state !== 'complete') throw new ConsultationError('VISION_REQUIRED', 'Complete camera analysis before generating notes.', 409);

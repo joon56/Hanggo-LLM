@@ -133,3 +133,18 @@ test('api mode shows external AI badge and transcript transfer consent hint', ()
   expect(screen.queryByText('LOCAL ONLY')).not.toBeInTheDocument();
   expect(screen.getByText(/녹화·로컬 처리와 일지용 전사 텍스트의 외부 AI 전송 동의를 받으세요/)).toBeInTheDocument();
 });
+test('api mode requires note consent before sending transcript text', async () => {
+  vi.mocked(api.generateConsultationNote).mockResolvedValue(saved);
+  render(<ConsultationWorkspace ready model="whisper-turbo" provider="api"/>); await open();
+  const button = screen.getByRole('button', { name: '상담 일지 만들기' });
+  const box = screen.getByRole('checkbox', { name: /전사 텍스트를 외부 AI\(Google·Anthropic\)로 전송하는 데 동의/ });
+  expect(button).toBeDisabled(); fireEvent.click(box); expect(button).toBeEnabled(); fireEvent.click(button);
+  await waitFor(() => expect(api.generateConsultationNote).toHaveBeenCalledWith('saved-1', true));
+});
+test('local mode shows no note consent checkbox and sends no consent', async () => {
+  vi.mocked(api.generateConsultationNote).mockResolvedValue(saved);
+  render(<ConsultationWorkspace ready model="whisper-turbo"/>); await open();
+  expect(screen.queryByRole('checkbox', { name: /전사 텍스트를 외부 AI/ })).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: '상담 일지 만들기' }));
+  await waitFor(() => expect(api.generateConsultationNote).toHaveBeenCalledWith('saved-1', undefined));
+});

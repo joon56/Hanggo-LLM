@@ -257,3 +257,22 @@ it('application shutdown aborts capture transcription and retains recording in t
  const stored=await new ConsultationStore(f.directory).get(session.id);expect(stored.state).toBe('incomplete');expect(stored.errors.some(error=>error.code==='CAPTURE_INTERRUPTED')).toBe(true);
  expect(await new ConsultationStore(f.directory).recording(session.id)).toEqual(bytes);expect(f.liveSpeech.release).toHaveBeenCalledOnce();
 });
+const apiKeys = { AI_PROVIDER: 'api', GEMINI_API_KEY: 'test-g', ANTHROPIC_API_KEY: 'test-a' };
+async function readyConsultation(extra = {}) {
+  const f = await make(extra); const id = (await f.start().expect(201)).body.id;
+  await f.upload(id).expect(202); await f.post(`/${id}/finish`, { durationMs: 5000 }).expect(200);
+  return { ...f, id };
+}
+it('requires external AI consent for notes in API mode and generates nothing without it', async () => {
+  const { post, id, generate } = await readyConsultation(apiKeys);
+  const refused = await post(`/${id}/note`).expect(400);
+  expect(refused.body).toMatchObject({ code: 'CONSENT_REQUIRED', error: '외부 AI 전송 동의가 필요합니다.' });
+  await post(`/${id}/note`, { consent: false }).expect(400);
+  expect(generate).not.toHaveBeenCalled();
+  await post(`/${id}/note`, { consent: true }).expect(200);
+  expect(generate).toHaveBeenCalledOnce();
+});
+it('keeps note generation consent-free in local mode', async () => {
+  const { post, id, generate } = await readyConsultation();
+  await post(`/${id}/note`).expect(200); expect(generate).toHaveBeenCalledOnce();
+});

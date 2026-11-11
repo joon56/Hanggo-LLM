@@ -110,7 +110,7 @@ export function createApp(config: Config, services: Services) {
   const aiLimit = rateLimit({ windowMs: 60_000, limit: 30, keyGenerator: () => 'ai', standardHeaders: 'draft-8', legacyHeaders: false,
     message: { error: '요청이 많습니다. 잠시 후 다시 시도해 주세요.', code: 'RATE_LIMIT' } });
   let day = ''; let calls = 0; let active = 0;
-  const consultation = createConsultationRouter({ enabled: config.liveConsultationEnabled && config.aiEnabled, directory: config.consultationDirectory, ffmpegPath: config.ffmpegPath, vision: services.vision ?? createConsultationVision(config), speech: services.liveSpeech, generate: services.generate, acquireAi: charge => {
+  const consultation = createConsultationRouter({ requireExternalConsent: config.provider === 'api', enabled: config.liveConsultationEnabled && config.aiEnabled, directory: config.consultationDirectory, ffmpegPath: config.ffmpegPath, vision: services.vision ?? createConsultationVision(config), speech: services.liveSpeech, generate: services.generate, acquireAi: charge => {
     const today = new Date().toISOString().slice(0, 10);
     if (today !== day) { day = today; calls = 0; }
     if (active >= 1 || (charge && calls >= config.dailyLimit)) throw new ConsultationError('AI_LIMIT', 'Local AI is busy or daily limit reached.', 429);

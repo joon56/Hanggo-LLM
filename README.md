@@ -125,7 +125,7 @@ npm.cmd run llm:eval:workspace -- --feature owner --case bark-delivery --live
 
 ### 외부 API 모드 (시험 중)
 
-텍스트 기능은 `.env`의 `AI_PROVIDER=api`로 외부 API를 쓸 수 있습니다. 음성 전사와 영상 관찰은 계속 이 PC에서 처리합니다. 개인정보 일부를 가린 텍스트가 Google 또는 Anthropic으로 전송되므로, 동의 절차가 준비되기 전에는 가상 자료만 사용합니다. Gemini는 유료 등급 키를 사용합니다. 무료 등급 입력은 Google 제품 개선에 쓰입니다.
+텍스트 기능은 `.env`의 `AI_PROVIDER=api`로 외부 API를 쓸 수 있습니다. 음성 전사와 영상 관찰은 계속 이 PC에서 처리합니다. 실시간 상담의 음성 전사는 이 PC에서 처리하며, 카메라 영상 분석에는 여전히 Ollama(`qwen3.5:9b`)가 필요합니다. 개인정보 일부를 가린 텍스트가 Google 또는 Anthropic으로 전송되므로, 동의 절차가 준비되기 전에는 가상 자료만 사용합니다. Gemini는 유료 등급 키를 사용합니다. 무료 등급 입력은 Google 제품 개선에 쓰입니다.
 
 ```dotenv
 AI_PROVIDER=api
