@@ -130,12 +130,11 @@ npm.cmd run llm:eval:workspace -- --feature owner --case bark-delivery --live
 ```dotenv
 AI_PROVIDER=api
 API_TEXT_MODEL=gemini-3.8-flash
-API_SHORT_MODEL=claude-haiku-5-5
+API_SHORT_MODEL=gemini-3.8-flash
 GEMINI_API_KEY=...
-ANTHROPIC_API_KEY=...
 ```
 
-모델 비교는 `npm.cmd run llm:eval:api -- --model <모델 ID> --all`로 실행하며 비용이 듭니다. [API 모델 비교 결과](docs/llm/api-comparison.md)
+2026-11-12 비교 결과에 따라 네 기능 모두 Gemini 3.8 Flash(추론 강도 `low`)를 기본으로 정했습니다. Claude 모델(`claude-sonnet-5-5`, `claude-haiku-5-5`)을 고르면 `ANTHROPIC_API_KEY`도 필요합니다. 모델 비교는 `npm.cmd run llm:eval:api -- --model <모델 ID> --all`로 실행하며 비용이 듭니다. [API 모델 비교 결과](docs/llm/api-comparison.md)
 
 ---
 

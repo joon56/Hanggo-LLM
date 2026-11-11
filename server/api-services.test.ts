@@ -30,7 +30,7 @@ it('retries with the validation message and falls back when IDs stay invalid', a
 it('falls back without retrying when the vendor call fails', async () => {
   const models: string[] = [];
   const client: StructuredClient = async value => { models.push(value.model); throw new Error('offline'); };
-  const owner = await createApiServices(config(), { client }).generateOwner({ text: '초코 산책 30분 하고 응가함', pets: [{ id: 'p1', name: '초코', nicknames: [] }], now: '2026-09-30T14:00:00+09:00', timeZone: 'Asia/Seoul', sourceKind: 'nl_log_text' });
+  const owner = await createApiServices(readConfig({ AI_ENABLED: 'true', AI_PROVIDER: 'api', GEMINI_API_KEY: 'test-g', ANTHROPIC_API_KEY: 'test-a', API_SHORT_MODEL: 'claude-haiku-5-5' }), { client }).generateOwner({ text: '초코 산책 30분 하고 응가함', pets: [{ id: 'p1', name: '초코', nicknames: [] }], now: '2026-09-30T14:00:00+09:00', timeZone: 'Asia/Seoul', sourceKind: 'nl_log_text' });
   expect(owner.fallbackUsed).toBe(true); expect(models).toEqual(['claude-haiku-5-5']);
 });
 it('accepts an owner event chosen by sentence range', async () => {

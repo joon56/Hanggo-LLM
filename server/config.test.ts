@@ -13,13 +13,13 @@ it('cannot select a paid provider through obsolete environment settings', () => 
   expect(config).not.toHaveProperty('apiKey');
 });
 it('defaults to the local provider with API settings ready but unused', () => {
-  expect(readConfig({ AI_PROVIDER: 'local' })).toMatchObject({ provider: 'ollama', apiTextModel: 'gemini-3.8-flash', apiShortModel: 'claude-haiku-5-5', apiEffort: 'low', apiTimeoutMs: 60000 });
+  expect(readConfig({ AI_PROVIDER: 'local' })).toMatchObject({ provider: 'ollama', apiTextModel: 'gemini-3.8-flash', apiShortModel: 'gemini-3.8-flash', apiEffort: 'low', apiTimeoutMs: 60000 });
 });
 it('requires the key of every vendor an API model needs', () => {
   expect(() => readConfig({ AI_PROVIDER: 'api', ANTHROPIC_API_KEY: 'test-a' })).toThrow('GEMINI_API_KEY is required for gemini-3.8-flash.');
-  expect(() => readConfig({ AI_PROVIDER: 'api', GEMINI_API_KEY: 'test-g' })).toThrow('ANTHROPIC_API_KEY is required for claude-haiku-5-5.');
-  expect(readConfig({ AI_PROVIDER: 'api', GEMINI_API_KEY: 'test-g', ANTHROPIC_API_KEY: 'test-a' })).toMatchObject({ provider: 'api' });
-  expect(readConfig({ AI_PROVIDER: 'api', API_TEXT_MODEL: 'claude-sonnet-5-5', ANTHROPIC_API_KEY: 'test-a' })).toMatchObject({ apiTextModel: 'claude-sonnet-5-5' });
+  expect(() => readConfig({ AI_PROVIDER: 'api', GEMINI_API_KEY: 'test-g', API_SHORT_MODEL: 'claude-haiku-5-5' })).toThrow('ANTHROPIC_API_KEY is required for claude-haiku-5-5.');
+  expect(readConfig({ AI_PROVIDER: 'api', GEMINI_API_KEY: 'test-g' })).toMatchObject({ provider: 'api', apiTextModel: 'gemini-3.8-flash', apiShortModel: 'gemini-3.8-flash' });
+  expect(readConfig({ AI_PROVIDER: 'api', API_TEXT_MODEL: 'claude-sonnet-5-5', API_SHORT_MODEL: 'claude-haiku-5-5', ANTHROPIC_API_KEY: 'test-a' })).toMatchObject({ apiTextModel: 'claude-sonnet-5-5' });
 });
 it('rejects unknown API models and effort levels', () => {
   expect(() => readConfig({ AI_PROVIDER: 'api', API_TEXT_MODEL: 'gpt-6', GEMINI_API_KEY: 'test-g', ANTHROPIC_API_KEY: 'test-a' })).toThrow('Unsupported API model: gpt-6');

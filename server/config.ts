@@ -33,7 +33,7 @@ export function readConfig(env: NodeJS.ProcessEnv = process.env) {
   const provider = providerSetting === 'api' ? 'api' as const : 'ollama' as const;
   const apiEffort = env.API_EFFORT || 'low';
   if (apiEffort !== 'low' && apiEffort !== 'medium' && apiEffort !== 'high') throw new Error('API_EFFORT must be low, medium or high.');
-  const apiTextModel = env.API_TEXT_MODEL || 'gemini-3.8-flash', apiShortModel = env.API_SHORT_MODEL || 'claude-haiku-5-5';
+  const apiTextModel = env.API_TEXT_MODEL || 'gemini-3.8-flash', apiShortModel = env.API_SHORT_MODEL || 'gemini-3.8-flash';
   const geminiApiKey = env.GEMINI_API_KEY || '', anthropicApiKey = env.ANTHROPIC_API_KEY || '';
   // Fail at startup, not on the first record, when an API model lacks its key.
   if (provider === 'api') for (const model of [apiTextModel, apiShortModel]) {
