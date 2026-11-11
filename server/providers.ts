@@ -1,13 +1,16 @@
 import type { Config } from './config.ts';
 import { createOllamaServices } from './ollama.ts';
+import { createApiServices } from './api-services.ts';
 import { createLocalTranscriber } from './local-speech.ts';
-import { getLocalStatus } from './local-status.ts';
+import { getProviderStatus } from './local-status.ts';
 import { createLiveSpeech } from './live-speech.ts';
 
 export function createAIServices(config: Config) {
-  return { ...createOllamaServices(config),
+  // Usage logs carry the model, token counts and latency, never record text.
+  const text = config.provider === 'api' ? createApiServices(config, { onUsage: usage => console.info(JSON.stringify({ event: 'ai_usage', ...usage })) }) : createOllamaServices(config);
+  return { ...text,
     liveSpeech: createLiveSpeech(config),
-    status: () => getLocalStatus(config),
+    status: () => getProviderStatus(config),
     transcribe: createLocalTranscriber({ executable: config.whisperExecutable, modelPath: config.whisperModelPath, ffmpegPath: config.ffmpegPath, timeoutMs: config.sttTimeoutMs }),
   };
 }

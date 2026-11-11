@@ -24,3 +24,11 @@ export async function getLocalStatus(config: Config) {
     return { configured, sttReady, liveConsultation, statusMessage: !configured ? `${config.textModel} 로컬 모델을 설치한 뒤 다시 연결해 주세요.` : !sttReady ? '텍스트 모델 준비됨 · 음성 모델과 FFmpeg 설치를 확인해 주세요.' : '로컬 텍스트·음성 실행기 준비됨' };
   } catch { return { configured: false, sttReady, liveConsultation, statusMessage: 'Ollama를 실행한 뒤 다시 연결해 주세요.' }; }
 }
+
+export async function getProviderStatus(config: Config) {
+  const local = await getLocalStatus(config);
+  if (config.provider !== 'api') return local;
+  // Startup already required the API keys; speech still runs on this PC.
+  const text = `외부 AI 텍스트(${config.apiTextModel}) 준비됨`;
+  return { ...local, configured: true, statusMessage: local.sttReady ? `${text} · 음성은 이 PC에서 처리` : `${text} · 음성 모델과 FFmpeg 설치를 확인해 주세요.` };
+}

@@ -7,7 +7,7 @@ import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
 import multer from 'multer';
 import { z } from 'zod';
-import type { Config } from './config.ts';
+import { activeTextModel, type Config } from './config.ts';
 import type { LiveSpeechService } from './live-speech.ts';
 import { createConsultationRouter } from './consultation-router.ts';
 import { createConsultationVision } from './consultation-vision.ts';
@@ -70,7 +70,7 @@ export function createApp(config: Config, services: Services) {
   app.use('/api', express.json({ limit: '2mb' }));
   app.get('/api/health', (_req, res) => res.json({ ok: true }));
   const sessionInfo = (req: Request) => ({ authenticated: authenticated(req), requirePassword: !!config.password,
-    aiEnabled: config.aiEnabled, provider: config.provider, configured: false, textModel: config.textModel, sttModel: config.sttModel, features: config.features });
+    aiEnabled: config.aiEnabled, provider: config.provider, configured: false, textModel: activeTextModel(config), sttModel: config.sttModel, features: config.features });
   app.get('/api/session', async (req, res) => res.json({ ...sessionInfo(req), ...(config.aiEnabled && authenticated(req) && services.status ? await services.status() : {}) }));
   const loginLimit = rateLimit({ windowMs: 60_000, limit: 10, keyGenerator: () => 'login', standardHeaders: 'draft-8', legacyHeaders: false,
     message: { error: '잠시 후 다시 로그인해 주세요.', code: 'RATE_LIMIT' } });

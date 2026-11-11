@@ -157,3 +157,10 @@ it('rejects new AI requests after application shutdown begins',async()=>{
  const {app,generate}=make();await app.shutdown();
  await request(app).post('/api/notes').set('Origin',origin).send({text:'Source',sourceKind:'trainer_summary_text',consent:true}).expect(503);expect(generate).not.toHaveBeenCalled();
 });
+it('reports the API text model in the session without exposing keys', async () => {
+  const app = createApp(readConfig({ AI_ENABLED: 'true', AI_PROVIDER: 'api', GEMINI_API_KEY: 'gemini-secret-test-value', ANTHROPIC_API_KEY: 'anthropic-secret-test-value' }), {
+    generate: async () => ({}), transcribe: async () => '', status: async () => ({ configured: true, sttReady: true, statusMessage: 'Ready' }) });
+  const session = await request(app).get('/api/session').expect(200);
+  expect(session.body).toMatchObject({ provider: 'api', textModel: 'gemini-3.8-flash' });
+  expect(JSON.stringify(session.body)).not.toContain('secret-test-value');
+});
