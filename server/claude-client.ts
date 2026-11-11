@@ -11,6 +11,8 @@ export function createClaudeClient(apiKey: string, timeoutMs: number, effort: Ap
     if (response.stop_reason !== 'end_turn') throw new Error(`Claude stopped with ${response.stop_reason}.`);
     const text = response.content.find(block => block.type === 'text');
     if (!text || text.type !== 'text') throw new Error('Claude returned no text.');
-    return { json: JSON.parse(text.text), inputTokens: response.usage.input_tokens, outputTokens: response.usage.output_tokens };
+    let json: unknown;
+    try { json = JSON.parse(text.text); } catch { throw new Error(`Claude returned invalid JSON (${model}).`); }
+    return { json, inputTokens: response.usage.input_tokens, outputTokens: response.usage.output_tokens };
   };
 }

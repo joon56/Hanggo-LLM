@@ -263,3 +263,17 @@ it('shows the external AI badge and help copy when the session provider is api',
   fireEvent.click(screen.getByRole('button', { name: /사용 안내/ }));
   expect(screen.getByText(/외부 AI\(Google·Anthropic\)로 전송해 처리하려면 동의한 뒤 실행하세요/)).toBeInTheDocument();
 });
+
+it('labels an approved note from an external model as an external AI record', async () => {
+  mocks.getSession.mockResolvedValue({ ...aiSession, provider: 'api' as const, textModel: 'gemini-3.8-flash' });
+  const draft = { ...createDraft('보호자는 짖는다고 말했습니다.', 'trainer_summary_text'), mode: 'ollama', generation: { requestId: 'ext-1', model: 'gemini-3.8-flash', promptVersion: 'v1', latencyMs: 43, fallbackUsed: false } };
+  mocks.generateNote.mockResolvedValue({ draft, fallbackUsed: false, requestId: 'ext-1', latencyMs: 43, model: 'gemini-3.8-flash', warnings: [] });
+  render(<App />); await example();
+  fireEvent.click(screen.getByRole('checkbox', { name: /외부 AI/ }));
+  fireEvent.click(screen.getByRole('button', { name: '일지 초안 만들기' }));
+  await waitFor(() => expect(screen.getByText('외부 AI 초안')).toBeInTheDocument());
+  fireEvent.click(screen.getByRole('checkbox', { name: /원문과 일지를 확인/ }));
+  fireEvent.click(screen.getByRole('button', { name: '승인하고 저장' }));
+  expect(screen.getByText(/승인된 외부 AI 기록/)).toBeInTheDocument();
+  expect(screen.queryByText(/승인된 로컬 AI 기록/)).not.toBeInTheDocument();
+});

@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { expect, it } from 'vitest';
 import { z } from 'zod';
-import { API_NOTE_INSTRUCTIONS, API_OWNER_INSTRUCTIONS, API_SHELTER_INSTRUCTIONS, BriefChoice, NoteChoice, OwnerChoice, ShelterChoice, briefRequest, mapNoteChoice, mapOwnerChoice, mapShelterChoice, noteRequest, ownerRequest, shelterRequest } from './api-mappers.ts';
+import { API_BRIEF_INSTRUCTIONS, API_NOTE_INSTRUCTIONS, API_OWNER_INSTRUCTIONS, API_SHELTER_INSTRUCTIONS, BriefChoice, NoteChoice, OwnerChoice, ShelterChoice, briefRequest, mapNoteChoice, mapOwnerChoice, mapShelterChoice, noteRequest, ownerRequest, shelterRequest } from './api-mappers.ts';
 import type { BriefDraft } from '../src/domain/workspace-types.ts';
 
 it('asks API models for sentence IDs instead of rewritten quotes', () => {
@@ -49,4 +49,22 @@ it('uses wire-safe schemas without length or range constraints', () => {
     const json = JSON.stringify(z.toJSONSchema(schema));
     for (const keyword of ['minLength', 'maxLength', 'minimum', 'maximum', 'minItems', 'maxItems']) expect(json).not.toContain(`"${keyword}"`);
   }
+});
+it('sends only repeated-sentence first occurrences and keeps numbered IDs', () => {
+  expect(noteRequest('네. 산책을 했습니다. 네.').input.sentences).toEqual([{ id: 'S1', text: '네.' }, { id: 'S2', text: '산책을 했습니다.' }]);
+  const memo = { id: 'm1', date: '2026-10-01', role: 'staff', text: '순합니다. 산책을 했습니다. 순합니다.' };
+  const { input } = shelterRequest({ animal: { species: 'dog', ageMonths: 12 }, memos: [memo] } as never);
+  expect(input.memos[0].sentences.map(s => s.text)).toEqual(['순합니다.', '산책을 했습니다.']);
+});
+it('gives API models the change candidates the local path would allow', () => {
+  const facts = [
+    { id: 'record-days', label: '기록일', value: 5, unit: '일', previousValue: 5, refs: [] },
+    { id: 'count:a', label: 'A', value: 10, unit: '건', previousValue: 4, refs: [] },
+    { id: 'count:b', label: 'B', value: 5, unit: '건', previousValue: 5, refs: [] },
+    { id: 'other', label: 'C', value: 9, unit: '건', previousValue: 1, refs: [] },
+  ];
+  const draft = { period: { from: '2026-10-29', to: '2026-11-11', daysWithRecords: 5 }, facts } as unknown as BriefDraft;
+  expect(briefRequest(draft).changeCandidates).toEqual(['count:a']);
+  expect(briefRequest({ ...draft, period: { ...draft.period, daysWithRecords: 2 } } as BriefDraft).changeCandidates).toEqual([]);
+  expect(API_BRIEF_INSTRUCTIONS).toContain('changeCandidates');
 });

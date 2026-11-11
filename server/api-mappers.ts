@@ -2,8 +2,10 @@ import { z } from 'zod';
 import { Extraction } from './service.ts';
 import { NOTE_INSTRUCTIONS } from './prompts.ts';
 import { OWNER_INSTRUCTIONS } from './owner-service.ts';
+import { BRIEF_INSTRUCTIONS } from './brief-service.ts';
 import { SHELTER_INSTRUCTIONS, ShelterExtraction } from './shelter-service.ts';
 import { OwnerEventFields, ownerSafetyFlags } from '../src/domain/owner-log.ts';
+import { isBriefChange } from '../src/domain/brief.ts';
 import { memoSentences } from '../src/domain/shelter.ts';
 import { numberSentences, quoteRange, unitText, type SentenceUnit } from './sentence-choice.ts';
 import type { BriefDraft, OwnerInput, ShelterInput } from '../src/domain/workspace-types.ts';
@@ -29,22 +31,29 @@ ${CHOOSE} 발생 시점이 없으면 timeHint=null, 지속 시간이 없으면 d
 export const API_SHELTER_INSTRUCTIONS = `${SHELTER_INSTRUCTIONS.replace('보호소 메모의 관찰을 원문 그대로 sourceQuote로 추출하고 memoId, category, valence를 반환하세요.', '보호소 메모 문장 중 관찰을 골라 sentence에 문장 id를 쓰고 category, valence를 반환하세요.').replace(' 마침표나 줄바꿈으로 나눈 원문 문장 전체를 인용하세요.', '')}
 ${CHOOSE} 행동 관찰과 무관한 연락처는 제외하세요. category는 기록 대상 동물의 종이 아니라 관찰 주제입니다. people=사람과의 관계, dogs=다른 개와의 관계, cats=고양이와의 관계, food=음식·간식입니다.`;
 
+export const API_BRIEF_INSTRUCTIONS = `${BRIEF_INSTRUCTIONS}
+changes에는 changeCandidates에 있는 ID만 고르세요. changeCandidates가 비어 있으면 changes는 []입니다.`;
+
 const sentences = (units: SentenceUnit[]) => units.map(({ id, text }) => ({ id, text }));
 const risk = (raw: unknown) => raw && typeof raw === 'object' && !Array.isArray(raw) ? raw as Record<string, unknown> : {};
 export type ShelterUnits = { memo: ShelterInput['memos'][number]; units: SentenceUnit[] }[];
 
-export function noteRequest(masked: string) { const units = numberSentences(masked); return { units, input: { sentences: sentences(units) } }; }
+// A repeated sentence would yield duplicate quotes, which the services reject; keep the first of each.
+const firstOfEach = (units: SentenceUnit[]) => units.filter((unit, index) => units.findIndex(other => other.text === unit.text) === index);
+export function noteRequest(masked: string) { const units = firstOfEach(numberSentences(masked)); return { units, input: { sentences: sentences(units) } }; }
 export function ownerRequest(masked: OwnerInput) {
   const { text, ...context } = masked; const units = numberSentences(text);
   return { units, input: { ...context, sentences: sentences(units) } };
 }
 export function shelterRequest(masked: ShelterInput) {
-  const memos: ShelterUnits = masked.memos.map((memo, index) => ({ memo, units: numberSentences(memo.text, memoSentences, `M${index + 1}-S`) }));
+  const memos: ShelterUnits = masked.memos.map((memo, index) => ({ memo, units: firstOfEach(numberSentences(memo.text, memoSentences, `M${index + 1}-S`)) }));
   return { memos, input: { animal: { species: masked.animal.species, ageMonths: masked.animal.ageMonths }, memos: memos.map(({ memo, units }) => ({ date: memo.date, role: memo.role, sentences: sentences(units) })) } };
 }
 export function briefRequest(draft: BriefDraft) {
   const facts = draft.facts.slice(0, 48).map(({ id, label, value, unit, previousValue }) => ({ id, label, value: typeof value === 'string' ? value.slice(0, 160) : value, unit, previousValue }));
-  return { period: draft.period, facts, omittedFacts: draft.facts.length - facts.length, scope: '날짜별 기록 집계와 제한된 맥락 발췌. 원문 전체와 전사는 보내지 않음.' };
+  const sent = facts.map(fact => fact.id), priorDays = Number(draft.facts.find(fact => fact.id === 'record-days')?.previousValue);
+  const changeCandidates = draft.facts.filter(fact => sent.includes(fact.id) && isBriefChange(fact, draft.period.daysWithRecords, priorDays)).map(fact => fact.id);
+  return { period: draft.period, facts, changeCandidates, omittedFacts: draft.facts.length - facts.length, scope: '날짜별 기록 집계와 제한된 맥락 발췌. 원문 전체와 전사는 보내지 않음.' };
 }
 
 export function mapNoteChoice(units: SentenceUnit[], raw: unknown): unknown {

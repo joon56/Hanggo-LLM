@@ -7,7 +7,9 @@ import { createLiveSpeech } from './live-speech.ts';
 
 export function createAIServices(config: Config) {
   // Usage logs carry the model, token counts and latency, never record text.
-  const text = config.provider === 'api' ? createApiServices(config, { onUsage: usage => console.info(JSON.stringify({ event: 'ai_usage', ...usage })) }) : createOllamaServices(config);
+  const text = config.provider === 'api' ? createApiServices(config, { onUsage: usage => console.info(JSON.stringify({ event: 'ai_usage', ...usage })),
+    // No message and no input: vendor error text can echo request content.
+    onError: ({ model, latencyMs, error, status }) => console.warn(JSON.stringify({ event: 'ai_error', model, latencyMs, error, status })) }) : createOllamaServices(config);
   return { ...text,
     liveSpeech: createLiveSpeech(config),
     status: () => getProviderStatus(config),

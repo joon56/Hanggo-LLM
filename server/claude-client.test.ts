@@ -21,3 +21,7 @@ it.each(['refusal', 'max_tokens'])('treats %s as a failed call', async stop => {
   const client = createClaudeClient('test-key', 1000, 'low', { create: vi.fn(async () => message({ stop_reason: stop })) } as never);
   await expect(client({ model: 'claude-sonnet-5-5', system: 's', input: {}, schema })).rejects.toThrow(`Claude stopped with ${stop}.`);
 });
+it('names the model when the reply is not JSON', async () => {
+  const client = createClaudeClient('test-key', 1000, 'low', { create: vi.fn(async () => message({ content: [{ type: 'text', text: '{oops' }] })) } as never);
+  await expect(client({ model: 'claude-sonnet-5-5', system: 's', input: {}, schema })).rejects.toThrow('Claude returned invalid JSON (claude-sonnet-5-5).');
+});

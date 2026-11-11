@@ -57,3 +57,18 @@ it('sends only computed brief facts to the text model', async () => {
   expect(request?.input).not.toHaveProperty('records');
   expect(result.model).toBe('gemini-3.8-flash');
 });
+it('reports a vendor failure with its status and still falls back', async () => {
+  const onError = vi.fn();
+  const client: StructuredClient = async () => { throw Object.assign(new Error('unauthorized'), { name: 'AuthError', status: 401 }); };
+  const result = await createApiServices(config(), { client, onError }).generate('앉아를 관찰했습니다.', 'trainer_summary_text');
+  expect(result.fallbackUsed).toBe(true);
+  expect(onError).toHaveBeenCalledTimes(1);
+  expect(onError).toHaveBeenCalledWith({ model: 'gemini-3.8-flash', latencyMs: expect.any(Number), error: 'AuthError', status: 401, message: 'unauthorized' });
+});
+it('accepts a note when the model selects every ID of a repeated sentence', async () => {
+  let ids: string[] = [];
+  const client: StructuredClient = async value => { ids = (value.input as { sentences: { id: string }[] }).sentences.map(s => s.id); return { json: { items: ids.map(sentence => ({ sentence, category: 'follow_up' })), safetyFlags: [], methodReview: false }, inputTokens: 1, outputTokens: 1 }; };
+  const result = await createApiServices(config(), { client }).generate('네. 산책을 했습니다. 네.', 'trainer_summary_text');
+  expect(ids).toHaveLength(2);
+  expect(result.fallbackUsed).toBe(false);
+});

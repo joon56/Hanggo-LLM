@@ -2,6 +2,7 @@ import { z } from 'zod';
 
 export type ApiVendor = 'gemini' | 'claude';
 export type ApiUsage = { model: string; inputTokens: number; outputTokens: number; latencyMs: number };
+export type ApiError = { model: string; latencyMs: number; error: string; status?: number; message: string };
 export type StructuredRequest = { model: string; system: string; input: unknown; schema: z.ZodType; signal?: AbortSignal };
 export type StructuredResult = { json: unknown; inputTokens: number; outputTokens: number };
 export type StructuredClient = (request: StructuredRequest) => Promise<StructuredResult>;

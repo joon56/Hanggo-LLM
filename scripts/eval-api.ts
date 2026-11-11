@@ -2,7 +2,7 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { readConfig } from '../server/config.ts';
 import { createApiServices } from '../server/api-services.ts';
 import { API_PRICES_CHECKED, estimateCostUsd } from '../server/api-pricing.ts';
-import type { ApiUsage } from '../server/api-types.ts';
+import type { ApiError, ApiUsage } from '../server/api-types.ts';
 import { generateConsultationNote } from '../server/consultation-notes.ts';
 import type { ConsultationSession } from '../src/domain/consultation.ts';
 import { evaluateFixture, featureFiles, smokeCases } from './evaluation.ts';
@@ -18,8 +18,10 @@ for (let i = 0; i < args.length; i++) {
 if (!model) throw new Error('--model을 지정하세요.');
 // One model serves every feature so each result is attributable to it.
 const config = readConfig({ ...process.env, AI_PROVIDER: 'api', API_TEXT_MODEL: model, API_SHORT_MODEL: model });
-let usage: ApiUsage[] = [];
-const services = createApiServices(config, { onUsage: entry => usage.push(entry) });
+let usage: ApiUsage[] = [], errors: ApiError[] = [];
+const services = createApiServices(config, { onUsage: entry => usage.push(entry), onError: entry => errors.push(entry) });
+const apiErrors = () => errors.map(({ error, status, message }) => ({ error, status, message }));
+const money = (cost: number | null, digits: number) => cost === null ? '가격 미등록' : '$' + cost.toFixed(digits);
 const totals = () => {
   const inputTokens = usage.reduce((n, u) => n + u.inputTokens, 0), outputTokens = usage.reduce((n, u) => n + u.outputTokens, 0);
   return { calls: usage.length, inputTokens, outputTokens, costUsd: estimateCostUsd(model, inputTokens, outputTokens) };
@@ -40,7 +42,7 @@ if (long) {
   const started = Date.now(); let error = '', fallbackUsed: boolean | null = null;
   try { fallbackUsed = (await generateConsultationNote(session, services.generate)).fallbackUsed ?? null; } catch (cause) { error = cause instanceof Error ? cause.message : '요청 실패'; }
   const latencyMs = Date.now() - started;
-  reports.push({ feature: 'long-transcript', characters: texts.join('\n').length, latencyMs, fallbackUsed, error, ...totals() });
+  reports.push({ feature: 'long-transcript', characters: texts.join('\n').length, latencyMs, fallbackUsed, error, apiErrors: apiErrors(), ...totals() });
   await save();
   console.info(`${model} 긴 전사: ${(latencyMs / 1000).toFixed(1)}s ${JSON.stringify(totals())}${error ? ` 오류: ${error}` : ''}`);
 } else {
@@ -49,16 +51,16 @@ if (long) {
     const cases = all ? fixtures : fixtures.filter((f: { id: string }) => smokeCases[file].includes(f.id));
     if (!all && cases.length !== smokeCases[file].length) throw new Error(`평가 자료가 누락되었습니다: ${file}`);
     for (const fixture of cases) {
-      usage = []; const started = Date.now();
+      usage = []; errors = []; const started = Date.now();
       const { failures, result } = await evaluateFixture(file, fixture, services);
       const latencyMs = Date.now() - started, cost = totals();
-      reports.push({ feature: file, id: fixture.id, passed: !failures.length, failures, latencyMs, ...cost, result });
-      console.info(`${file}/${fixture.id}: ${failures.length ? 'FAIL' : 'PASS'} ${(latencyMs / 1000).toFixed(1)}s $${(cost.costUsd ?? 0).toFixed(4)} ${failures.join(' / ')}`);
+      reports.push({ feature: file, id: fixture.id, passed: !failures.length, failures, apiErrors: apiErrors(), latencyMs, ...cost, result });
+      console.info(`${file}/${fixture.id}: ${failures.length ? 'FAIL' : 'PASS'} ${(latencyMs / 1000).toFixed(1)}s ${money(cost.costUsd, 4)} ${failures.join(' / ')}${failures.length && errors.length ? ` [${errors[0].status ? `${errors[0].status} ` : ''}${errors[0].error}: ${errors[0].message}]` : ''}`);
       await save();
     }
   }
   const sum = (key: 'inputTokens' | 'outputTokens') => reports.reduce((n, r) => n + r[key], 0);
-  const cost = reports.reduce((n, r) => n + (r.costUsd ?? 0), 0);
-  console.info(`${model}: ${reports.filter(r => r.passed).length}/${reports.length} 자동 조건 통과 · 입력 ${sum('inputTokens')} · 출력 ${sum('outputTokens')} 토큰 · 약 $${cost.toFixed(3)} (가격 ${API_PRICES_CHECKED} 기준)`);
+  const cost = reports.reduce((n, r) => n + (r.costUsd ?? 0), 0), anyUnpriced = reports.some(r => r.costUsd === null);
+  console.info(`${model}: ${reports.filter(r => r.passed).length}/${reports.length} 자동 조건 통과 · 입력 ${sum('inputTokens')} · 출력 ${sum('outputTokens')} 토큰 · 약 ${anyUnpriced ? '가격 미등록' : money(cost, 3)} (가격 ${API_PRICES_CHECKED} 기준)`);
   if (reports.some(r => !r.passed)) process.exitCode = 1;
 }

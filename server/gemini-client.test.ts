@@ -19,3 +19,9 @@ it('treats an unfinished interaction as a failed call', async () => {
   const client = createGeminiClient('test-key', 1000, 'low', { create: vi.fn(async () => ({ status: 'incomplete', output_text: '{}' })) } as never);
   await expect(client({ model: 'gemini-3.8-flash', system: 's', input: {}, schema })).rejects.toThrow('Gemini returned incomplete.');
 });
+it('names the model when output is empty or not JSON', async () => {
+  const empty = createGeminiClient('test-key', 1000, 'low', { create: vi.fn(async () => ({ status: 'completed', output_text: '' })) } as never);
+  await expect(empty({ model: 'gemini-3.8-flash', system: 's', input: {}, schema })).rejects.toThrow('Gemini returned no output (gemini-3.8-flash).');
+  const bad = createGeminiClient('test-key', 1000, 'low', { create: vi.fn(async () => ({ status: 'completed', output_text: '{oops' })) } as never);
+  await expect(bad({ model: 'gemini-3.8-flash', system: 's', input: {}, schema })).rejects.toThrow('Gemini returned invalid JSON (gemini-3.8-flash).');
+});
