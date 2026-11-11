@@ -8,7 +8,7 @@ import NoteReview from './components/NoteReview';
 import ConnectionPanel from './components/ConnectionPanel';
 import { generateNote, getSession, login, logout, transcribe, verifyAudibleAudio } from './api';
 import type { Session } from './api';
-import type { AiProvider } from './ai-copy';
+import { processingPhrase, type AiProvider } from './ai-copy';
 import OwnerWorkspace from './components/OwnerWorkspace';
 import BriefWorkspace from './components/BriefWorkspace';
 import ShelterWorkspace from './components/ShelterWorkspace';
@@ -273,7 +273,7 @@ export default function App() {
     </aside>
 
     <div className="workspace">
-      <header className="topbar"><div className="breadcrumbs">행고 기록 공간<span>/</span><strong>{workspaceLabels[workspace]}</strong></div><div className="topbar-actions"><span className="demo-badge">{aiReady ? 'LOCAL AI' : 'DEMO'}</span>{workspace === 'notes' && <button className="help-button" onClick={() => setShowHelp(value => !value)} aria-expanded={showHelp}><InfoIcon size={18} />사용 안내</button>}</div></header>
+      <header className="topbar"><div className="breadcrumbs">행고 기록 공간<span>/</span><strong>{workspaceLabels[workspace]}</strong></div><div className="topbar-actions"><span className="demo-badge">{aiReady ? (provider === 'api' ? 'EXTERNAL AI' : 'LOCAL AI') : 'DEMO'}</span>{workspace === 'notes' && <button className="help-button" onClick={() => setShowHelp(value => !value)} aria-expanded={showHelp}><InfoIcon size={18} />사용 안내</button>}</div></header>
       <main id="main">
         {consultationBusy ? <fieldset disabled className="consultation-connection-lock">{connection}</fieldset> : connection}
         {workspace === 'ownerLog' && <OwnerWorkspace aiReady={aiReady} sttReady={sttReady} provider={provider} />}
@@ -283,7 +283,7 @@ export default function App() {
         {workspace === 'notes' && <>
         <section className="page-intro"><div><span className="eyebrow">AFTER THE SESSION</span><h1>대화의 끝에서,<br className="mobile-break" /> 기록의 시작.</h1><p>짧게 남긴 상담 요약을, 다음 훈련으로 이어지는 일지로.</p></div><div className="intro-caption"><BookOpenTextIcon size={27} weight="light" /><span>말하고, 확인하고,<br /><strong>기록으로 남기세요.</strong></span></div></section>
         <div className="flow-strip" aria-label="진행 단계"><span className={!draft ? 'current' : 'complete'}><i>{draft ? <CheckIcon size={13} /> : '1'}</i>요약 남기기</span><ArrowRightIcon /><span className={draft && !saved ? 'current' : saved ? 'complete' : ''}><i>{saved ? <CheckIcon size={13} /> : '2'}</i>원문과 초안 확인</span><ArrowRightIcon /><span className={saved ? 'current' : ''}><i>3</i>승인하고 보관</span><span className="flow-note">{aiReady ? 'AI 초안 · 훈련사 최종 검토' : '로컬 규칙 분류'}</span></div>
-        {showHelp && <section className="help-panel"><button className="icon-button help-close" aria-label="사용 안내 닫기" onClick={() => setShowHelp(false)}><XIcon /></button><h2>상담 기록 흐름</h2><p>텍스트를 입력하거나 3~60초 녹음 후 받아쓰기를 확인하세요. 이 PC의 로컬 AI 서버에서 처리하려면 동의한 뒤 실행하세요. 원문 근거와 초안을 검토하고 승인하면 이 브라우저에 저장됩니다.</p><p>녹음은 새 기록을 열거나 페이지를 닫으면 사라집니다. 승인한 기록은 목록에서 삭제할 수 있습니다. 안전 표시는 전문가 검토를 대신하지 않습니다.</p></section>}
+        {showHelp && <section className="help-panel"><button className="icon-button help-close" aria-label="사용 안내 닫기" onClick={() => setShowHelp(false)}><XIcon /></button><h2>상담 기록 흐름</h2><p>텍스트를 입력하거나 3~60초 녹음 후 받아쓰기를 확인하세요. {processingPhrase(provider)}하려면 동의한 뒤 실행하세요. 원문 근거와 초안을 검토하고 승인하면 이 브라우저에 저장됩니다.</p><p>녹음은 새 기록을 열거나 페이지를 닫으면 사라집니다. 승인한 기록은 목록에서 삭제할 수 있습니다. 안전 표시는 전문가 검토를 대신하지 않습니다.</p></section>}
         <div className="announcements" aria-live="polite">{notice && <p className="notice"><CheckCircleSmall />{notice}</p>}{error && <p role="alert" className="error-notice">{error}</p>}</div>
 
         <div className="editor-grid">
@@ -309,7 +309,7 @@ export default function App() {
             {transcriptNeedsReview && !saved && <label className="review-checkbox"><input type="checkbox" checked={transcriptConfirmed} onChange={event => setTranscriptConfirmed(event.target.checked)} />받아쓰기 내용을 듣고 확인했습니다.</label>}
             {highlight && <div className="source-highlight"><span>선택한 항목의 원문 근거</span><blockquote>{highlight}</blockquote></div>}
             <div className="source-caption"><ShieldCheckIcon size={17} /><span>훈련사의 사후 요약입니다. 실제 상담 녹취가 아닙니다.</span></div>
-            {!saved && <>{aiReady && <label className="review-checkbox consent-checkbox"><input type="checkbox" checked={consent} onChange={event => { if (!event.target.checked) cancelPending(); setConsent(event.target.checked); }} />{provider === 'api' ? '음성은 이 PC의 로컬 AI 서버에서, 텍스트는 외부 AI(Google·Anthropic)로 전송해 처리하는 데 동의합니다.' : '음성·텍스트를 이 PC의 로컬 AI 서버에서 처리하는 데 동의합니다.'}</label>}{pending && <div className="pending-actions" role="status">{pending === 'note' ? 'AI 초안 생성 중…' : '음성 받아쓰기 중…'} <button className="text-button" onClick={() => { cancelPending(); setNotice('요청을 취소했습니다. 이미 시작된 로컬 처리는 잠시 계속될 수 있습니다.'); }}>취소</button></div>}<button className="button primary full generate-button" onClick={generate} disabled={!sourceText.trim() || recording || !!pending || (aiReady && !consent) || (transcriptNeedsReview && !transcriptConfirmed)}><FileTextIcon size={19} />일지 초안 만들기<ArrowRightIcon className="button-end" size={19} /></button><p className="input-footnote">{aiReady ? 'AI 초안은 원문과 비교해 직접 확인해 주세요.' : '로컬 규칙으로 입력 문장을 분류합니다.'}</p></>}
+            {!saved && <>{aiReady && <label className="review-checkbox consent-checkbox"><input type="checkbox" checked={consent} onChange={event => { if (!event.target.checked) cancelPending(); setConsent(event.target.checked); }} />{provider === 'api' ? '음성은 이 PC의 로컬 AI 서버에서, 텍스트는 외부 AI(Google·Anthropic)로 전송해 처리하는 데 동의합니다.' : '음성·텍스트를 이 PC의 로컬 AI 서버에서 처리하는 데 동의합니다.'}</label>}{pending && <div className="pending-actions" role="status">{pending === 'note' ? 'AI 초안 생성 중…' : '음성 받아쓰기 중…'} <button className="text-button" onClick={() => { cancelPending(); setNotice(provider === 'api' && pending === 'note' ? '요청을 취소했습니다. 이미 시작된 외부 AI 처리는 잠시 계속될 수 있습니다.' : '요청을 취소했습니다. 이미 시작된 로컬 처리는 잠시 계속될 수 있습니다.'); }}>취소</button></div>}<button className="button primary full generate-button" onClick={generate} disabled={!sourceText.trim() || recording || !!pending || (aiReady && !consent) || (transcriptNeedsReview && !transcriptConfirmed)}><FileTextIcon size={19} />일지 초안 만들기<ArrowRightIcon className="button-end" size={19} /></button><p className="input-footnote">{aiReady ? 'AI 초안은 원문과 비교해 직접 확인해 주세요.' : '로컬 규칙으로 입력 문장을 분류합니다.'}</p></>}
           </section>
           <NoteReview draft={draft} saved={saved} reviewed={reviewed} canApprove={!pending && !recording && !!metadata.petName.trim() && !!metadata.trainerName.trim() && !!metadata.sessionDate} onReview={setReviewed} onChange={updateItem} onRemove={removeItem} onSource={showSource} onApprove={approve} onExport={exportNote} />
         </div>

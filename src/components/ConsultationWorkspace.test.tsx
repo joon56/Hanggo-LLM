@@ -127,3 +127,9 @@ test('failed observation save retains edit and all review gates', async () => {
 test('pending scene does not request frame images before persistence', async () => {
   vision();saved.vision!.state='processing';saved.vision!.scenes[0].state='pending';render(<ConsultationWorkspace ready model="whisper-turbo"/>);await open();expect(screen.queryAllByRole('img',{name:/장면 1 프레임/})).toHaveLength(0);
 });
+test('api mode shows external AI badge and transcript transfer consent hint', () => {
+  render(<ConsultationWorkspace ready model="whisper-turbo" provider="api"/>);
+  expect(screen.getByText('LOCAL + EXTERNAL AI')).toBeInTheDocument();
+  expect(screen.queryByText('LOCAL ONLY')).not.toBeInTheDocument();
+  expect(screen.getByText(/녹화·로컬 처리와 일지용 전사 텍스트의 외부 AI 전송 동의를 받으세요/)).toBeInTheDocument();
+});

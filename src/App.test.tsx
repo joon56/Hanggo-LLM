@@ -254,3 +254,12 @@ it('keeps transcript provenance when a new recording starts', async () => {
   await waitFor(() => expect(mocks.generateNote).toHaveBeenCalled());
   expect(mocks.generateNote.mock.calls[0][1]).toBe('trainer_summary_voice');
 });
+
+it('shows the external AI badge and help copy when the session provider is api', async () => {
+  mocks.getSession.mockResolvedValue({ ...aiSession, provider: 'api' as const, textModel: 'gemini-test' });
+  render(<App />); await ready();
+  expect(screen.getByText('EXTERNAL AI')).toBeInTheDocument();
+  expect(screen.queryByText('LOCAL AI')).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: /사용 안내/ }));
+  expect(screen.getByText(/외부 AI\(Google·Anthropic\)로 전송해 처리하려면 동의한 뒤 실행하세요/)).toBeInTheDocument();
+});
