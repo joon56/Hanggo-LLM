@@ -8,12 +8,13 @@ import { listNotes } from '../domain/storage';
 import type { ApprovedNote } from '../domain/notes';
 import type { BriefDraft, BriefInput, BriefSource, BriefConsultationChoice, BriefConsultationContext, Pet, SavedOwnerLog } from '../domain/workspace-types';
 import { downloadJson, message } from './workspace-utils';
+import { isExternalModel, processingPhrase, type AiProvider } from '../ai-copy';
 import IssueReport from './IssueReport';
 
-type Props = { aiReady: boolean };
+type Props = { aiReady: boolean; provider?: AiProvider };
 const time = (ms: number) => Math.floor(ms / 60000).toString().padStart(2, '0') + ':' + (Math.floor(ms / 1000) % 60).toString().padStart(2, '0');
 const sourceKind = { owner: '보호자 기록', legacy_consultation: '확정 요약 상담', consultation: '확정 상세 상담' };
-export default function BriefWorkspace({ aiReady }: Props) {
+export default function BriefWorkspace({ aiReady, provider }: Props) {
   const [pets, setPets] = useState<Pet[]>([]), [records, setRecords] = useState<SavedOwnerLog[]>([]);
   const [notes, setNotes] = useState<ApprovedNote[]>([]), [consultations, setConsultations] = useState<BriefConsultationChoice[]>([]);
   const [petId, setPetId] = useState(''), [selection, setSelection] = useState('');
@@ -66,7 +67,7 @@ export default function BriefWorkspace({ aiReady }: Props) {
       if (!aiReady) { setDraft(computeBrief(input, context)); setNotice('저장된 근거로 코드 브리핑을 만들었습니다.'); return; }
       const result = await generateBrief(input, controller.signal); if (!stillCurrent()) return;
       validateLegacy();
-      setDraft(result.draft); setNotice(result.fallbackUsed ? 'AI 선택 실패 · 코드 기반 대체 브리핑입니다. 상세 근거와 질문을 확인해 주세요.' : '로컬 AI가 근거 우선순위를 선택한 브리핑입니다.');
+      setDraft(result.draft); setNotice(result.fallbackUsed ? 'AI 선택 실패 · 코드 기반 대체 브리핑입니다. 상세 근거와 질문을 확인해 주세요.' : `${isExternalModel(result.model) ? '외부 AI' : '로컬 AI'}가 근거 우선순위를 선택한 브리핑입니다.`);
       if (result.warnings.length) setError(result.warnings.join(' '));
     } catch (caught) {
       if (!stillCurrent()) return;
@@ -106,7 +107,7 @@ export default function BriefWorkspace({ aiReady }: Props) {
     </select></label>
     {consultationNotice && <p className="ws-muted">{consultationNotice}</p>}
     {selected && <div className="ws-box"><h3>사용 자료</h3><p>저장된 보호자 기록 {records.filter(record => record.draft.events.some(e => e.petId === petId)).length}건</p><p>선택 상담: {note ? '확정 요약 · ' + note.metadata.sessionDate : consultation ? '확정 상세 · ' + consultation.date : '선택 없음'}</p>{consultation && <p className="ws-muted">생성할 때 서버의 확정 상태와 현재 내용을 다시 확인합니다.</p>}</div>}
-    {aiReady && <label className="ws-check"><input type="checkbox" checked={consent} onChange={e => { setConsent(e.target.checked); if (!e.target.checked) cancel(); }} />선택한 기록을 이 PC의 로컬 AI 서버에서 처리하는 데 동의합니다.</label>}
+    {aiReady && <label className="ws-check"><input type="checkbox" checked={consent} onChange={e => { setConsent(e.target.checked); if (!e.target.checked) cancel(); }} />선택한 기록을 {processingPhrase(provider)}하는 데 동의합니다.</label>}
     <button className="button primary full" onClick={generate} disabled={!selected || pending}>{pending ? '브리핑 만드는 중' : aiReady ? 'AI 브리핑 만들기' : '기록으로 브리핑 만들기'}</button>{pending && <button className="button secondary full" onClick={cancel}>생성 취소</button>}
     {notice && <p role="status" className="ws-notice">{notice}</p>}{error && <p role="alert" className="ws-error">{error}</p>}{(draft || error) && <IssueReport feature="brief" input={input} output={draft} requestId={draft?.generation?.requestId} error={error} />}
     {current && <div className="ws-box"><h3>자료 범위</h3><p>{current.period.from} ~ {current.period.to} · 기록된 날 {current.period.daysWithRecords}일</p><p className="ws-muted">기록 건수는 실제 행동 횟수가 아닙니다.</p>{current.dataGaps.map((gap, index) => <p className="ws-muted" key={index}>{gap}</p>)}</div>}

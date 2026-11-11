@@ -3,7 +3,7 @@ import { afterEach, expect, it, vi } from 'vitest';
 import { readConfig } from '../server/config.ts';
 import { checkBeta } from '../scripts/beta-check.ts';
 
-vi.mock('../server/local-status.ts', () => ({ getLocalStatus: vi.fn(async () => ({ configured: true, sttReady: true, statusMessage: 'Ready' })) }));
+vi.mock('../server/local-status.ts', () => ({ getProviderStatus: vi.fn(async () => ({ configured: true, sttReady: true, statusMessage: 'Ready' })) }));
 const config = () => readConfig({ AI_ENABLED: 'true', FEATURE_OWNER_LOG_ENABLED: 'true', FEATURE_BRIEF_ENABLED: 'true', FEATURE_SHELTER_ENABLED: 'true' });
 const session = { authenticated: true, aiEnabled: true, configured: true, provider: 'ollama', textModel: 'qwen3.5:9b', sttReady: true, features: { ownerLog: true, brief: true, shelter: true } };
 afterEach(() => vi.unstubAllGlobals());
@@ -43,4 +43,10 @@ it('closes only its own password session after a failed warmup', async () => {
   vi.stubGlobal('fetch', fetcher);
   await expect(checkBeta({ ...config(), password: 'synthetic-password' }, true)).rejects.toThrow('규칙');
   expect(fetcher.mock.calls[4][1]).toMatchObject({ method: 'DELETE', headers: { Cookie: 'hanggo_session=synthetic' } });
+});
+it('accepts an API-mode server whose session reports the API text model', async () => {
+  const api = readConfig({ AI_ENABLED: 'true', AI_PROVIDER: 'api', GEMINI_API_KEY: 'test-g', ANTHROPIC_API_KEY: 'test-a', FEATURE_OWNER_LOG_ENABLED: 'true', FEATURE_BRIEF_ENABLED: 'true', FEATURE_SHELTER_ENABLED: 'true' });
+  vi.stubGlobal('fetch', vi.fn(async () => Response.json({ ...session, provider: 'api', textModel: 'gemini-3.8-flash' })));
+  const result = await checkBeta(api);
+  expect(result[0]).toBe('모델: gemini-3.8-flash');
 });

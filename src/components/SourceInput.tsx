@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import type { RefObject } from 'react';
+import type { AiProvider } from '../ai-copy';
 import { transcribe, verifyAudibleAudio } from '../api';
 import { useRecorder } from '../hooks/useRecorder';
 
@@ -12,9 +13,10 @@ type Props = {
   onConsentChange?: (consent: boolean) => void;
   onReadyChange?: (ready: boolean) => void;
   textAreaRef?: RefObject<HTMLTextAreaElement | null>;
+  provider?: AiProvider;
 };
 
-export default function SourceInput({ aiReady, sttReady = true, petName, text, onText, onConsentChange, onReadyChange, textAreaRef }: Props) {
+export default function SourceInput({ aiReady, sttReady = true, petName, text, onText, onConsentChange, onReadyChange, textAreaRef, provider }: Props) {
   const recorder = useRecorder();
   const [mode, setMode] = useState<'text' | 'voice'>('text');
   const [consent, setConsent] = useState(false);
@@ -75,7 +77,7 @@ export default function SourceInput({ aiReady, sttReady = true, petName, text, o
     </div>}
     <label className="ws-label">원문 또는 받아쓰기 <textarea ref={textAreaRef} value={text} rows={6} maxLength={8000} onChange={event => { cancel(); onText(event.target.value, reviewNeeded); setConfirmed(false); }} placeholder="관찰한 내용을 적어 주세요." /></label>
     {reviewNeeded && <label className="ws-check"><input type="checkbox" checked={confirmed} onChange={event => setConfirmed(event.target.checked)} />받아쓰기를 듣고 원문을 확인했습니다.</label>}
-    {aiReady && <label className="ws-check"><input type="checkbox" checked={consent} onChange={event => changeConsent(event.target.checked)} />입력한 내용과 음성을 이 PC의 로컬 AI 서버에서 처리하는 데 동의합니다.</label>}
+    {aiReady && <label className="ws-check"><input type="checkbox" checked={consent} onChange={event => changeConsent(event.target.checked)} />{provider === 'api' ? '음성은 이 PC의 로컬 AI 서버에서, 입력한 내용은 외부 AI(Google·Anthropic)로 전송해 처리하는 데 동의합니다.' : '입력한 내용과 음성을 이 PC의 로컬 AI 서버에서 처리하는 데 동의합니다.'}</label>}
     {error && <p role="alert" className="ws-error">{error}</p>}
   </div>;
 }

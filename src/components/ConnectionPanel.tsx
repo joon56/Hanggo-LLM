@@ -17,7 +17,7 @@ export default function ConnectionPanel({ session, loading, error, onRetry, onLo
   const [submitting, setSubmitting] = useState(false);
   const locked = !session || (session.requirePassword && !session.authenticated);
   return <section className={`connection-panel ${locked ? 'connection-locked' : ''}`} aria-label="서버 연결">
-    <strong>{loading ? '서버 연결 확인 중' : error ? '서버 연결 오류' : session?.requirePassword && !session.authenticated ? '운영자 로그인' : localDemo ? '로컬 데모' : session?.aiEnabled && session.configured ? '로컬 AI 연결됨' : 'AI 비활성'}</strong>
+    <strong>{loading ? '서버 연결 확인 중' : error ? '서버 연결 오류' : session?.requirePassword && !session.authenticated ? '운영자 로그인' : localDemo ? '로컬 데모' : session?.aiEnabled && session.configured ? (session.provider === 'api' ? '외부 AI 연결됨' : '로컬 AI 연결됨') : 'AI 비활성'}</strong>
     {error && <><p role="alert">{error}</p><button className="button secondary" onClick={onRetry}>다시 연결</button></>}
     {!session && error && import.meta.env.DEV && <button className="button secondary" onClick={() => onDemo(!localDemo)}>{localDemo ? '로컬 데모 닫기' : '로컬 데모 사용'}</button>}
     {session?.requirePassword && !session.authenticated && <form onSubmit={async event => { event.preventDefault(); setSubmitting(true); try { await onLogin(password); setPassword(''); } finally { setSubmitting(false); } }}>

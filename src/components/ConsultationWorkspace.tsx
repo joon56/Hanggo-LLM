@@ -6,6 +6,7 @@ import type { ConsultationNote, ConsultationSection, ConsultationSession, Transc
 import type { Metadata } from '../domain/notes';
 import { useConsultationRecorder } from '../hooks/useConsultationRecorder';
 import { ApiError } from '../api';
+import type { AiProvider } from '../ai-copy';
 import '../consultation.css';
 
 const labels: Record<ConsultationSection, string> = { purpose: '상담 목적·고민', owner_report: '보호자 보고', observation: '상담 중 관찰', guidance: '훈련사 안내', task: '합의한 과제', follow_up: '후속 확인', moments: '중요 장면' };
@@ -30,7 +31,7 @@ function TranscriptEditor({ segment, index, disabled, onSave, onSeek, onDirtyCha
   </article>;
 }
 
-export default function ConsultationWorkspace({ ready, model, onBusyChange }: { ready: boolean; model: string; onBusyChange?: (value: boolean) => void }) {
+export default function ConsultationWorkspace({ ready, model, provider, onBusyChange }: { ready: boolean; model: string; provider?: AiProvider; onBusyChange?: (value: boolean) => void }) {
   const recorder = useConsultationRecorder();
   const [history, setHistory] = useState<ConsultationSession[]>([]); const [selected, setSelected] = useState<ConsultationSession | null>(null);
   const [metadata, setMetadata] = useState<Metadata>({ petName: '', trainerName: '', sessionDate: localDate() }); const [consent, setConsent] = useState(false); const [microphone, setMicrophone] = useState(false);
@@ -111,7 +112,7 @@ export default function ConsultationWorkspace({ ready, model, onBusyChange }: { 
           <label>녹화 입력<select value={captureSource} disabled={busy || visionProcessing} onChange={event => setCaptureSource(event.target.value as 'camera' | 'tab')}><option value="camera">이 PC 카메라·마이크</option><option value="tab">브라우저 탭·탭 오디오</option></select></label>
           {captureSource === 'camera' ? <p className="consultation-hint">이 PC의 카메라 영상과 마이크 음성을 함께 녹화합니다. 카메라·마이크 권한을 허용하세요. 녹화 중 받아쓰기가 진행되고, 저장 후 장면 분석과 일지를 만들 수 있습니다.</p> : <><p className="consultation-hint">공유 창에서 <strong>브라우저 탭</strong>과 <strong>탭 오디오 공유</strong>를 선택하세요.</p><label className="review-checkbox"><input type="checkbox" checked={microphone} disabled={busy} onChange={event => setMicrophone(event.target.checked)} />내 마이크 함께 녹음</label><p className="consultation-hint">내 목소리가 탭 오디오에 포함되지 않으면 마이크를 켜세요. 이어폰 사용 권장.</p></>}
           <p className="consultation-hint">녹화 전 상담 참여자에게 녹화·로컬 처리 동의를 받으세요. 미리보기는 음소거됩니다.</p>
-          <label className="review-checkbox"><input type="checkbox" checked={consent} disabled={busy} onChange={event => setConsent(event.target.checked)} />상담 참여자 동의를 받았으며 녹화·음성·장면을 이 PC의 로컬 AI 서버에서 처리하는 데 동의합니다.</label>
+          <label className="review-checkbox"><input type="checkbox" checked={consent} disabled={busy} onChange={event => setConsent(event.target.checked)} />{provider === 'api' ? '상담 참여자 동의를 받았으며 녹화·음성·장면은 이 PC의 로컬 AI 서버에서, 일지 작성용 전사 텍스트는 외부 AI(Google·Anthropic)로 전송해 처리하는 데 동의합니다.' : '상담 참여자 동의를 받았으며 녹화·음성·장면을 이 PC의 로컬 AI 서버에서 처리하는 데 동의합니다.'}</label>
           {!ready && <p role="status" className="consultation-hint">로컬 받아쓰기 모델을 준비해 주세요. 저장된 상담은 검토할 수 있습니다.</p>}
           <div className="consultation-actions"><button className="button primary" disabled={!ready || busy || visionProcessing || !consent || !metadata.petName.trim() || !metadata.trainerName.trim() || !metadata.sessionDate} onClick={() => { setError(''); setNotice(''); selectedId.current = undefined; currentSession.current = null; setSelected(null); setNote(undefined); setDirty(false); setReviewed(false); setDirtySegments(new Set()); setDirtyScenes(new Set()); setVisionReviewInvalidated(false); setPinnedMs(undefined); setBookmarkText(''); void recorder.start(metadata, captureSource === 'camera' || microphone, captureSource); }}>{captureSource === 'camera' ? '카메라·마이크 녹화 시작' : '탭 공유·녹화 시작'}</button>
             {['recording', 'requesting', 'preparing'].includes(recorder.status) && <button className="button secondary" onClick={() => void recorder.stop()}>녹화 종료·저장</button>}

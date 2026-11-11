@@ -123,6 +123,20 @@ npm.cmd run llm:eval:workspace -- --feature owner --case bark-delivery --live
 
 공개 GitHub Pages는 AI 없는 정적 체험판으로 유지됩니다. 로컬 빌드 확인은 `npm.cmd run build` 뒤 `npm.cmd start`로 할 수 있습니다. 외부 호스팅은 현재 로컬 Ollama·Whisper 실행 경로가 아니므로 회의 AI 시연에 사용하지 않습니다. [실행·배포 범위](docs/testing/deployment.md) · [기능별 테스트](docs/testing/workspace-testing.md)
 
+### 외부 API 모드 (시험 중)
+
+텍스트 기능은 `.env`의 `AI_PROVIDER=api`로 외부 API를 쓸 수 있습니다. 음성 전사와 영상 관찰은 계속 이 PC에서 처리합니다. 개인정보 일부를 가린 텍스트가 Google 또는 Anthropic으로 전송되므로, 동의 절차가 준비되기 전에는 가상 자료만 사용합니다. Gemini는 유료 등급 키를 사용합니다. 무료 등급 입력은 Google 제품 개선에 쓰입니다.
+
+```dotenv
+AI_PROVIDER=api
+API_TEXT_MODEL=gemini-3.8-flash
+API_SHORT_MODEL=claude-haiku-5-5
+GEMINI_API_KEY=...
+ANTHROPIC_API_KEY=...
+```
+
+모델 비교는 `npm.cmd run llm:eval:api -- --model <모델 ID> --all`로 실행하며 비용이 듭니다. [API 모델 비교 결과](docs/llm/api-comparison.md)
+
 ---
 
 <div align="center"><strong>말하고, 확인하고, 기록으로 남기세요.</strong><br>행고 · 우리아이 행동고민</div>

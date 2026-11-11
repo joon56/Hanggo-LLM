@@ -23,3 +23,8 @@ test('revoking consent during audio inspection prevents transcription request', 
   expect(onText).not.toHaveBeenCalled();
   expect(screen.getByRole('textbox', { name: '원문 또는 받아쓰기' })).toHaveValue('기존 원문');
 });
+
+test('asks consent for external text processing in API mode while speech stays local', () => {
+  render(<SourceInput aiReady provider="api" petName="초코" text="" onText={vi.fn()} />);
+  expect(screen.getByRole('checkbox', { name: '음성은 이 PC의 로컬 AI 서버에서, 입력한 내용은 외부 AI(Google·Anthropic)로 전송해 처리하는 데 동의합니다.' })).toBeInTheDocument();
+});

@@ -1,6 +1,7 @@
 import { ArrowSquareOutIcon, CheckCircleIcon, DownloadSimpleIcon, FileTextIcon, ShieldWarningIcon, TrashIcon } from '@phosphor-icons/react';
 import type { ApprovedNote, Category, Draft, NoteItem } from '../domain/notes';
 import { getReviewSignals, validateDraft } from '../domain/notes';
+import { aiDraftLabel } from '../ai-copy';
 
 export const categoryLabels: Record<Category, string> = {
   owner_report: '보호자 보고', observation: '훈련사 관찰', guidance: '안내한 내용', task: '합의한 과제', follow_up: '추가 확인',
@@ -37,7 +38,7 @@ export default function NoteReview(props: Props) {
       <div className="empty-categories">{Object.values(categoryLabels).map((label, index) => <div key={label}><span>0{index + 1}</span>{label}</div>)}</div>
       <small>입력 문장을 초안으로 정리합니다.<br />원문과 결과를 직접 확인해 주세요.</small>
     </div> : <>
-      <div className="review-intro"><FileTextIcon size={17} /><span>훈련사의 사후 요약 · {draft.items.length}개 항목</span><span className="demo-word">{draft.mode === 'ollama' ? '로컬 AI 초안' : draft.mode === 'openai' ? '이전 AI 초안' : draft.mode === 'manual' ? '수동 검토 필요' : '규칙 기반 데모'}</span></div>
+      <div className="review-intro"><FileTextIcon size={17} /><span>훈련사의 사후 요약 · {draft.items.length}개 항목</span><span className="demo-word">{draft.mode === 'ollama' ? aiDraftLabel(draft.generation?.model) : draft.mode === 'openai' ? '이전 AI 초안' : draft.mode === 'manual' ? '수동 검토 필요' : '규칙 기반 데모'}</span></div>
       {draft.generation && <p className="generation-meta">{draft.generation.model} · {draft.generation.latencyMs}ms · 요청 {draft.generation.requestId}{draft.generation.fallbackUsed ? ' · 대체 초안' : ''}</p>}
       {hasRisk && <div className="warning-box" role="status">
         <ShieldWarningIcon size={23} weight="bold" />

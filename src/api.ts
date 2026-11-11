@@ -7,7 +7,7 @@ export type Session = {
   requirePassword: boolean;
   aiEnabled: boolean;
   configured: boolean;
-  provider?: 'ollama';
+  provider?: 'ollama' | 'api';
   sttReady?: boolean;
   statusMessage?: string;
   textModel: string;
