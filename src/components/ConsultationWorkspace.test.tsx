@@ -141,6 +141,18 @@ test('api mode requires note consent before sending transcript text', async () =
   expect(button).toBeDisabled(); fireEvent.click(box); expect(button).toBeEnabled(); fireEvent.click(button);
   await waitFor(() => expect(api.generateConsultationNote).toHaveBeenCalledWith('saved-1', true));
 });
+test('api mode asks note consent again after switching to another consultation', async () => {
+  const other: ConsultationSession = { ...structuredClone(saved), id: 'other-1', metadata: { petName: '루이', trainerName: '훈련사', sessionDate: '2026-10-08' }, noteRevision: 'other-revision' };
+  vi.mocked(api.listConsultations).mockResolvedValue({ sessions: [saved, other] });
+  vi.mocked(api.getConsultation).mockImplementation(async id => id === 'other-1' ? other : saved);
+  render(<ConsultationWorkspace ready model="whisper-turbo" provider="api"/>); await open();
+  const box = screen.getByRole('checkbox', { name: /전사 텍스트를 외부 AI\(Google·Anthropic\)로 전송하는 데 동의/ });
+  fireEvent.click(box); expect(box).toBeChecked(); expect(screen.getByRole('button', { name: '상담 일지 만들기' })).toBeEnabled();
+  fireEvent.click(await screen.findByRole('button', { name: /루이.*열기/ }));
+  await screen.findByRole('textbox', { name: '받아쓰기 1' });
+  expect(screen.getByRole('checkbox', { name: /전사 텍스트를 외부 AI\(Google·Anthropic\)로 전송하는 데 동의/ })).not.toBeChecked();
+  expect(screen.getByRole('button', { name: '상담 일지 만들기' })).toBeDisabled();
+});
 test('local mode shows no note consent checkbox and sends no consent', async () => {
   vi.mocked(api.generateConsultationNote).mockResolvedValue(saved);
   render(<ConsultationWorkspace ready model="whisper-turbo"/>); await open();

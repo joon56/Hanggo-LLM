@@ -44,7 +44,7 @@ if (long) {
   const latencyMs = Date.now() - started;
   reports.push({ feature: 'long-transcript', characters: texts.join('\n').length, latencyMs, fallbackUsed, error, apiErrors: apiErrors(), ...totals() });
   await save();
-  console.info(`${model} 긴 전사: ${(latencyMs / 1000).toFixed(1)}s ${JSON.stringify(totals())}${error ? ` 오류: ${error}` : ''}`);
+  console.info(`${model} 긴 전사: ${(latencyMs / 1000).toFixed(1)}s ${JSON.stringify({ ...totals(), costUsd: undefined })} ${money(totals().costUsd, 4)}${error ? ` 오류: ${error}` : ''}`);
 } else {
   for (const file of featureFiles) {
     const fixtures = JSON.parse(await readFile(new URL(`../fixtures/${file}.json`, import.meta.url), 'utf8'));
