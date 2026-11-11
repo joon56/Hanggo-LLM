@@ -25,3 +25,10 @@ it('logs in before checking readiness when evaluating a password-protected local
     expect(generate).toHaveBeenCalledOnce();
   } finally { server.closeAllConnections(); await new Promise<void>(resolve => server.close(() => resolve())); }
 }, 15000);
+it('explains the API evaluation without calling any model', async () => {
+  const { stdout } = await promisify(execFile)(process.execPath, ['scripts/eval-api.ts', '--help'], { windowsHide: true, timeout: 10000 });
+  expect(stdout).toContain('--model'); expect(stdout).toContain('비용');
+});
+it('refuses to start an API evaluation without a model', async () => {
+  await expect(promisify(execFile)(process.execPath, ['scripts/eval-api.ts'], { windowsHide: true, timeout: 10000 })).rejects.toMatchObject({ stderr: expect.stringContaining('--model을 지정하세요.') });
+});
