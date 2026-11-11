@@ -36,7 +36,7 @@ export function deriveShelterProfile(observations: ShelterObservation[]): Pick<S
   if (!observations.some(o => o.category === 'alone')) unknowns.push('혼자 있는 시간에 대한 기록이 없어요.');
   return { sociability, likes, cautions, unknowns, adopterIntro: { text: likes.length ? likes.map(o => o.text).join(' ') : '관찰 기록을 확인해 주세요.', cautionLine: cautions.map(o => o.text).join(' ') } };
 }
-function memoSentences(source: string): string[] {
+export function memoSentences(source: string): string[] {
   const sentences: string[] = [];
   let start = 0;
   for (let index = 0; index < source.length; index++) {
